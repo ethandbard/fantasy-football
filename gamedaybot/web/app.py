@@ -306,6 +306,18 @@ def _on_scope_input():
 
 
 @reactive.effect
+def _on_scope_records_input():
+    # Records gets its own radio-button ID rather than reusing "scope":
+    # League and Records are two separate @render.ui trees, and their scope
+    # segments can both be present in the client's input-binding table across
+    # a screen switch (Shiny's client-side duplicate-ID check fires on the
+    # overlap), so this one writes the same reactive.value under a name of
+    # its own.
+    if input.scope_records() is not None:
+        scope.set(input.scope_records())
+
+
+@reactive.effect
 def _on_sort_input():
     if input.sort() is not None:
         sort.set(input.sort())
@@ -1023,7 +1035,7 @@ def _scope_sort_row_records(range_note=None):
         core_ui.div(
             core_ui.div(
                 ui.input_radio_buttons(
-                    "scope", None,
+                    "scope_records", None,
                     {"reg": "Regular", "post": "Playoffs", "full": "Full"},
                     selected=scope.get(), inline=True,
                 ),

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "C:/Users/ethan/OneDrive/Desktop/Code/fantasy-football/run_dashboard_local.cmd",
+      "runtimeArgs": [],
+      "port": 8001
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "quarto",
+      "runtimeArgs": ["preview", "docs", "--port", "4444", "--no-browser"],
+      "port": 4444
+    }
+  ]
+}
