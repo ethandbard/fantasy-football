@@ -156,16 +156,32 @@ season may not have started yet.
 
 ## Dashboard
 
-The dashboard reads `data/fantasy.db` and offers four tabs:
+The dashboard reads `data/fantasy.db` and offers five tabs:
 
-- **Weekly Scores**: a score trend line per team.
-- **Standings**: the latest standings snapshot.
-- **Consistency**: the score distribution per team.
-- **Trophies**: a season recap.
+- **Trend**: weekly score per team, with views for cumulative points, rank by
+  week, and performance against ESPN's projection.
+- **Standings**: records, point differential, current streak, and last-five
+  form, alongside ESPN's official seed.
+- **Spread**: the score distribution per team, with median, floor, ceiling,
+  standard deviation, and coefficient of variation.
+- **Head to head**: every pairing's record, tinted by average margin.
+- **Trophies**: eleven season awards. Selecting one follows that team to the
+  Trend tab with its week marked.
 
-A sidebar dropdown selects the season. Only seasons present in the database
-appear there, so a new season stays empty until the first Tuesday snapshot
-runs.
+A control bar above the tabs sets which weeks are in play. It opens on the
+regular season, and the boundary is derived from the data rather than
+configured: a team's wins plus losses plus ties is how many games it has
+played, so a 13- or 15-week league needs no setting changed. Presets jump to
+the regular season, the playoffs, or the full season.
+
+Selecting a team — from a standings row or a trophy — follows it across every
+tab: other lines mute, and a panel below the stat tiles shows that team's game
+log. **Reset** returns to the league view.
+
+A dropdown in the masthead selects the season. Only seasons present in the
+database appear there, so a new season stays empty until the first Tuesday
+snapshot runs. With one season collected it renders as plain text rather than
+a dropdown that cannot change anything.
 
 The dashboard polls the database every 30 seconds. New snapshots reach an open
 browser tab on their own, and a new season joins the dropdown without a
@@ -318,7 +334,12 @@ next run, so `backfill_season.py` is only needed for prior seasons.
 | `gamedaybot/espn/` | ESPN API access, report text, and the scheduler. |
 | `gamedaybot/discord_bot/` | Slash-command bot, webhook client, and embed formatting. |
 | `gamedaybot/storage/db.py` | SQLite schema and queries. |
-| `gamedaybot/web/app.py` | Shiny dashboard. |
+| `gamedaybot/web/app.py` | Shiny dashboard: layout and reactive wiring. |
+| `gamedaybot/web/stats.py` | Season arithmetic — records, streaks, head-to-head, trophies. |
+| `gamedaybot/web/charts.py` | Plotly figure builders and their shared styling. |
+| `gamedaybot/web/theme.py` | Team palette and the stat-tile sparkline. |
+| `gamedaybot/web/www/dashboard.css` | Dashboard styling. |
+| `tests/` | Tests for `web/stats.py`. Run with `pytest`. |
 | `dev/` | Maintenance scripts. Copied into the image, so `docker-compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
 | `cloudflared/config.yml` | Reference copy of the tunnel config. The `cloudflared` container reads `~/.cloudflared` on the host instead. |

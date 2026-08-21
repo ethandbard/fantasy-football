@@ -6,5 +6,8 @@ shiny==1.7.0
 shinywidgets==0.8.1
 plotly==6.9.0
 pandas==3.0.5
+# Pulled in by pandas anyway, but web/stats.py imports it directly, so it is
+# pinned here rather than left to arrive as somebody else's dependency.
+numpy==2.4.6
 jinja2==3.1.6
 discord.py>=2.4.0
