@@ -24,56 +24,79 @@ A second container, `cloudflared`, publishes the dashboard at the hostname in
   on the Docker host, if you want a public dashboard. See
   [Publish the dashboard](#publish-the-dashboard-with-cloudflare-tunnel).
 
-## Start the bot
+## Run the app locally
 
-1. Confirm `config.env` exists and holds the values you want.
-2. Run the setup script for your platform:
+Local runs are for testing changes before they reach the VPS. They use the
+same image and the same `config.env`, so the dashboard renders the same way in
+both places.
 
-   On Windows:
+Two local modes exist. Pick by what you are changing.
 
-   ```cmd
-   docker-setup-preconfig.bat
-   ```
+### Run the dashboard alone
 
-   On Linux or macOS:
-
-   ```bash
-   chmod +x docker-setup-preconfig.sh
-   ./docker-setup-preconfig.sh
-   ```
-
-3. Check the logs to confirm the bot connected:
-
-   ```bash
-   docker-compose logs -f fantasy-bot
-   ```
-
-The startup message appears in the Discord channel that owns the webhook.
-
-## Manage the bot
-
-Stop the containers:
+Use this for any change to `gamedaybot/web/`. It starts the Shiny server and
+nothing else:
 
 ```bash
-docker-compose down
+docker compose run --rm --service-ports --no-deps fantasy-bot python -m shiny run gamedaybot/web/app.py --host 0.0.0.0 --port 8000
 ```
 
-Restart the bot after a config change:
+Open http://localhost:8000 to see it. Press Ctrl+C to stop.
+
+The Discord bot and the scheduler stay down, so this posts nothing to Discord.
+`--no-deps` keeps `cloudflared` down, so it publishes nothing to the internet.
+This is the safest local mode, and the right default.
+
+### Run the full stack
+
+Use this only when you are changing the bot or the scheduler:
 
 ```bash
-docker-compose restart fantasy-bot
+docker compose up -d --build fantasy-bot
 ```
 
-Rebuild after a code change:
+Follow the logs to confirm the bot connected:
 
 ```bash
-docker-compose up -d --build
+docker compose logs -f fantasy-bot
+```
+
+[docker-setup-preconfig.sh](docker-setup-preconfig.sh) and
+[docker-setup-preconfig.bat](docker-setup-preconfig.bat) wrap the same command
+with a Docker check and a summary of what to run next.
+
+Naming `fantasy-bot` is required, not optional. A bare `docker compose up`
+also starts `cloudflared`, which claims the same named tunnel the VPS runs.
+Two connectors serving one hostname split traffic between them, so visitors
+reach whichever answers first.
+
+The scheduler runs inside `fantasy-bot`. While a local copy runs alongside the
+VPS, both fire every scheduled post, and the Discord channel receives each
+report twice. Stop the local stack as soon as you finish:
+
+```bash
+docker compose down
+```
+
+### Other local commands
+
+Restart after editing `config.env`:
+
+```bash
+docker compose restart fantasy-bot
 ```
 
 Show container status:
 
 ```bash
-docker-compose ps
+docker compose ps
+```
+
+Run the tests. The runtime image carries neither `pytest` nor `tests/`, so the
+command mounts the directory and installs the runner first:
+
+```bash
+docker compose run --rm --no-deps --user root -v "./tests:/app/tests" fantasy-bot sh -c "pip install -q pytest && python -m pytest tests -q"
 ```
 
 ## Configuration
@@ -237,7 +260,7 @@ Set up the tunnel once per host:
 7. Start the stack:
 
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 Tunnel credentials belong to the tunnel, not to the machine. To move the stack
@@ -255,10 +278,127 @@ a random `trycloudflare.com` URL that changes on every restart:
 cloudflared tunnel --url http://localhost:8000
 ```
 
-## Deploy to a remote host
+## Deploy to the VPS
 
-The container behaves the same on any host. A move takes a file transfer and
-the tunnel setup on the new host. These steps assume an Ubuntu VPS.
+The VPS is the live deployment. It serves the public dashboard and runs the
+scheduler that posts to Discord. Local runs never touch it: there is no shared
+state, and nothing syncs on its own.
+
+Deployment is a file copy over SSH followed by a rebuild. The repository is
+not cloned on the VPS, so `git push` deploys nothing.
+
+The steps use these values:
+
+| Value | Where it lives |
+| --- | --- |
+| Host | `65.109.238.176` |
+| SSH key | `~/.ssh/hetzner_fantasy` |
+| Project directory | `/opt/fantasy-football` on the VPS |
+| Secrets | `config.env` in this repo, gitignored |
+| Tunnel credentials | `~/.cloudflared` on the VPS |
+
+Run the VPS stack from one host at a time. If a local copy is up, stop it with
+`docker compose down` first. Two schedulers post every report twice, and two
+tunnel connectors split traffic for one hostname.
+
+### Update a running deployment
+
+This is the common case: the VPS already runs, and you want your latest code
+on it.
+
+1. Open a shell on the VPS:
+
+   ```bash
+   ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176
+   ```
+
+2. Back up the database, then stop the stack:
+
+   ```bash
+   cd /opt/fantasy-football
+   cp data/fantasy.db "data/fantasy.db.bak-$(date +%Y%m%d-%H%M%S)"
+   docker compose down
+   ```
+
+   Stop before you copy. `docker compose down` reads the compose file that is
+   still on disk, so it removes the containers by the names that created them.
+   Copying first can rename a service and strand the old container running.
+
+3. Move the old code aside, so removed files do not survive:
+
+   ```bash
+   mv gamedaybot gamedaybot.bak-$(date +%Y%m%d-%H%M%S)
+   ```
+
+   A copy merges into whatever is already there. Files deleted upstream stay
+   behind and get built into the next image.
+
+4. From your machine, in a second terminal, send the new tree:
+
+   ```bash
+   tar czf - --exclude='__pycache__' --exclude='*.pyc' gamedaybot dev Dockerfile docker-compose.yml requirements.txt .dockerignore | ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'cd /opt/fantasy-football && tar xzf -'
+   ```
+
+   `dev/` is required. The Dockerfile copies it, and the build fails without
+   it. `data/` is not in the list, because the VPS database is the real one.
+
+5. Optional: send `config.env` only when you have changed it. Compare first,
+   and skip the copy when the checksums match:
+
+   ```bash
+   md5sum config.env
+   ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'md5sum /opt/fantasy-football/config.env'
+   ```
+
+6. Back on the VPS, rebuild and start:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+Schema changes apply on start. `init_db()` adds any missing column, so no
+migration command exists to run.
+
+### Verify a deployment
+
+Check each of these after a deploy:
+
+1. Confirm both containers are up and the bot reports healthy:
+
+   ```bash
+   docker compose ps
+   ```
+
+2. Check the log for failures:
+
+   ```bash
+   docker compose logs --tail=30 fantasy-bot
+   ```
+
+3. Confirm the public dashboard answers:
+
+   ```bash
+   curl -o /dev/null -w '%{http_code}\n' https://fantasy.ethandbard.com/
+   ```
+
+### Roll back
+
+Step 2 and step 3 of the update leave timestamped copies. To undo a bad
+deploy, restore them and rebuild:
+
+```bash
+cd /opt/fantasy-football
+docker compose down
+rm -rf gamedaybot && mv gamedaybot.bak-<timestamp> gamedaybot
+cp data/fantasy.db.bak-<timestamp> data/fantasy.db
+docker compose up -d --build
+```
+
+Delete old backups once a deploy proves out. They accumulate.
+
+### Set up a new VPS
+
+Follow these steps only for a host that has never run the stack.
 
 1. Provision a Linux VPS and set up SSH key access.
 2. Install Docker and the Compose plugin on the VPS:
@@ -270,18 +410,26 @@ the tunnel setup on the new host. These steps assume an Ubuntu VPS.
    apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
    ```
 
-3. Copy the project to the VPS. Skip `data/`, which the host creates fresh:
+3. Create the project directory on the VPS:
+
+   ```bash
+   mkdir -p /opt/fantasy-football
+   ```
+
+4. Copy the project from your machine. Skip `data/`, which step 6 creates:
 
    ```bash
    scp -r gamedaybot dev requirements.txt Dockerfile docker-compose.yml \
        .dockerignore config.env root@<vps-ip>:/opt/fantasy-football/
    ```
 
-   The image builds `dev/`, so the copy fails without it.
+   Include `dev/`. The Dockerfile copies it, and the build fails without it.
+   This is the one time you copy `config.env`, since the new host has no
+   credentials yet.
 
-4. Set up the tunnel on the VPS, so `~/.cloudflared` exists there. See
+5. Set up the tunnel on the VPS, so `~/.cloudflared` exists there. See
    [Publish the dashboard](#publish-the-dashboard-with-cloudflare-tunnel).
-5. Create `data/`, then give it to the container's non-root user:
+6. Create `data/`, then give it to the container's non-root user:
 
    ```bash
    mkdir -p /opt/fantasy-football/data
@@ -291,16 +439,12 @@ the tunnel setup on the new host. These steps assume an Ubuntu VPS.
    Docker creates a missing bind-mount directory as root. The container runs as
    uid `1000`, so it then fails to open the database.
 
-6. Build and start the stack:
+7. Build and start the stack:
 
    ```bash
    cd /opt/fantasy-football
-   docker-compose up -d --build
+   docker compose up -d --build
    ```
-
-If another machine already runs the stack, stop it there with
-`docker-compose down` before you start the new copy. Two schedulers post every
-report twice.
 
 ## Development tools
 
@@ -310,7 +454,7 @@ environment.
 Check that the ESPN API is reachable and preview the available data:
 
 ```bash
-docker-compose exec fantasy-bot python dev/api_healthcheck.py
+docker compose exec fantasy-bot python dev/api_healthcheck.py
 ```
 
 The script exits non-zero on failure, so you can run it from a cron check.
@@ -318,7 +462,7 @@ The script exits non-zero on failure, so you can run it from a cron check.
 Backfill a completed season into the dashboard database:
 
 ```bash
-docker-compose exec fantasy-bot python dev/backfill_season.py 2025
+docker compose exec fantasy-bot python dev/backfill_season.py 2025
 ```
 
 The year is a command-line argument because `LEAGUE_YEAR` stays pinned to the
@@ -343,13 +487,13 @@ next run, so `backfill_season.py` is only needed for prior seasons.
 | `gamedaybot/web/theme.py` | Team palette and the stat-tile sparkline. |
 | `gamedaybot/web/www/dashboard.css` | Dashboard styling. |
 | `tests/` | Tests for `web/stats.py`. Run with `pytest`. |
-| `dev/` | Maintenance scripts. Copied into the image, so `docker-compose exec` can run them. |
+| `dev/` | Maintenance scripts. Copied into the image, so `docker compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
 | `cloudflared/config.yml` | Reference copy of the tunnel config. The `cloudflared` container reads `~/.cloudflared` on the host instead. |
 | `config.env` | Secrets and runtime settings. Excluded by [.gitignore](.gitignore). |
 
 Container logs go to Docker's `json-file` driver, capped at three 10 MB files.
-Read them with `docker-compose logs fantasy-bot`.
+Read them with `docker compose logs fantasy-bot`.
 
 ## Troubleshooting
 
@@ -381,8 +525,25 @@ restart the container.
 
 **Cloudflare Tunnel returns a 502.** Either `cloudflared` connected before
 `fantasy-bot` finished starting, or `fantasy-bot` crashed. Check
-`docker-compose logs fantasy-bot` for the SQLite permission error. The tunnel
+`docker compose logs fantasy-bot` for the SQLite permission error. The tunnel
 retries once the app listens.
+
+**`docker-compose: command not found` on the VPS.** Current installs ship
+Compose as a Docker plugin. Run `docker compose` as two words.
+
+**The VPS still serves old code after a deploy.** A file copy merges into the
+existing tree, so a module you deleted upstream survives on the VPS and gets
+built into the next image. Compare the two sides, then repeat the update and
+move `gamedaybot` aside first:
+
+```bash
+md5sum gamedaybot/web/app.py
+ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'md5sum /opt/fantasy-football/gamedaybot/web/app.py'
+```
+
+**Every Discord report arrives twice.** Two copies of `fantasy-bot` are
+running, each with its own scheduler. Stop the local one with
+`docker compose down`. The VPS keeps the live schedule.
 
 ## Project site
 

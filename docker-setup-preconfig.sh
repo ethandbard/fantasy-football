@@ -13,7 +13,14 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
+# Compose ships as a docker plugin ("docker compose"). The standalone v1
+# binary ("docker-compose") is absent from current installs, so prefer the
+# plugin and fall back only if it is missing.
+if docker compose version &> /dev/null; then
+    COMPOSE="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    COMPOSE="docker-compose"
+else
     echo "❌ Docker Compose is not installed. Please install Docker Compose first."
     exit 1
 fi
@@ -23,17 +30,19 @@ echo "📋 Reading configuration from config.env"
 echo "🚀 Starting Fantasy Football Bot..."
 
 # Build and start the container
-docker-compose up -d --build
+# Only fantasy-bot. A bare "up" also starts cloudflared, which claims the
+# same named tunnel the VPS runs.
+$COMPOSE up -d --build fantasy-bot
 
 if [ $? -eq 0 ]; then
     echo ""
     echo "✅ Bot started successfully!"
     echo ""
     echo "📊 Useful commands:"
-    echo "   View logs:     docker-compose logs -f fantasy-bot"
-    echo "   Stop bot:      docker-compose down"
-    echo "   Restart bot:   docker-compose restart fantasy-bot"
-    echo "   Bot status:    docker-compose ps"
+    echo "   View logs:     $COMPOSE logs -f fantasy-bot"
+    echo "   Stop bot:      $COMPOSE down"
+    echo "   Restart bot:   $COMPOSE restart fantasy-bot"
+    echo "   Bot status:    $COMPOSE ps"
     echo ""
     echo "🎯 The bot is now running and will send messages to Discord automatically!"
     echo "   Settings come from config.env; restart after editing it."

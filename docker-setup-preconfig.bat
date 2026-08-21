@@ -19,8 +19,15 @@ echo 📋 Reading configuration from config.env
 echo 🚀 Starting Fantasy Football Bot...
 echo.
 
-REM Build and start the container
-docker-compose up -d --build
+REM Compose ships as a docker plugin ("docker compose"). The standalone v1
+REM binary is absent from current installs, so detect the plugin first.
+set COMPOSE=docker compose
+docker compose version >nul 2>&1
+if errorlevel 1 set COMPOSE=docker-compose
+
+REM Only fantasy-bot. A bare "up" also starts cloudflared, which claims the
+REM same named tunnel the VPS runs.
+%COMPOSE% up -d --build fantasy-bot
 
 if errorlevel 1 (
     echo ❌ Failed to start the bot. Check the error messages above.
@@ -32,10 +39,10 @@ echo.
 echo ✅ Bot started successfully!
 echo.
 echo 📊 Useful commands:
-echo    View logs:     docker-compose logs -f fantasy-bot
-echo    Stop bot:      docker-compose down
-echo    Restart bot:   docker-compose restart fantasy-bot
-echo    Bot status:    docker-compose ps
+echo    View logs:     %COMPOSE% logs -f fantasy-bot
+echo    Stop bot:      %COMPOSE% down
+echo    Restart bot:   %COMPOSE% restart fantasy-bot
+echo    Bot status:    %COMPOSE% ps
 echo.
 echo 🎯 The bot is now running and will send messages to Discord automatically!
 echo    Settings come from config.env; restart after editing it.
