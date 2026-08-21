@@ -25,9 +25,9 @@ set COMPOSE=docker compose
 docker compose version >nul 2>&1
 if errorlevel 1 set COMPOSE=docker-compose
 
-REM Only fantasy-bot. A bare "up" also starts cloudflared, which claims the
-REM same named tunnel the VPS runs.
-%COMPOSE% up -d --build fantasy-bot
+REM Bare `up` starts fantasy-bot only. The cloudflared sidecar is behind the
+REM `tunnel` profile and stays down unless that profile is requested.
+%COMPOSE% up -d --build
 
 if errorlevel 1 (
     echo ❌ Failed to start the bot. Check the error messages above.

@@ -1,0 +1,11 @@
+# Copy to tunnel/config.yml and replace the UUID and hostname.
+# Place the matching <uuid>.json from `cloudflared tunnel create` in this
+# directory. Do not reuse the VPS shared-tunnel credentials; two connectors
+# on one named tunnel split traffic across machines.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: /etc/cloudflared/00000000-0000-0000-0000-000000000000.json
+
+ingress:
+  - hostname: your-league.ethandbard.com
+    service: http://fantasy-bot:8000
+  - service: http_status:404

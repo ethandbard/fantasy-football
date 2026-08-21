@@ -341,7 +341,7 @@ flowchart LR
 - A Discord gateway bot answers slash commands, if `DISCORD_BOT_TOKEN` is set.
 - A Shiny dashboard on port `8000`, backed by SQLite in `data/`.
 
-A second container, `cloudflared`, publishes the dashboard at the hostname in `cloudflared/config.yml`. The live stack also sets `DASHBOARD_URL` so `/dashboard` returns that public link.
+A Cloudflare tunnel publishes the dashboard. On the VPS that is the shared connector on the `edge` network. Off the VPS it is an optional `cloudflared` sidecar with its own tunnel credentials. `DASHBOARD_URL` in `config.env` is the link `/dashboard` returns.
 
 Secrets stay in `config.env`. Docker Compose loads them through `env_file`, so no secret is baked into the image.
 

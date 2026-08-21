@@ -13,15 +13,17 @@ The entrypoint `gamedaybot/run.py` starts three parts in one process:
   set.
 - A Shiny dashboard on port `8000`, backed by a SQLite database in `data/`.
 
-A second container, `cloudflared`, publishes the dashboard at the hostname in
-[cloudflared/config.yml](cloudflared/config.yml).
+An optional `cloudflared` sidecar, started with `--profile tunnel`, publishes
+the dashboard at a hostname you own. On the VPS that sidecar stays off: the
+shared connector in `/opt/cloudflared` routes `fantasy.ethandbard.com` instead.
 
 ## Requirements
 
 - Docker Desktop on Windows or macOS, or Docker Engine on Linux.
-- A `config.env` file in the project root. See [Configuration](#configuration).
-- A Cloudflare tunnel credentials file and a `config.yml` in `~/.cloudflared`
-  on the Docker host, if you want a public dashboard. See
+- A `config.env` file in the project root. Copy [config.env.example](config.env.example)
+  and fill it in. See [Configuration](#configuration).
+- For a public dashboard off the VPS: a dedicated Cloudflare tunnel's
+  `config.yml` and credentials JSON in `tunnel/`. See
   [Publish the dashboard](#publish-the-dashboard-with-cloudflare-tunnel).
 
 ## Run the app locally
@@ -44,7 +46,6 @@ docker compose run --rm --service-ports --no-deps fantasy-bot python -m shiny ru
 Open http://localhost:8000 to see it. Press Ctrl+C to stop.
 
 The Discord bot and the scheduler stay down, so this posts nothing to Discord.
-`--no-deps` keeps `cloudflared` down, so it publishes nothing to the internet.
 This is the safest local mode, and the right default.
 
 ### Run the full stack
@@ -52,8 +53,11 @@ This is the safest local mode, and the right default.
 Use this only when you are changing the bot or the scheduler:
 
 ```bash
-docker compose up -d --build fantasy-bot
+docker compose up -d --build
 ```
+
+`cloudflared` is behind the `tunnel` profile, so a bare `up` does not publish
+anything to the internet.
 
 Follow the logs to confirm the bot connected:
 
@@ -65,14 +69,9 @@ docker compose logs -f fantasy-bot
 [docker-setup-preconfig.bat](docker-setup-preconfig.bat) wrap the same command
 with a Docker check and a summary of what to run next.
 
-Naming `fantasy-bot` is required, not optional. A bare `docker compose up`
-also starts `cloudflared`, which claims the same named tunnel the VPS runs.
-Two connectors serving one hostname split traffic between them, so visitors
-reach whichever answers first.
-
-The scheduler runs inside `fantasy-bot`. While a local copy runs alongside the
-VPS, both fire every scheduled post, and the Discord channel receives each
-report twice. Stop the local stack as soon as you finish:
+The scheduler runs inside `fantasy-bot`. While a local copy runs alongside
+another copy with the same `DISCORD_WEBHOOK_URL`, both fire every scheduled
+post. Stop the extra stack as soon as you finish:
 
 ```bash
 docker compose down
@@ -122,9 +121,12 @@ you edit it.
 | `INIT_MSG` | No | None | Replaces the generated startup message. |
 | `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
 | `DB_PATH` | No | `/app/data/fantasy.db` | SQLite file backing the dashboard. |
+| `DASHBOARD_URL` | No | `http://localhost:<port>` | Link the `/dashboard` slash command returns. |
 
-`DASHBOARD_URL` is set in [docker-compose.yml](docker-compose.yml) and controls
-the link that `/dashboard` returns.
+Each running copy of the container is one league and one Discord destination.
+A friend running their own league needs their own `config.env`, their own
+`DISCORD_BOT_TOKEN`, and their own webhook. Two containers with the same bot
+token fight over the Discord gateway.
 
 Credentials for the live league are kept outside this repository, in
 `~/.fantasy-football-secrets/WEBHOOK_BACKUP.md`.
@@ -214,65 +216,54 @@ browser tab on their own, and a new season joins the dropdown without a
 restart or a page refresh.
 
 Reach the dashboard at `http://localhost:8000` locally, or at the tunnel
-hostname if `cloudflared` is running.
+hostname if a tunnel is running.
 
 ## Publish the dashboard with Cloudflare Tunnel
 
-The `cloudflared` service in [docker-compose.yml](docker-compose.yml) runs a
-named Cloudflare tunnel. The tunnel proxies a public hostname to port `8000` on
-the `fantasy-bot` container. It reads its config from `~/.cloudflared` on the
-Docker host. The `cloudflared/` folder in this project is a reference copy only.
+The dashboard needs a public hostname. Discord webhooks are outbound and do
+not. Pick the path that matches the machine.
 
-Set up the tunnel once per host:
+**On the VPS.** Do not start the `tunnel` profile. [compose.vps.yml](compose.vps.yml)
+joins the shared `edge` network. The connector at `/opt/cloudflared` already
+routes `fantasy.ethandbard.com` to this container. That connector also serves
+every other `*.ethandbard.com` project on the box. See `deploy-pipeline`.
 
-1. Install `cloudflared` on the host.
-2. Authenticate `cloudflared` to your Cloudflare account:
+**On another machine, using a hostname under ethandbard.com.** The friend does
+not need a Cloudflare account. You create a **dedicated** named tunnel in your
+account and hand them two files. Do not give them the VPS tunnel JSON. That
+file authenticates as the shared edge, which can route every hostname on it.
 
-   ```bash
-   cloudflared tunnel login
-   ```
-
-3. Create the tunnel:
-
-   ```bash
-   cloudflared tunnel create fantasy-bot
-   ```
-
-4. Route a hostname to the tunnel:
+1. On a machine logged into your Cloudflare account, create a tunnel and DNS
+   record:
 
    ```bash
-   cloudflared tunnel route dns fantasy-bot fantasy.yourdomain.com
+   cloudflared tunnel create ff-alex
+   cloudflared tunnel route dns ff-alex alex-fantasy.ethandbard.com
    ```
 
-5. Write `~/.cloudflared/config.yml` on the host, using the tunnel ID from
-   step 3:
+2. Copy the new `<uuid>.json` and a `config.yml` into the friend's
+   `tunnel/` directory. Start from [tunnel/config.yml.example](tunnel/config.yml.example).
+   Ingress must target `http://fantasy-bot:8000`.
 
-   ```yaml
-   tunnel: <tunnel-id>
-   credentials-file: /etc/cloudflared/<tunnel-id>.json
-   ingress:
-     - hostname: fantasy.yourdomain.com
-       service: http://fantasy-bot:8000
-     - service: http_status:404
-   ```
+3. In their `config.env`, set `DASHBOARD_URL` to `https://alex-fantasy.ethandbard.com`.
+   Fill in their `LEAGUE_ID`, `DISCORD_WEBHOOK_URL`, and `DISCORD_BOT_TOKEN`.
 
-6. In `docker-compose.yml`, set `DASHBOARD_URL` to the hostname from step 4.
-7. Start the stack:
+4. Start the stack with the sidecar:
 
    ```bash
-   docker compose up -d
+   docker compose --profile tunnel up -d --build
    ```
 
-Tunnel credentials belong to the tunnel, not to the machine. To move the stack
-to another host, copy `~/.cloudflared/config.yml` and the matching
-`<tunnel-id>.json` file across. Create a second tunnel only when you want to
-repoint DNS to a new one.
+One named tunnel cannot serve origins on two machines. Two connectors that
+share a tunnel UUID load-balance, so visitors hit whichever answers first.
+A friend's copy therefore gets its own tunnel, even when the hostname is
+still under ethandbard.com.
 
-Run the tunnel from one host at a time. The `fantasy-bot` container also runs
-the scheduler, so two running copies post every report twice.
+To move one instance to a new host, copy that instance's `tunnel/` files and
+its `config.env`. Stop the old copy first so two schedulers do not post.
 
-To test without a Cloudflare account or a domain, run a quick tunnel. It prints
-a random `trycloudflare.com` URL that changes on every restart:
+To test without creating a hostname, run a quick tunnel. It prints a random
+`trycloudflare.com` URL that changes on every restart:
 
 ```bash
 cloudflared tunnel --url http://localhost:8000
@@ -280,12 +271,19 @@ cloudflared tunnel --url http://localhost:8000
 
 ## Deploy to the VPS
 
-The VPS is the live deployment. It serves the public dashboard and runs the
-scheduler that posts to Discord. Local runs never touch it: there is no shared
-state, and nothing syncs on its own.
+The VPS is one place this container can run. It serves the public dashboard
+and runs the scheduler that posts to Discord. Local runs never touch it:
+there is no shared state, and nothing syncs on its own.
+
+On the VPS this project is an app on the shared `edge` network, not the owner
+of the tunnel. `/opt/fantasy-football/.env` sets
+`COMPOSE_FILE=docker-compose.yml:compose.vps.yml` so Compose joins `edge` and
+publishes no host port. The connector in `/opt/cloudflared` routes
+`fantasy.ethandbard.com` by container name.
 
 Deployment is a file copy over SSH followed by a rebuild. The repository is
-not cloned on the VPS, so `git push` deploys nothing.
+not cloned on the VPS, so `git push` deploys nothing. `deploy-pipeline`
+documents the shared tunnel and the deploy script.
 
 The steps use these values:
 
@@ -295,11 +293,10 @@ The steps use these values:
 | SSH key | `~/.ssh/hetzner_fantasy` |
 | Project directory | `/opt/fantasy-football` on the VPS |
 | Secrets | `config.env` in this repo, gitignored |
-| Tunnel credentials | `~/.cloudflared` on the VPS |
+| Shared tunnel | `/root/.cloudflared` and `/opt/cloudflared` on the VPS |
 
-Run the VPS stack from one host at a time. If a local copy is up, stop it with
-`docker compose down` first. Two schedulers post every report twice, and two
-tunnel connectors split traffic for one hostname.
+Run one copy of a given `config.env` at a time. A second copy with the same
+webhook posts every report twice.
 
 ### Update a running deployment
 
@@ -350,7 +347,8 @@ on it.
    ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'md5sum /opt/fantasy-football/config.env'
    ```
 
-6. Back on the VPS, rebuild and start:
+6. Back on the VPS, rebuild and start. `COMPOSE_FILE` in `.env` already
+   includes [compose.vps.yml](compose.vps.yml):
 
    ```bash
    docker compose up -d --build
@@ -363,10 +361,12 @@ migration command exists to run.
 
 Check each of these after a deploy:
 
-1. Confirm both containers are up and the bot reports healthy:
+1. Confirm `fantasy-football-bot` is up. The tunnel is the shared
+   `cloudflared` container, not part of this stack:
 
    ```bash
    docker compose ps
+   docker ps --filter name=cloudflared
    ```
 
 2. Check the log for failures:
@@ -427,8 +427,9 @@ Follow these steps only for a host that has never run the stack.
    This is the one time you copy `config.env`, since the new host has no
    credentials yet.
 
-5. Set up the tunnel on the VPS, so `~/.cloudflared` exists there. See
-   [Publish the dashboard](#publish-the-dashboard-with-cloudflare-tunnel).
+5. Confirm the shared `edge` network and `/opt/cloudflared` stack are running.
+   This project does not start its own connector on the VPS. See
+   `deploy-pipeline`.
 6. Create `data/`, then give it to the container's non-root user:
 
    ```bash
@@ -489,7 +490,8 @@ next run, so `backfill_season.py` is only needed for prior seasons.
 | `tests/` | Tests for `web/stats.py`. Run with `pytest`. |
 | `dev/` | Maintenance scripts. Copied into the image, so `docker compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
-| `cloudflared/config.yml` | Reference copy of the tunnel config. The `cloudflared` container reads `~/.cloudflared` on the host instead. |
+| `compose.vps.yml` | VPS override: join `edge`, publish no host ports. |
+| `tunnel/config.yml.example` | Template for an off-VPS dedicated tunnel. |
 | `docs/` | Overview, slide deck, and the Worker for https://fantasy-docs.ethandbard.com/. |
 | `config.env` | Secrets and runtime settings. Excluded by [.gitignore](.gitignore). |
 
@@ -524,10 +526,15 @@ open database file`.** Docker created the `data/` bind mount as root, but the
 container runs as uid `1000`. Run `chown -R 1000:1000 data` on the host, then
 restart the container.
 
-**Cloudflare Tunnel returns a 502.** Either `cloudflared` connected before
-`fantasy-bot` finished starting, or `fantasy-bot` crashed. Check
-`docker compose logs fantasy-bot` for the SQLite permission error. The tunnel
-retries once the app listens.
+**Cloudflare Tunnel returns a 502.** On the VPS, the shared connector cannot
+reach this container. Confirm `fantasy-football-bot` is on the `edge` network
+and that `/root/.cloudflared/config.yml` names that container. Off the VPS,
+check `docker compose --profile tunnel logs cloudflared`. The tunnel retries
+once the app listens.
+
+**A friend's dashboard hijacks `fantasy.ethandbard.com`.** Their `tunnel/`
+files are the VPS shared-tunnel credentials. Stop their `tunnel` profile and
+issue them a dedicated tunnel instead.
 
 **`docker-compose: command not found` on the VPS.** Current installs ship
 Compose as a Docker plugin. Run `docker compose` as two words.

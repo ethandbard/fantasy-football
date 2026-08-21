@@ -4,6 +4,10 @@ config.env
 WEBHOOK_BACKUP.md
 *.secrets.md
 
+# Per-instance tunnel credentials. Keep config.yml.example.
+tunnel/config.yml
+tunnel/*.json
+
 # Runtime state (recreated by the container)
 data/
 logs/

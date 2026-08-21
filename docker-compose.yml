@@ -6,32 +6,32 @@ services:
     container_name: fantasy-football-bot
     restart: unless-stopped
 
-    # Secrets/config live in config.env (kept out of the image itself)
     env_file:
       - config.env
-    environment:
-      - DASHBOARD_URL=https://fantasy.ethandbard.com
 
+    # Published for local and off-VPS hosts. compose.vps.yml clears this so
+    # the shared tunnel is the only way in on the VPS.
     ports:
-      - "8000:8000"
+      - "${DASHBOARD_PORT:-8000}:8000"
 
     volumes:
-      # Persists the SQLite snapshot DB backing the dashboard
       - ./data:/app/data
 
-    # Nothing writes to /app/logs; bound Docker's own stderr capture instead of an empty bind mount
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
+  # Off-VPS public URL only. Never start this profile with the VPS tunnel
+  # credentials: two connectors on one named tunnel split traffic.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: fantasy-football-tunnel
     restart: unless-stopped
+    profiles: ["tunnel"]
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
-      - ~/.cloudflared:/etc/cloudflared:ro
+      - ./tunnel:/etc/cloudflared:ro
     depends_on:
       - fantasy-bot

@@ -29,10 +29,9 @@ echo "✅ Docker is installed"
 echo "📋 Reading configuration from config.env"
 echo "🚀 Starting Fantasy Football Bot..."
 
-# Build and start the container
-# Only fantasy-bot. A bare "up" also starts cloudflared, which claims the
-# same named tunnel the VPS runs.
-$COMPOSE up -d --build fantasy-bot
+# Bare `up` starts fantasy-bot only. The cloudflared sidecar is behind the
+# `tunnel` profile and stays down unless that profile is requested.
+$COMPOSE up -d --build
 
 if [ $? -eq 0 ]; then
     echo ""

@@ -1,0 +1,19 @@
+# VPS-only override. /opt/fantasy-football/.env sets
+# COMPOSE_FILE=docker-compose.yml:compose.vps.yml
+# so every `docker compose` command on the server picks this up.
+#
+# Joins the shared edge network and unpublishes host ports. The connector
+# in /opt/cloudflared routes by container_name, so keep
+# fantasy-football-bot stable.
+
+services:
+  fantasy-bot:
+    ports: !reset []
+    networks:
+      edge:
+        aliases:
+          - fantasy-bot
+
+networks:
+  edge:
+    external: true
