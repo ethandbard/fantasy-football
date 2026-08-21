@@ -1,0 +1,7 @@
+{
+  // Dashboard-generated Worker name. Keep this so deploys hit the
+  // Worker already bound to fantasy-docs.ethandbard.com.
+  "name": "falling-smoke-c7fb",
+  "main": "./proxy-worker.js",
+  "compatibility_date": "2026-08-21"
+}

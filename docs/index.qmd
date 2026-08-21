@@ -375,10 +375,10 @@ Render:
 quarto render docs
 ```
 
-Output lands in `docs/_site`. That folder is static HTML, so GitHub Pages and Cloudflare Pages can both serve it.
+Output lands in `docs/_site`. That folder is static HTML.
 
-**GitHub Pages.** Push to `main`. The workflow in `.github/workflows/quarto-publish.yml` renders the site and deploys it to the `gh-pages` branch. In the GitHub repo, set **Settings → Pages** to deploy from `gh-pages`. The site URL is `https://ethandbard.github.io/fantasy-football/`.
+**Public site.** Push to `main`. The workflow in `.github/workflows/quarto-publish.yml` renders the site and deploys it to the `gh-pages` branch. That updates https://ethandbard.github.io/fantasy-football/ and https://fantasy-docs.ethandbard.com/.
 
-**Cloudflare Pages.** Create a Pages project pointed at the same `gh-pages` branch. Leave the build command empty and set the output directory to `/`. Cloudflare then serves the HTML the Action already built. You can attach a custom hostname in the Pages project.
+In the GitHub repo, set **Settings → Pages** to deploy from `gh-pages`. A Cloudflare Worker on the custom hostname fetches that GitHub Pages copy.
 
 Do not run a second copy of the bot stack on another host at the same time. Two schedulers post every report twice. The docs site has no such limit: it is static files only.

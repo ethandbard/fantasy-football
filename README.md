@@ -561,7 +561,7 @@ Render:
 quarto render docs
 ```
 
-A GitHub Action in [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) deploys `docs/_site` to the `gh-pages` branch. Point GitHub Pages at that branch. Cloudflare Pages can serve the same branch with an empty build command.
+The public site is https://fantasy-docs.ethandbard.com/. A GitHub Action in [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) deploys `docs/_site` to the `gh-pages` branch. That updates GitHub Pages and the custom hostname.
 
 ## Credits
 

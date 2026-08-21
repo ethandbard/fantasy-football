@@ -10,7 +10,7 @@ project:
 website:
   title: "Fantasy football bot"
   description: "A Discord bot that posts ESPN fantasy football updates, answers slash commands, and serves a web dashboard of league history."
-  site-url: https://ethandbard.github.io/fantasy-football
+  site-url: https://fantasy-docs.ethandbard.com
   repo-url: https://github.com/ethandbard/fantasy-football
   repo-subdir: docs
   repo-branch: main
