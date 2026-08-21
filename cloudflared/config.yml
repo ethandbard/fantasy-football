@@ -1,7 +1,14 @@
-tunnel: 907697ec-4c60-4b28-9c0e-47a0689de0d1
-credentials-file: /etc/cloudflared/907697ec-4c60-4b28-9c0e-47a0689de0d1.json
+# Reference copy. The cloudflared container mounts ~/.cloudflared from the
+# host and reads that config instead, so editing this file changes nothing at
+# runtime -- it is here to show the shape of a working tunnel config.
+#
+# Replace the placeholders with your own tunnel's UUID and hostname. `cloudflared
+# tunnel create <name>` prints the UUID and writes the matching credentials
+# file, which holds the tunnel secret and must never be committed.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: /etc/cloudflared/00000000-0000-0000-0000-000000000000.json
 
 ingress:
-  - hostname: fantasy.ethandbard.com
+  - hostname: fantasy.example.com
     service: http://fantasy-bot:8000
   - service: http_status:404
