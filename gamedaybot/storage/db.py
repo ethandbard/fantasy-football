@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS weekly_scores (
     opponent_id INTEGER,
     opponent_name TEXT,
     is_home INTEGER NOT NULL,
+    collected_at TEXT,
     PRIMARY KEY (year, week, team_id)
 );
 
@@ -61,6 +62,23 @@ def init_db():
         # stored in the file header, so this sticks for every later connection.
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        _add_missing_columns(conn)
+
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS leaves an
+# existing table exactly as it found it, so a database created before a column
+# existed needs the ALTER as well as the updated schema above.
+_ADDED_COLUMNS = {
+    "weekly_scores": {"collected_at": "TEXT"},
+}
+
+
+def _add_missing_columns(conn):
+    for table, columns in _ADDED_COLUMNS.items():
+        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def upsert_weekly_scores(rows):
@@ -72,10 +90,10 @@ def upsert_weekly_scores(rows):
             """
             INSERT OR REPLACE INTO weekly_scores
                 (year, week, team_id, team_name, score, projected_score,
-                 opponent_id, opponent_name, is_home)
+                 opponent_id, opponent_name, is_home, collected_at)
             VALUES
                 (:year, :week, :team_id, :team_name, :score, :projected_score,
-                 :opponent_id, :opponent_name, :is_home)
+                 :opponent_id, :opponent_name, :is_home, datetime('now'))
             """,
             rows,
         )
@@ -152,6 +170,10 @@ def fingerprint():
     INSERT OR REPLACE: a corrected score overwrites a row without changing
     the row count, and a count-only fingerprint would miss it.
 
+    MAX(collected_at) is in here for the case sums still miss: a collection
+    that rewrites the same values changes no count and no sum, but the
+    dashboard shows how long ago the data was written, and that has moved.
+
     Polling the file's mtime instead would be unreliable -- WAL writes land
     in the -wal sidecar and leave the main .db file untouched until a
     checkpoint, so mtime can sit still while data changes underneath.
@@ -161,7 +183,23 @@ def fingerprint():
             """
             SELECT (SELECT COUNT(*) FROM weekly_scores),
                    (SELECT COALESCE(SUM(score), 0) FROM weekly_scores),
+                   (SELECT COALESCE(MAX(collected_at), '') FROM weekly_scores),
                    (SELECT COUNT(*) FROM standings_snapshot),
                    (SELECT COALESCE(SUM(wins), 0) FROM standings_snapshot)
             """
         ).fetchone())
+
+
+def last_collected():
+    """
+    When the newest score row was written, as a UTC "YYYY-MM-DD HH:MM:SS"
+    string, or None.
+
+    Returns None for a database written before collected_at existed, which
+    the dashboard treats as "unknown" rather than guessing a time.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(collected_at) AS collected_at FROM weekly_scores"
+        ).fetchone()
+        return row["collected_at"] if row else None
