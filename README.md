@@ -285,13 +285,13 @@ Deployment is a file copy over SSH followed by a rebuild. The repository is
 not cloned on the VPS, so `git push` deploys nothing. `deploy-pipeline`
 documents the shared tunnel and the deploy script.
 
-The steps use these values:
+Connection details (SSH host, key, tunnel UUID) live in the private
+`deploy-pipeline` skill. This README does not repeat them.
 
 | Value | Where it lives |
 | --- | --- |
-| Host | `65.109.238.176` |
-| SSH key | `~/.ssh/hetzner_fantasy` |
 | Project directory | `/opt/fantasy-football` on the VPS |
+| Public URL | `fantasy.ethandbard.com` |
 | Secrets | `config.env` in this repo, gitignored |
 | Shared tunnel | `/root/.cloudflared` and `/opt/cloudflared` on the VPS |
 
@@ -303,10 +303,11 @@ webhook posts every report twice.
 This is the common case: the VPS already runs, and you want your latest code
 on it.
 
-1. Open a shell on the VPS:
+1. Open a shell on the VPS with the key named in `deploy-pipeline`
+   (`~/.ssh/hetzner_vps`):
 
    ```bash
-   ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176
+   ssh -i ~/.ssh/hetzner_vps root@<vps-host>
    ```
 
 2. Back up the database, then stop the stack:
@@ -330,10 +331,13 @@ on it.
    A copy merges into whatever is already there. Files deleted upstream stay
    behind and get built into the next image.
 
-4. From your machine, in a second terminal, send the new tree:
+4. From your machine, send `HEAD`. Prefer
+   `deploy-pipeline/skill/scripts/deploy.sh fantasy-football fantasy`.
+   A manual copy looks like:
 
    ```bash
-   tar czf - --exclude='__pycache__' --exclude='*.pyc' gamedaybot dev Dockerfile docker-compose.yml requirements.txt .dockerignore | ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'cd /opt/fantasy-football && tar xzf -'
+   git archive HEAD -- gamedaybot dev Dockerfile docker-compose.yml compose.vps.yml requirements.txt .dockerignore \
+     | ssh -i ~/.ssh/hetzner_vps root@<vps-host> 'cd /opt/fantasy-football && tar xf -'
    ```
 
    `dev/` is required. The Dockerfile copies it, and the build fails without
@@ -344,7 +348,7 @@ on it.
 
    ```bash
    md5sum config.env
-   ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'md5sum /opt/fantasy-football/config.env'
+   ssh -i ~/.ssh/hetzner_vps root@<vps-host> 'md5sum /opt/fantasy-football/config.env'
    ```
 
 6. Back on the VPS, rebuild and start. `COMPOSE_FILE` in `.env` already
@@ -546,7 +550,7 @@ move `gamedaybot` aside first:
 
 ```bash
 md5sum gamedaybot/web/app.py
-ssh -i ~/.ssh/hetzner_fantasy root@65.109.238.176 'md5sum /opt/fantasy-football/gamedaybot/web/app.py'
+ssh -i ~/.ssh/hetzner_vps root@<vps-host> 'md5sum /opt/fantasy-football/gamedaybot/web/app.py'
 ```
 
 **Every Discord report arrives twice.** Two copies of `fantasy-bot` are
