@@ -156,27 +156,30 @@ season may not have started yet.
 
 ## Dashboard
 
-The dashboard reads `data/fantasy.db` and offers five tabs:
+The dashboard reads `data/fantasy.db` and offers four destinations:
 
-- **Trend**: weekly score per team, with views for cumulative points, rank by
-  week, and performance against ESPN's projection.
-- **Standings**: records, point differential, current streak, and last-five
-  form, alongside ESPN's official seed.
-- **Spread**: the score distribution per team, with median, floor, ceiling,
-  standard deviation, and coefficient of variation.
-- **Head to head**: every pairing's record, tinted by average margin.
-- **Trophies**: eleven season awards. Selecting one follows that team to the
-  Trend tab with its week marked.
+- **This week**: the front page. Results ordered closest-first, who moved in
+  the standings since the prior week, the week's bests, and every team
+  against its own average. Opens on the latest collected week; nothing to
+  configure.
+- **League**: the standings board — record, streak, last-five form, points
+  for/against, and a sparkline per row, sortable by seed, points, or recent
+  form — plus "the race," rank by week for every team on one chart.
+- **Teams**: one page per team, absorbing what used to be Spread and Head to
+  head. A game log, a range-vs-the-league bar (floor, ceiling, and median
+  next to the league's), and every head-to-head matchup for that team.
+- **Records**: the record book. Twelve season awards, each a row with its
+  scoreline and week, linking straight to the team it belongs to.
 
-A control bar above the tabs sets which weeks are in play. It opens on the
-regular season, and the boundary is derived from the data rather than
-configured: a team's wins plus losses plus ties is how many games it has
-played, so a 13- or 15-week league needs no setting changed. Presets jump to
-the regular season, the playoffs, or the full season.
+League and Records carry a scope segment — Regular, Playoffs, or Full — that
+sets which weeks are in play. The regular-season boundary is derived from the
+data rather than configured: a team's wins plus losses plus ties is how many
+games it has played, so a 13- or 15-week league needs no setting changed.
 
-Selecting a team — from a standings row or a trophy — follows it across every
-tab: other lines mute, and a panel below the stat tiles shows that team's game
-log. **Reset** returns to the league view.
+Selecting a team — a standings row, a matchup, a record-book row, or the team
+picker on the Teams page — takes you to that team's own page rather than
+filtering a shared chart. There is no reset button: each destination shows
+either the whole league or one team, never a muted version of either.
 
 A dropdown in the masthead selects the season. Only seasons present in the
 database appear there, so a new season stays empty until the first Tuesday

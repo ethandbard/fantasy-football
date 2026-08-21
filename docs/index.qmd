@@ -217,45 +217,39 @@ Slash commands need `DISCORD_BOT_TOKEN`. If ESPN returns an error, the bot expla
 
 ## Dashboard
 
-The dashboard reads `data/fantasy.db`. It does not call ESPN on its own. A control bar sets which weeks are in play. It opens on the regular season. The regular-season boundary comes from the data. A team's wins plus losses plus ties is how many games it has played.
+The dashboard reads `data/fantasy.db`. It does not call ESPN on its own. It opens on This week, the latest collected week for the season. League and Records carry a scope segment — Regular, Playoffs, or Full — that sets which weeks are in play. The regular-season boundary comes from the data. A team's wins plus losses plus ties is how many games it has played.
 
 :::: {.tabs}
 
 ::: {.tab}
-### Trend
+### This week
 
-Weekly score per team. Views cover cumulative points, rank by week, and performance against ESPN's projection.
+Results ordered closest-first, who moved in the standings, the week's bests, and every team against its own average. Nothing to configure.
 :::
 
 ::: {.tab}
-### Standings
+### League
 
-Records, point differential, current streak, and last-five form, next to ESPN's official seed.
+The standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it, "the race": rank by week for every team on one chart.
 :::
 
 ::: {.tab}
-### Spread
+### Teams
 
-Score distribution per team, with median, floor, ceiling, standard deviation, and coefficient of variation.
+One page per team: a game log, range vs the league (floor, ceiling, and median next to the league's), and every head-to-head matchup for that team, sorted by average margin.
 :::
 
 ::: {.tab}
-### Head to head
+### Records
 
-Every pairing's record, tinted by average margin.
-:::
-
-::: {.tab}
-### Trophies
-
-Eleven season awards. Selecting one follows that team to Trend with its week marked.
+The record book. Twelve season awards, each a row with its scoreline and week, that links straight to the team it belongs to.
 :::
 
 ::::
 
-Selecting a team — from a standings row or a trophy — follows it across every tab. Other lines mute. A game-log panel shows that team's weeks. **Reset** returns to the league view.
+Selecting a team — a standings row, a matchup, a record-book row, or the team picker itself — takes you to that team's own page rather than filtering a shared chart. The dashboard has no reset button because there is nothing left to un-filter: each destination shows the whole league, or one team, never a muted version of either.
 
-A dropdown in the masthead selects the season. Only seasons in the database appear there. The page polls the database every 30 seconds, so a new snapshot reaches an open tab on its own.
+A dropdown in the masthead selects the season. Only seasons in the database appear there. The page polls the database every 30 seconds, so a new snapshot reaches an open tab on its own, advancing This week's default view along with it.
 
 Reach the dashboard at `http://localhost:8000` locally, or at the Cloudflare Tunnel hostname.
 

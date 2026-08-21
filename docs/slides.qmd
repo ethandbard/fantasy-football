@@ -253,12 +253,12 @@ Commands read ESPN live. The dashboard reads the saved season. If they disagree 
 
 ## The dashboard
 
-A dark page of the whole season, not only this week.
+A dark page of the whole season, opening on what just happened.
 
-- Filter weeks: regular season, playoffs, or a custom range
+- Lands on This week: results, movers, and everyone against their own average
+- Scope League and Records: regular season, playoffs, or the full season
 - Pick a season if more than one is saved
-- Click a team. Every chart follows that team
-- Click a trophy. You jump to that week on the trend chart
+- Click a team anywhere. You land on its own page, every chart scoped to it
 
 The page refreshes itself about every 30 seconds.
 
@@ -266,64 +266,56 @@ The page refreshes itself about every 30 seconds.
 Empty dashboard means no snapshot has run yet. A completed past season can be loaded with the backfill script. League members never need that command; it is a maintainer step.
 :::
 
-## Five views
+## Four destinations
 
 ::: {.tabs}
 ::: {.tab}
 ::: {.tab-title}
-Trend
+This week
 :::
 
-How each team scored, week by week. Cumulative, rank, or versus projection.
-:::
-
-::: {.tab}
-::: {.tab-title}
-Standings
-:::
-
-Wins, point differential, streak, and recent form.
+Scores, movers, and week bests. The front page, no configuring required.
 :::
 
 ::: {.tab}
 ::: {.tab-title}
-Spread
+League
 :::
 
-Who is steady and who swings. Median, floor, ceiling.
-:::
-
-::: {.tab}
-::: {.tab-title}
-Head to head
-:::
-
-Every pairing, tinted by typical margin.
+A readable standings board, plus the one chart with ten lines: the race.
 :::
 
 ::: {.tab}
 ::: {.tab-title}
-Trophies
+Teams
 :::
 
-Eleven season awards. Click one to jump to that week.
+One page per team: game log, range vs the league, and every head-to-head.
+:::
+
+::: {.tab}
+::: {.tab-title}
+Records
+:::
+
+The record book. Every row is a click into the team it belongs to.
 :::
 :::
 
 ::: {.notes}
-Trophies is the fifth tab. It did not fit the four-up grid. Cover it on the next slide. Eleven awards: highest and lowest score, closest game, biggest blowout, luckiest win, unluckiest loss, streak, points against, best and worst versus projection, biggest week-to-week swing.
+Five tabs became four. Trend's rank view moved into League as "the race." Spread and head to head moved into Teams, scoped to one team instead of ten at once. Trophies became Records, a ledger instead of a card grid.
 :::
 
-## Season trophies
+## The record book
 
-Eleven awards, not a single champion graphic.
+Twelve awards, not a single champion graphic.
 
 Highest score. Closest game. Biggest blowout. Luckiest win.
 
-Click an award. The dashboard focuses that team and marks the week.
+Click a row. You land on that team's page, ready to dig further.
 
 ::: {.notes}
-This is the feature people remember. The old version showed the award and stopped. Now the card is a way into the chart.
+This is the feature people remember. The old version showed the award and stopped. Now every row is a way into a team's own page.
 :::
 
 ## What you do
