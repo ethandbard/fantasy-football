@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   fantasy-bot:
     build:
@@ -7,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: fantasy-football-bot
     restart: unless-stopped
-    
+
     # Secrets/config live in config.env (kept out of the image itself)
     env_file:
       - config.env
@@ -18,26 +16,19 @@ services:
       - "8000:8000"
 
     volumes:
-      # Optional: Mount logs directory for debugging
-      - ./logs:/app/logs
       # Persists the SQLite snapshot DB backing the dashboard
       - ./data:/app/data
 
-    # Auto-restart policy
-    deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      # #Used for private leagues. See Private Leagues Section for documentation
-      # ESPN_S2:
-      # #Used for private leagues. See Private Leagues Section for documentation
-      # SWID:
+    # Nothing writes to /app/logs; bound Docker's own stderr capture instead of an empty bind mount
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: fantasy-bot-tunnel
+    container_name: fantasy-football-tunnel
     restart: unless-stopped
     command: tunnel --config /etc/cloudflared/config.yml run
     volumes:
