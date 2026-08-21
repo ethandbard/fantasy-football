@@ -6,25 +6,27 @@
  * our palette, then styles the pieces bslib does not cover.
  *
  * Colors are duplicated in web/theme.py because Plotly renders to canvas and
- * cannot read CSS variables. Change both together. */
+ * cannot read CSS variables. Change both together.
+ *
+ * One ground, hairline rules for depth -- no cards, no --surface. --raised
+ * is used for hover and the season select only. */
 
 :root {
-  --ground:   #0E1116;
-  --surface:  #161A21;
-  --raised:   #1E242D;
-  --line:     #2A313B;
-  --ink:      #F2F5F8;
-  --ink-dim:  #98A4B3;
-  --ink-mute: #5E6A78;
-  --accent:   #F0631E;
-  --win:      #4CB782;
-  --loss:     #E4574C;
+  --ground:      #0E1116;
+  --raised:      #14181E;
+  --line:        #1E242D;
+  --line-strong: #2A313B;
+  --ink:         #F2F5F8;
+  --ink-dim:     #98A4B3;
+  --ink-mute:    #5E6A78;
+  --accent:      #F0631E;
+  --win:         #4CB782;
+  --loss:        #E4574C;
 
   --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --radius: 10px;
-  --gutter: 1rem;
+  --gutter: 32px;
 }
 
 /* Hand our palette to every stock Bootstrap and bslib component. */
@@ -34,14 +36,14 @@
   --bs-body-color: var(--ink-dim);
   --bs-emphasis-color: var(--ink);
   --bs-secondary-color: var(--ink-mute);
-  --bs-border-color: var(--line);
-  --bs-card-bg: var(--surface);
+  --bs-border-color: var(--line-strong);
+  --bs-card-bg: var(--ground);
   --bs-card-border-color: var(--line);
   --bs-primary: var(--accent);
   --bs-link-color: var(--accent);
   --bs-link-hover-color: var(--accent);
   --bs-body-font-family: var(--font-body);
-  --bs-border-radius: var(--radius);
+  --bs-border-radius: 6px;
 }
 
 /* Inputs given no label still emit an empty one, which reserves a line of
@@ -58,542 +60,1028 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* The page scrolls. The previous build was a strictly fillable layout, which
- * clipped the chart card on any viewport under about 1500x900 with no
- * scrollbar to recover it. */
 html, body { height: auto; overflow-y: auto; }
 
 .bslib-page-fill, .html-fill-container { overflow: visible; }
 
-main, .bslib-page-fill > .container-fluid { max-width: 1500px; margin: 0 auto; }
+main, .bslib-page-fill > .container-fluid { max-width: 1600px; margin: 0 auto; padding: 0; }
 
-/* ---------- masthead ---------- */
+button { font-family: inherit; }
 
-.masthead {
+/* ---------- top bar ---------- */
+
+.topbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 1.4rem;
-  padding: 1.5rem var(--gutter) 1rem;
+  align-items: center;
+  gap: 28px;
+  height: 60px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--line);
 }
 
-.masthead h1 {
-  font-size: clamp(1.15rem, 2.4vw, 1.6rem);
+.topbar .mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.topbar .mark-block {
+  width: 10px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.topbar .wordmark {
+  font-family: var(--font-body);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  font-stretch: 118%;
+  font-size: 15.5px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.topbar .nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topbar .nav-item {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-mute);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 20px 12px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.topbar .nav-item:hover { color: var(--ink-dim); }
+
+.topbar .nav-item.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.topbar .spacer { flex: 1 1 auto; }
+
+.topbar .season-pick .shiny-input-container,
+.topbar .season-pick .form-group { width: auto; max-width: none; margin: 0; }
+
+.topbar .season-pick select {
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  padding: 5px 26px 5px 10px;
+  display: inline-block;
+  width: auto;
+}
+
+.topbar .synced {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.topbar .synced::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--win);
+}
+
+/* ---------- week rail ---------- */
+
+.weekrail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.weekrail .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
+.weekrail .week-btn {
+  flex: 0 0 auto;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.weekrail .week-btn:hover { color: var(--ink-dim); background: var(--raised); }
+
+.weekrail .week-btn.active {
+  background: var(--raised);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* ---------- generic screen scaffolding ---------- */
+
+.screen { padding: 30px var(--gutter) 60px; }
+
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.screen-title {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.04em;
   color: var(--ink);
   margin: 0;
 }
 
-.masthead .season {
+.screen-title.wk { font-size: 46px; }
+.screen-title.board { font-size: 38px; }
+
+.stamp {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.headline {
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--ink);
+  max-width: 46ch;
+  text-wrap: pretty;
+  margin: 14px 0 26px;
+}
+
+.screen-note {
+  font-size: 16px;
+  color: var(--ink-dim);
+  max-width: 62ch;
+  margin: 10px 0 26px;
+}
+
+.screen-note b { color: var(--ink); font-weight: 600; }
+
+/* ---------- segmented controls (scope / sort) ---------- */
+
+.controlrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.controlrow .left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.range-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.segment {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--ground);
+}
+
+.segment .shiny-input-container,
+.segment .form-group { width: auto; max-width: none; margin: 0; }
+
+.segment .shiny-options-group {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.segment .radio,
+.segment .form-check { margin: 0; padding: 0; min-height: 0; }
+
+.segment input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.segment label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segment label:hover { color: var(--ink-dim); }
+
+.segment label:has(input[type="radio"]:checked) {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.segment label:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- This week: body grid ---------- */
+
+.week-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 40px;
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 6px;
+}
+
+.results { margin-bottom: 30px; }
+
+.scorebug {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 20px 96px minmax(0, 1fr) 104px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  gap: 6px;
+}
+
+.scorebug:hover { background: var(--raised); }
+.scorebug:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.scorebug .side { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.scorebug .side.left { align-items: flex-end; text-align: right; }
+.scorebug .side.right { align-items: flex-start; text-align: left; }
+
+.scorebug .name {
+  font-size: 16.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.scorebug .side.win .name { color: var(--ink); }
+.scorebug .side.lose .name { color: var(--ink-mute); }
+
+.scorebug .score {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 28px;
+  text-align: center;
+}
+
+.scorebug .side.win .score { color: var(--ink); }
+.scorebug .side.lose .score { color: var(--ink-mute); }
+
+.scorebug .delta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  opacity: 0.75;
+}
+
+.scorebug .delta.over { color: var(--win); }
+.scorebug .delta.under { color: var(--loss); }
+
+.scorebug .dash { text-align: center; color: var(--line-strong); font-size: 20px; }
+
+.scorebug .margin {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  text-align: right;
+}
+
+.scorebug .margin.nailbiter { color: var(--accent); }
+
+/* ---------- against their own average ---------- */
+
+.avgrows { display: flex; flex-direction: column; }
+
+.avgrow {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.avgrow .team {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.avgrow .track {
+  position: relative;
+  height: 8px;
+}
+
+.avgrow .track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.avgrow .bar {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.avgrow .bar.over { left: 50%; background: var(--win); }
+.avgrow .bar.under { right: 50%; background: var(--loss); }
+
+.avgrow .value {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.avgrow .value.over { color: var(--win); }
+.avgrow .value.under { color: var(--loss); }
+
+/* ---------- right rail: movers / week bests ---------- */
+
+.rail-block { margin-bottom: 30px; }
+
+.moverrow {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.moverrow:hover { background: var(--raised); }
+
+.moverrow .rank {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.moverrow .name {
+  font-size: 13.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.moverrow .move {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.moverrow .move.up { color: var(--win); }
+.moverrow .move.down { color: var(--loss); }
+.moverrow .move.mute { color: var(--ink-mute); }
+
+.bestrow {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bestrow:hover { background: var(--raised); }
+
+.bestrow .label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: block;
+}
+
+.bestrow .team {
+  font-size: 13.5px;
+  color: var(--ink);
+  display: block;
+  margin-top: 2px;
+}
+
+.bestrow .value {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 21px;
+  color: var(--ink);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---------- league: standings board ---------- */
+
+.board-head,
+.board-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 92px 108px 216px 128px;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.board-head .col {
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-mute);
 }
 
-.masthead .live {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  margin-left: auto;
-}
-
-.masthead .live::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(240, 99, 30, 0.55);
-  animation: pulse 2.6s ease-out infinite;
-}
-
-@keyframes pulse {
-  70%  { box-shadow: 0 0 0 7px rgba(240, 99, 30, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(240, 99, 30, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .masthead .live::before { animation: none; }
-}
-
-/* ---------- season picker ---------- */
-
-/* Shiny gives every input container a 300px width of its own, which the
- * select then fills. The picker wants to be as wide as "2025". */
-.season-pick .shiny-input-container,
-.season-pick .form-group {
-  width: auto;
-  max-width: none;
-  margin: 0;
-}
-
-.season-pick select {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--ink-dim);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  padding: 0.25rem 1.8rem 0.25rem 0.5rem;
-  /* .form-select is display:block + width:100%, which stretches the picker
-   * across the masthead. Shrink it to its content instead. */
-  display: inline-block;
-  width: auto;
-}
-
-/* A select holding one season can never change anything -- it looks like a
- * filter, invites a click and does nothing. Rather than branch the server
- * code, let the markup answer for itself: with a single option it renders
- * as the plain label it actually is, and grows back into a real control the
- * moment a second season is collected. */
-.season-pick select:has(option:only-child) {
-  appearance: none;
-  pointer-events: none;
-  background: none;
-  border-color: transparent;
-  padding-left: 0;
-  color: var(--ink-mute);
-}
-
-/* ---------- control bar ---------- */
-
-.controlbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1.1rem;
-  padding: 0.6rem var(--gutter) 0.9rem;
+.board-row {
+  padding: 13px 0;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 0.9rem;
+  cursor: pointer;
 }
 
-.controlbar .presets { display: flex; gap: 0.35rem; }
+.board-row:hover { background: var(--raised); }
 
-.controlbar .presets a {
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  text-decoration: none;
-  padding: 0.3rem 0.55rem;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  white-space: nowrap;
-}
-
-.controlbar .presets a:hover {
-  color: var(--ink);
-  border-color: var(--ink-mute);
-}
-
-/* The slider carries the whole week range, so give it the leftover width
- * rather than Shiny's default 300px box. */
-.controlbar .shiny-input-container {
-  flex: 1 1 14rem;
-  width: auto;
-  max-width: 26rem;
-  margin: 0;
-}
-
-.controlbar .irs { font-family: var(--font-mono); }
-.controlbar .irs--shiny .irs-bar,
-.controlbar .irs--shiny .irs-from,
-.controlbar .irs--shiny .irs-to,
-.controlbar .irs--shiny .irs-single { background: var(--accent); border-color: var(--accent); }
-.controlbar .irs--shiny .irs-line { background: var(--raised); border-color: var(--line); }
-.controlbar .irs--shiny .irs-handle > i:first-child { background: var(--ink); }
-.controlbar .irs--shiny .irs-min,
-.controlbar .irs--shiny .irs-max { background: transparent; color: var(--ink-mute); }
-
-.range-label,
-.chip {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-  white-space: nowrap;
-}
-
-/* The focused team, named in the bar so a muted chart is never a mystery. */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px solid var(--accent);
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 0.22rem 0.6rem;
-  text-transform: none;
-  letter-spacing: 0.02em;
-}
-
-.chip::before {
-  content: "";
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.chip-empty {
-  border-color: var(--line);
-  color: var(--ink-mute);
-}
-
-.chip-empty::before { background: var(--ink-mute); }
-
-.btn-reset {
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--ink-mute);
-  border-radius: 5px;
-  padding: 0.3rem 0.7rem;
-  margin-left: auto;
-}
-
-.btn-reset:hover { color: var(--ink); border-color: var(--ink-mute); background: var(--raised); }
-
-/* ---------- stat tiles ---------- */
-
-/* A grid rather than a flex row so every tile is exactly as tall as the
- * tallest -- the old value boxes rendered at four different heights and the
- * row stopped reading as a row. */
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.6rem;
-  padding: 0 var(--gutter) 0.9rem;
-}
-
-.tile {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.85rem 0.95rem 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-height: 6.4rem;
-}
-
-.tile .k {
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-
-.tile .v {
-  font-size: clamp(1.35rem, 3.2vw, 2.1rem);
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.025em;
-  color: var(--ink);
-  /* Long team names shrink and balance instead of hard-breaking mid-word:
-   * "First Down Syndrome" used to split as "Syndrom / e". */
-  overflow-wrap: normal;
-  hyphens: auto;
-  text-wrap: balance;
-}
-
-.tile .v.name { font-size: clamp(0.95rem, 1.7vw, 1.2rem); line-height: 1.18; }
-
-.tile .sub {
-  font-size: 0.76rem;
-  color: var(--ink-mute);
-  margin-top: auto;
-  padding-top: 0.35rem;
-}
-
-.tile .spark { display: block; margin-top: auto; padding-top: 0.4rem; opacity: 0.85; }
-
-/* ---------- team drill-down ---------- */
-
-.drill {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  margin: 0 var(--gutter) 1rem;
-  padding: 0.9rem 1rem 0.5rem;
-}
-
-.drill-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1rem;
-}
-
-.drill-head .dt {
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: -0.015em;
-  color: var(--ink);
-}
-
-.drill-head .ds,
-.drill-pills .pill {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--ink-mute);
-}
-
-.drill-head svg { margin-left: auto; }
-
-.drill-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.55rem 0 0.3rem; }
-
-.drill-pills .pill {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.18rem 0.55rem;
-}
-
-.drill-log { overflow-x: auto; margin-top: 0.5rem; }
-
-.drill-log table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-}
-
-.drill-log th {
-  text-align: right;
-  font-size: 0.58rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  padding: 0.3rem 0.5rem;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-.drill-log td {
-  text-align: right;
-  padding: 0.28rem 0.5rem;
-  color: var(--ink-dim);
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-.drill-log th.opp, .drill-log td.opp {
-  text-align: left;
+.board-row .seed {
   font-family: var(--font-body);
-  white-space: normal;
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 21px;
+  color: var(--ink-mute);
 }
 
-.drill-log tbody tr:last-child td { border-bottom: 0; }
-.drill-log .dim { color: var(--ink-mute); }
-.drill-log .res { font-weight: 600; }
-.drill-log .res-w { color: var(--win); }
-.drill-log .res-l { color: var(--loss); }
+.board-row.seed-1 .seed { color: var(--accent); }
 
-/* ---------- trophy cards ---------- */
+.board-row .team-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
-.trophies {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 0.6rem;
+.board-row .colorbar { width: 3px; height: 26px; border-radius: 2px; flex: 0 0 auto; }
+
+.board-row .team-name {
+  font-size: 16.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.trophy {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-  text-align: left;
-  width: 100%;
-  background: var(--ground);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.8rem 0.9rem;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-}
-
-.trophy:hover { border-color: var(--accent); transform: translateY(-1px); }
-.trophy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.trophy .ti { font-size: 1.3rem; line-height: 1.2; }
-
-.trophy .tbody { display: flex; flex-direction: column; gap: 0.14rem; min-width: 0; flex: 1; }
-
-.trophy .tt {
+.streak-chip {
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.streak-chip.w { background: rgba(76, 183, 130, 0.14); color: var(--win); }
+.streak-chip.l { background: rgba(228, 87, 76, 0.13); color: var(--loss); }
+
+.board-row .record {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 21px;
+  color: var(--ink);
+  text-align: right;
+  padding-right: 18px;
+}
+
+.form-pips { display: flex; gap: 3px; }
+
+.form-pips .pip {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.form-pips .pip.w { background: var(--win); }
+.form-pips .pip.l { background: var(--loss); }
+.form-pips .pip.t { background: var(--ink-mute); }
+
+.points-stack { display: flex; gap: 14px; }
+
+.points-stack .pair { display: flex; flex-direction: column; gap: 2px; }
+
+.points-stack .plabel {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.points-stack .pvalue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.points-stack .pvalue.pos { color: var(--win); }
+.points-stack .pvalue.neg { color: var(--loss); }
+
+.board-row .trend { display: flex; justify-content: flex-end; }
+
+.cutoff-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.cutoff-row::before,
+.cutoff-row::after {
+  content: "";
+  flex: 1 1 auto;
+  border-top: 1px dashed var(--accent);
+}
+
+.cutoff-row .label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.race-wrap { padding: 0 var(--gutter) 60px; margin-top: 34px; }
+
+/* ---------- teams: team rail ---------- */
+
+.teamrail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.team-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink-mute);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.team-pill .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+
+.team-pill.active {
+  background: var(--raised);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.team-pill:hover:not(.active) { color: var(--ink-dim); }
+
+/* ---------- teams: profile header ---------- */
+
+.profile {
+  border-top: 3px solid var(--accent);
+  margin-bottom: 24px;
+}
+
+.profile-head {
+  padding: 28px var(--gutter) 24px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.profile-head .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.profile-head .team-name {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.035em;
+  font-size: 44px;
+  color: var(--ink);
+  text-wrap: balance;
+  margin: 0;
+}
+
+.profile-head .record-streak {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 34px;
+  color: var(--ink);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.profile-stats .cell {
+  padding: 20px var(--gutter);
+  border-left: 1px solid var(--line);
+}
+
+.profile-stats .cell:first-child { border-left: 0; padding-left: var(--gutter); }
+
+.profile-stats .k {
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-mute);
-}
-
-.trophy .tm { font-weight: 600; color: var(--ink); line-height: 1.25; }
-
-.trophy .td { font-size: 0.79rem; color: var(--ink-dim); line-height: 1.35; }
-
-.trophy .tw {
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.1em;
-  color: var(--ink-mute);
-  white-space: nowrap;
-}
-
-/* ---------- cards and tabs ---------- */
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.card > .card-header {
-  background: transparent;
-  border-bottom: 1px solid var(--line);
-  padding: 0 0.4rem;
-}
-
-.nav-tabs { border: 0; gap: 0.1rem; }
-
-.nav-tabs .nav-link {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0.7rem 0.85rem;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-
-.nav-tabs .nav-link:hover { color: var(--ink-dim); }
-
-.nav-tabs .nav-link.active {
-  background: transparent;
-  color: var(--ink);
-  border-bottom-color: var(--accent);
-}
-
-/* A takeaway line, not a restatement of the tab label above it. */
-.takeaway {
-  font-size: 0.92rem;
-  color: var(--ink-dim);
-  margin: 0.15rem 0 0.9rem;
-  max-width: 54rem;
-}
-
-.takeaway b { color: var(--ink); font-weight: 600; }
-
-/* ---------- view switcher ---------- */
-
-/* Radio buttons wearing a segmented control's clothes: the underlying input
- * keeps the keyboard and screen-reader behaviour, the label carries the look. */
-.viewswitch { margin: 0 0 0.7rem; }
-
-.viewswitch .shiny-input-container { width: auto; max-width: none; margin: 0; }
-
-.viewswitch .shiny-options-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--ground);
-}
-
-.viewswitch .radio,
-.viewswitch .form-check { margin: 0; padding: 0; min-height: 0; }
-
-.viewswitch input[type="radio"] {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.viewswitch label {
   display: block;
+  margin-bottom: 6px;
+}
+
+.profile-stats .v {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 32px;
+  color: var(--ink);
+  letter-spacing: -0.03em;
+}
+
+.profile-stats .sub {
   font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-size: 11px;
+  color: var(--ink-mute);
+  display: block;
+  margin-top: 4px;
+}
+
+/* ---------- teams: body ---------- */
+
+.team-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 40px;
+  padding: 0 var(--gutter) 60px;
+}
+
+.gamelog-row {
+  display: grid;
+  grid-template-columns: 40px 26px minmax(0, 1fr) 74px 74px 84px;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.gamelog-row .wk {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.gamelog-row .res {
+  font-family: var(--font-mono);
   font-weight: 600;
-  letter-spacing: 0.09em;
+  font-size: 12px;
+}
+
+.gamelog-row .res.win { color: var(--win); }
+.gamelog-row .res.loss { color: var(--loss); }
+.gamelog-row .res.mute { color: var(--ink-mute); }
+
+.gamelog-row .opp {
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gamelog-row .score {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 17px;
+  color: var(--ink);
+  text-align: right;
+}
+
+.gamelog-row .oscore {
+  font-family: var(--font-mono);
+  color: var(--ink-mute);
+  text-align: right;
+  font-size: 12px;
+}
+
+.gamelog-row .delta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.8;
+  text-align: right;
+}
+
+.gamelog-row .delta.over { color: var(--win); }
+.gamelog-row .delta.under { color: var(--loss); }
+
+/* ---------- teams: range vs the league ---------- */
+
+.range-block { margin: 4px 0 24px; }
+
+.range-track {
+  position: relative;
+  height: 44px;
+}
+
+.range-track .line {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.range-track .band {
+  position: absolute;
+  top: 14px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+.range-track .tick {
+  position: absolute;
+  top: 8px;
+  width: 2px;
+  height: 28px;
+}
+
+.range-track .tick.mine { background: var(--ink); }
+.range-track .tick.league { background: var(--ink-mute); }
+
+.range-values {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-top: 6px;
+}
+
+.range-legend {
+  display: flex;
+  gap: 18px;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
+}
+
+.range-legend .item { display: flex; align-items: center; gap: 6px; }
+
+.range-legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+/* ---------- teams: head to head ---------- */
+
+.h2h-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px 96px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.h2h-row .opp {
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.h2h-row .record {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+}
+
+.h2h-row .bar-track {
+  position: relative;
+  height: 10px;
+}
+
+.h2h-row .bar-track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.h2h-row .bar {
+  position: absolute;
+  top: 0;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.h2h-row .bar.pos { left: 50%; background: var(--win); }
+.h2h-row .bar.neg { right: 50%; background: var(--loss); }
+
+/* ---------- records: ledger ---------- */
+
+.ledger-group { margin-bottom: 30px; }
+
+.ledger-heading {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 6px;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 170px 96px;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.ledger-row:hover { background: var(--raised); }
+
+.ledger-row .glyph { font-size: 21px; text-align: center; }
+
+.ledger-row .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.ledger-row .award {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-mute);
-  padding: 0.36rem 0.7rem;
-  border-radius: 5px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.viewswitch label:hover { color: var(--ink-dim); }
-
-.viewswitch input[type="radio"]:checked + span,
-.viewswitch label:has(input[type="radio"]:checked) {
-  background: var(--raised);
+.ledger-row .team {
+  font-size: 16.5px;
+  font-weight: 600;
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Keyboard focus has to stay visible even though the input itself is hidden. */
-.viewswitch label:has(input[type="radio"]:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.ledger-row .scoreline {
+  font-size: 13px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ---------- chart beside table ---------- */
-
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
+.ledger-row .value {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 27px;
+  color: var(--ink);
+  text-align: right;
 }
 
-@media (max-width: 900px) {
-  .split { grid-template-columns: 1fr; }
+.ledger-row .meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
+
+.ledger-row .weekbadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.ledger-row .arrow { color: var(--ink-mute); }
 
 /* ---------- plotly ---------- */
 
-/* A floor, not a fixed height: the figure can grow with the card but never
- * collapses to an unreadable sliver on a short viewport. */
-.chart-wrap { min-height: 440px; }
-.chart-tall { min-height: 520px; }
+.chart-wrap { min-height: 380px; }
 .chart-wrap .js-plotly-plot { width: 100% !important; }
 
 .modebar { background: transparent !important; }
-
 .modebar-btn path { fill: var(--ink-mute) !important; }
 .modebar-btn:hover path { fill: var(--ink) !important; }
 
-/* Fallback for the buttons PLOT_CONFIG removes, for the case where the
- * widget does not accept a client config. Matching on data-title is the only
- * hook Plotly gives; the titles are stable across 5.x and 6.x. */
 .modebar-btn--logo,
 .modebar-btn[data-title="Lasso Select"],
 .modebar-btn[data-title="Box Select"],
@@ -601,46 +1089,12 @@ main, .bslib-page-fill > .container-fluid { max-width: 1500px; margin: 0 auto; }
 .modebar-btn[data-title="Zoom out"],
 .modebar-btn[data-title="Autoscale"] { display: none !important; }
 
-/* ---------- data grid ---------- */
+/* ---------- misc ---------- */
 
-.shiny-data-grid { border: 0; }
-
-.shiny-data-grid table {
-  font-size: 0.85rem;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.shiny-data-grid thead th {
-  background: var(--ground);
-  border-bottom: 1px solid var(--line) !important;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  white-space: nowrap;
-}
-
-.shiny-data-grid tbody td {
-  border-bottom: 1px solid var(--line) !important;
+.empty-note {
+  font-size: 0.92rem;
   color: var(--ink-dim);
-  padding: 0.5rem 0.6rem;
-}
-
-/* Numbers right-align so digits stack and a column can be scanned; the first
- * column is the team name and stays left. */
-.shiny-data-grid th, .shiny-data-grid td { text-align: right; }
-.shiny-data-grid th:first-child, .shiny-data-grid td:first-child { text-align: left; }
-.shiny-data-grid td:first-child { color: var(--ink); font-weight: 600; }
-
-.shiny-data-grid tbody tr:hover td { background: var(--raised); }
-
-.shiny-data-grid tbody tr.row-selected td,
-.shiny-data-grid tbody tr[aria-selected="true"] td {
-  background: var(--raised);
-  box-shadow: inset 2px 0 0 var(--accent);
+  margin: 0.15rem 0 0.9rem;
 }
 
 .footnote {
@@ -652,23 +1106,130 @@ main, .bslib-page-fill > .container-fluid { max-width: 1500px; margin: 0 auto; }
   margin: 1rem auto 2.5rem;
 }
 
-/* ---------- narrow screens ---------- */
+/* Focus is always visible, everywhere -- the same treatment the trophy
+ * cards used before the redesign. */
+.scorebug:focus-visible,
+.moverrow:focus-visible,
+.bestrow:focus-visible,
+.board-row:focus-visible,
+.team-pill:focus-visible,
+.ledger-row:focus-visible,
+.nav-item:focus-visible,
+.week-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- mobile bottom bar ---------- */
+
+.bottombar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #0E1116;
+  border-top: 1px solid var(--line-strong);
+  padding-bottom: 10px;
+  grid-template-columns: repeat(4, 1fr);
+  z-index: 40;
+}
+
+.bottombar .bb-item {
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.bottombar .bb-bar {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.bottombar .bb-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.bottombar .bb-item.active .bb-bar { background: var(--accent); }
+.bottombar .bb-item.active .bb-label { color: var(--ink); }
+
+/* ---------- narrow screens (640px breakpoint) ---------- */
 
 @media (max-width: 640px) {
-  :root { --gutter: 0.7rem; }
+  :root { --gutter: 16px; }
 
-  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .topbar .nav { display: none; }
+  .topbar { gap: 12px; }
 
-  .masthead { padding-top: 1rem; }
-  .masthead .live { margin-left: 0; flex-basis: 100%; }
+  .weekrail { gap: 8px; }
+  .weekrail .week-btn {
+    min-width: 44px;
+    height: 44px;
+    border: 1px solid var(--line);
+  }
 
-  /* Five tabs do not fit; let the strip scroll rather than wrap into two
-   * rows that push the chart off the screen. */
-  .card > .card-header { overflow-x: auto; }
-  .nav-tabs { flex-wrap: nowrap; }
-  .nav-tabs .nav-link { white-space: nowrap; }
+  .screen { padding-bottom: 74px; }
 
-  .chart-wrap { min-height: 340px; }
+  .segment { width: 100%; }
+  .segment .shiny-options-group { width: 100%; }
+  .segment label { flex: 1; min-height: 40px; display: flex; align-items: center; justify-content: center; }
 
-  .shiny-data-grid { overflow-x: auto; }
+  .week-body,
+  .team-body { grid-template-columns: 1fr; gap: 24px; }
+
+  .scorebug {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 10px 0;
+  }
+
+  .scorebug .row-line {
+    display: grid;
+    grid-template-columns: 3px minmax(0, 1fr) 78px;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0 4px 8px;
+  }
+
+  .scorebug .row-line.win { border-left: 3px solid var(--accent); }
+  .scorebug .row-line .name { font-size: 15px; }
+  .scorebug .row-line .score { font-size: 22px; }
+  .scorebug .caption {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-mute);
+    padding-left: 8px;
+    margin-top: 2px;
+  }
+
+  .board-head { display: none; }
+
+  .board-row {
+    grid-template-columns: 24px 3px minmax(0, 1fr) 74px;
+    min-height: 56px;
+  }
+
+  .board-row .points-stack,
+  .board-row .trend { display: none; }
+
+  .race-wrap { display: none; }
+
+  .teamrail { display: none; }
+  .team-select-mobile { display: block !important; min-height: 44px; }
+
+  .bottombar { display: grid; }
 }
+
+.team-select-mobile { display: none; }

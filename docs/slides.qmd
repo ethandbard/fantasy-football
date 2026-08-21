@@ -5,6 +5,7 @@ format:
   revealjs:
     theme: [dark, slides.scss]
     slide-number: true
+    navigation-mode: linear
     transition: fade
     width: 1280
     height: 720
@@ -38,7 +39,9 @@ The container stays up all season. League members only need Discord and a browse
 Channel
 :::
 
-### Scheduled posts
+::: {.card-title}
+Scheduled posts
+:::
 
 Scoreboards, matchups, standings, and trophies land in Discord on their own.
 
@@ -50,7 +53,9 @@ Scoreboards, matchups, standings, and trophies land in Discord on their own.
 Anytime
 :::
 
-### Slash commands
+::: {.card-title}
+Slash commands
+:::
 
 Type a command in the server when you want the current week, not the last post.
 
@@ -62,7 +67,9 @@ Type a command in the server when you want the current week, not the last post.
 The season
 :::
 
-### Web dashboard
+::: {.card-title}
+Web dashboard
+:::
 
 Charts, records, and season awards from every week the bot has saved.
 
@@ -263,31 +270,41 @@ Empty dashboard means no snapshot has run yet. A completed past season can be lo
 
 ::: {.tabs}
 ::: {.tab}
-### Trend
+::: {.tab-title}
+Trend
+:::
 
 How each team scored, week by week. Cumulative, rank, or versus projection.
 :::
 
 ::: {.tab}
-### Standings
+::: {.tab-title}
+Standings
+:::
 
 Wins, point differential, streak, and recent form.
 :::
 
 ::: {.tab}
-### Spread
+::: {.tab-title}
+Spread
+:::
 
 Who is steady and who swings. Median, floor, ceiling.
 :::
 
 ::: {.tab}
-### Head to head
+::: {.tab-title}
+Head to head
+:::
 
 Every pairing, tinted by typical margin.
 :::
 
 ::: {.tab}
-### Trophies
+::: {.tab-title}
+Trophies
+:::
 
 Eleven season awards. Click one to jump to that week.
 :::

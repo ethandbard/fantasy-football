@@ -43,10 +43,6 @@ TEAM_COLORS = [
 # league gets hue + dash rather than four more colors nobody can name.
 DASH_CYCLE = ["solid", "dash", "dot", "dashdot"]
 
-# Opacity applied to every team except the focused one.
-MUTED_OPACITY = 0.18
-
-
 def team_styles(teams):
     """
     Maps team name -> {"color", "dash"}, assigned by team id.
@@ -73,7 +69,7 @@ def team_colors(teams):
     return {name: style["color"] for name, style in team_styles(teams).items()}
 
 
-def sparkline(values, width=104, height=26, color=None):
+def sparkline(values, width=116, height=26, color=None):
     """
     A bare inline SVG sparkline for the stat tiles.
 

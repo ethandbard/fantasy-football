@@ -1,5 +1,5 @@
-# Shiny dashboard for the fantasy league: score trends, standings, score
-# spread, season recap. Reads the SQLite snapshots written by
+# Shiny dashboard for the fantasy league: this week's results, standings,
+# per-team pages, and the record book. Reads the SQLite snapshots written by
 # gamedaybot.espn.collector.
 #
 # Layout and reactive wiring only -- the palette lives in web/theme.py, the
@@ -31,12 +31,14 @@ CURRENT_YEAR = datetime.now().year
 # check is a single cheap aggregate query, not a full reload.
 DB_POLL_SECONDS = 30
 
-# Upper bound for the week slider before the first sync effect runs. Any
-# value at least as large as a real season works; the effect narrows it to
-# the weeks actually collected as soon as the session starts.
-WEEK_CEILING = 18
-
 WWW = Path(__file__).parent / "www"
+
+NAV_ITEMS = [
+    ("week", "This week"),
+    ("league", "League"),
+    ("teams", "Teams"),
+    ("records", "Records"),
+]
 
 ui.page_opts(window_title="Fantasy Football Dashboard", fillable=False)
 
@@ -46,15 +48,18 @@ ui.head_content(
     # it this way keeps a Sass compiler out of the container, which is what
     # customising ui.Theme would have cost.
     core_ui.tags.script("document.documentElement.dataset.bsTheme = 'dark'"),
-    # One delegated listener rather than an input per trophy: the cards are
-    # rebuilt whenever the week range moves, and registering ten action
-    # buttons against a list whose length depends on the data would mean
-    # server-side ids that come and go.
+    # One delegated listener for every click-driven input that a per-session
+    # @render.ui builds -- the nav, week rail, team rail, scorebug rows,
+    # movers, week bests, standings rows, ledger rows. Shiny Express tagifies
+    # the page once at startup and serves that markup to every session, so
+    # none of this data-dependent, per-session UI can be wired with a real
+    # input id ahead of time. Any element carrying data-set/data-value routes
+    # through here instead of getting its own listener.
     core_ui.tags.script(
         "document.addEventListener('click', function (e) {"
-        "  var card = e.target.closest && e.target.closest('.trophy[data-idx]');"
-        "  if (card && window.Shiny) {"
-        "    Shiny.setInputValue('trophy_pick', card.dataset.idx,"
+        "  var el = e.target.closest && e.target.closest('[data-set]');"
+        "  if (el && window.Shiny) {"
+        "    Shiny.setInputValue(el.dataset.set, el.dataset.value,"
         "                        {priority: 'event'});"
         "  }"
         "});"
@@ -63,21 +68,24 @@ ui.head_content(
     core_ui.tags.link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin=""),
     core_ui.tags.link(
         rel="stylesheet",
-        href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800"
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800"
              "&family=JetBrains+Mono:wght@400;600&display=swap",
     ),
 )
 ui.include_css(WWW / "dashboard.css")
 
 
-# The team the reader has singled out, or None for the league view. Every tab
-# reads this: the trend lines mute around it, its box lifts out of the spread,
-# its standings row carries an accent edge. One selection, felt everywhere.
-focus_team = reactive.value(None)
-
-# The week a trophy card sent the reader to, marked on the trend chart so the
-# jump lands somewhere they can see.
-highlight_week = reactive.value(None)
+# --------------------------------------------------------------------- state
+#
+# Five reactive values replace the old three plus the week-range slider.
+# `team` and `week` are stored as an explicit override or None; None means
+# "use the computed default", so the default (latest week, current 1 seed)
+# keeps tracking the data until the reader actually picks something.
+screen = reactive.value("week")
+week = reactive.value(None)
+scope = reactive.value("reg")
+sort = reactive.value("seed")
+team = reactive.value(None)
 
 
 # Everything below reads through these two polls, so a snapshot written by the
@@ -98,7 +106,7 @@ def _year():
 
 
 def _season_scores():
-    """Every collected week of the selected season, before the week filter."""
+    """Every collected week of the selected season, unfiltered by scope."""
     df = _all_scores()
     return df[df["year"] == _year()] if not df.empty else df
 
@@ -108,45 +116,121 @@ def _standings_df():
     return df[df["year"] == _year()] if not df.empty else df
 
 
-def _week_range():
-    rng = input.week_range()
-    return (int(rng[0]), int(rng[1])) if rng else (1, WEEK_CEILING)
+def _latest_week():
+    df = _season_scores()
+    return int(df["week"].max()) if not df.empty else None
 
 
-def _scores():
-    """
-    The season narrowed to the selected weeks -- what every chart and tile
-    actually reads.
+def _current_week():
+    """The selected week for This week -- an override, or the latest collected."""
+    override = week.get()
+    latest = _latest_week()
+    if override is not None and latest is not None and 1 <= override <= latest:
+        return override
+    return latest
 
-    The week filter is the honest answer to a season that changes its own
-    rules partway through: playoff weeks aggregate differently from regular
-    ones, so rather than quietly deciding for the reader, the range is a
-    control they can see and move.
-    """
+
+def _scope_bounds():
+    """Week bounds for League, Teams and Records, from the scope segment."""
+    df = _season_scores()
+    if df.empty:
+        return (1, 0)
+    total = int(df["week"].max())
+    reg = stats.regular_season_weeks(_standings_df(), df) or total
+
+    if scope.get() == "post":
+        return (reg + 1, total) if reg < total else (1, total)
+    if scope.get() == "full":
+        return (1, total)
+    return (1, reg)
+
+
+def _scope_scores():
+    """The season narrowed to the scope segment's week bounds."""
     df = _season_scores()
     if df.empty:
         return df
-    lo, hi = _week_range()
+    lo, hi = _scope_bounds()
     return df[(df["week"] >= lo) & (df["week"] <= hi)]
 
 
 def _styles():
-    """
-    Team colors for the season, stable across every tab.
-
-    Built from the whole season rather than the filtered slice so narrowing
-    the week range never repaints a team a different color.
-    """
+    """Team colors for the season, stable across every screen."""
     df = _season_scores()
     if df.empty:
         return {}
     return theme.team_styles(zip(df["team_id"], df["team_name"]))
 
 
-# ---------------------------------------------------------------- masthead
+def _default_team():
+    """The current 1 seed, until the reader picks a team of their own."""
+    standings = _standings_df()
+    if not standings.empty:
+        return str(standings.sort_values("rank").iloc[0]["team_name"])
+    records = stats.derive_records(_scope_scores())
+    return str(records.iloc[0]["team_name"]) if not records.empty else None
 
-with ui.div(class_="masthead"):
-    ui.h1("🏈 Fantasy Football")
+
+def _current_team():
+    picked = team.get()
+    styles = _styles()
+    if picked and picked in styles:
+        return picked
+    return _default_team()
+
+
+def _freshness():
+    """
+    "Synced 3h ago" -- relative rather than a clock time, since collected_at
+    is stored in UTC and the server has no idea what timezone the reader is
+    in, so this is both shorter and the only version that cannot be wrong.
+    """
+    _all_scores()  # re-read whenever the collector writes
+    stamp = db.last_collected()
+    if not stamp:
+        return "live"
+    try:
+        written = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return "live"
+    minutes = max(int((datetime.utcnow() - written).total_seconds() // 60), 0)
+    if minutes < 2:
+        return "synced just now"
+    if minutes < 60:
+        return f"synced {minutes}m ago"
+    if minutes < 48 * 60:
+        return f"synced {minutes // 60}h ago"
+    return f"synced {minutes // 1440}d ago"
+
+
+def _clickable(tag, set_input, value, *children, **attrs):
+    """A div/button wired to the delegated click listener in ui.head_content."""
+    attrs.setdefault("tabindex", "0")
+    return tag(*children, **{"data-set": set_input, "data-value": str(value)}, **attrs)
+
+
+# ------------------------------------------------------------------- top bar
+
+with ui.div(class_="topbar"):
+    with ui.div(class_="mark"):
+        core_ui.div(class_="mark-block")
+        core_ui.span("FANTASY FOOTBALL", class_="wordmark")
+
+    @render.ui
+    def top_nav():
+        current = screen()
+        items = [
+            _clickable(
+                core_ui.tags.button, "nav_pick", key,
+                label,
+                class_="nav-item active" if key == current else "nav-item",
+                type="button",
+            )
+            for key, label in NAV_ITEMS
+        ]
+        return core_ui.div(*items, class_="nav")
+
+    core_ui.div(class_="spacer")
 
     with ui.div(class_="season-pick"):
         ui.input_select(
@@ -155,41 +239,8 @@ with ui.div(class_="masthead"):
         )
 
     @render.ui
-    def through_week():
-        df = _season_scores()
-        if df.empty:
-            return core_ui.span("no data yet", class_="season")
-        return core_ui.span(f"through week {int(df['week'].max())}", class_="season")
-
-    @render.ui
-    def freshness():
-        """
-        Backs up the promise that this page keeps itself current.
-
-        Relative rather than a clock time: collected_at is stored in UTC and
-        the server has no idea what timezone the reader is in, so "3h ago" is
-        both shorter and the only version that cannot be wrong.
-        """
-        _all_scores()  # re-read whenever the collector writes
-        stamp = db.last_collected()
-        if not stamp:
-            return core_ui.span("live", class_="live")
-
-        try:
-            written = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            return core_ui.span("live", class_="live")
-
-        minutes = max(int((datetime.utcnow() - written).total_seconds() // 60), 0)
-        if minutes < 2:
-            ago = "just now"
-        elif minutes < 60:
-            ago = f"{minutes}m ago"
-        elif minutes < 48 * 60:
-            ago = f"{minutes // 60}h ago"
-        else:
-            ago = f"{minutes // 1440}d ago"
-        return core_ui.span(f"updated {ago}", class_="live")
+    def synced_label():
+        return core_ui.span(_freshness(), class_="synced")
 
 
 @reactive.effect
@@ -199,9 +250,6 @@ def _sync_season_choices():
     choices are whatever existed when the process started: Shiny Express
     tagifies the UI once at startup and serves that same markup to every
     request, so a new season would stay invisible until a container restart.
-
-    input.year() is read under isolate() so this effect depends only on the
-    data, not on the selection it sets.
     """
     df = _all_scores()
     years = sorted(df["year"].unique().tolist(), reverse=True) if not df.empty else [CURRENT_YEAR]
@@ -216,558 +264,797 @@ def _sync_season_choices():
     )
 
 
-# ------------------------------------------------------------- control bar
+# ------------------------------------------------------------ input routing
 
-# The slider is the single source of truth for which weeks are in play. The
-# three presets write into it and never hold state of their own, so there is
-# no way for a "Regular season" button to sit lit while the range says weeks
-# 3-9 -- a trap any two-way binding between a mode switch and a range would
-# have walked straight into.
-with ui.div(class_="controlbar"):
-    with ui.div(class_="presets"):
-        ui.input_action_link("preset_reg", "Regular season")
-        ui.input_action_link("preset_post", "Playoffs")
-        ui.input_action_link("preset_all", "Full season")
-
-    ui.input_slider("week_range", None, min=1, max=WEEK_CEILING,
-                    value=(1, WEEK_CEILING), step=1, ticks=False)
-
-    @render.ui
-    def range_label():
-        lo, hi = _week_range()
-        reg = stats.regular_season_weeks(_standings_df(), _season_scores())
-        total = int(_season_scores()["week"].max()) if not _season_scores().empty else 0
-
-        if (lo, hi) == (1, reg) and reg:
-            text = "regular season"
-        elif reg and (lo, hi) == (reg + 1, total):
-            text = "playoffs"
-        elif (lo, hi) == (1, total) and total:
-            text = "full season"
-        elif lo == hi:
-            text = f"week {lo}"
-        else:
-            text = f"weeks {lo}–{hi}"
-        return core_ui.span(text, class_="range-label")
-
-    @render.ui
-    def focus_chip():
-        team = focus_team()
-        if not team:
-            return core_ui.span("all teams", class_="chip chip-empty")
-        return core_ui.span(team, class_="chip")
-
-    ui.input_action_button("reset_view", "Reset", class_="btn-reset")
+@reactive.effect
+@reactive.event(input.nav_pick)
+def _on_nav():
+    screen.set(input.nav_pick())
 
 
 @reactive.effect
-def _sync_week_bounds():
-    """
-    Pulls the slider's bounds down to the weeks actually collected, and on the
-    first pass parks the range on the regular season.
-
-    Same reasoning as _sync_season_choices: Express builds the UI once at
-    startup, so a slider that ran to week 18 would keep running to week 18
-    for the rest of the container's life.
-    """
-    df = _season_scores()
-    if df.empty:
-        return
-
-    total = int(df["week"].max())
-    reg = stats.regular_season_weeks(_standings_df(), df) or total
-
-    with reactive.isolate():
-        current = input.week_range()
-
-    # Only reposition the handles when the current range makes no sense for
-    # this season -- otherwise a poll landing mid-read would yank the range
-    # out from under whatever the reader had dialled in.
-    if current and int(current[1]) <= total and int(current[0]) >= 1 and current[1] != WEEK_CEILING:
-        selected = (int(current[0]), int(current[1]))
-    else:
-        selected = (1, reg)
-
-    core_ui.update_slider("week_range", min=1, max=total, value=selected)
-
-
-@reactive.effect
-@reactive.event(input.preset_reg)
-def _preset_regular():
-    df = _season_scores()
-    if df.empty:
-        return
-    reg = stats.regular_season_weeks(_standings_df(), df) or int(df["week"].max())
-    core_ui.update_slider("week_range", value=(1, reg))
-
-
-@reactive.effect
-@reactive.event(input.preset_post)
-def _preset_playoffs():
-    df = _season_scores()
-    if df.empty:
-        return
-    total = int(df["week"].max())
-    reg = stats.regular_season_weeks(_standings_df(), df)
-    # A season with no playoff weeks collected yet stays on the full range
-    # rather than collapsing to an empty selection.
-    core_ui.update_slider("week_range", value=(reg + 1, total) if reg < total else (1, total))
-
-
-@reactive.effect
-@reactive.event(input.preset_all)
-def _preset_all():
-    df = _season_scores()
-    if df.empty:
-        return
-    core_ui.update_slider("week_range", value=(1, int(df["week"].max())))
-
-
-@reactive.effect
-@reactive.event(input.reset_view)
-def _reset_view():
-    """One way back to the opening view, from wherever the reader wandered."""
-    focus_team.set(None)
-    highlight_week.set(None)
-    df = _season_scores()
-    if not df.empty:
-        reg = stats.regular_season_weeks(_standings_df(), df) or int(df["week"].max())
-        core_ui.update_slider("week_range", value=(1, reg))
-
-
-@reactive.effect
-@reactive.event(input.trophy_pick)
-def _open_trophy():
-    """
-    Follows a trophy card through to the chart.
-
-    "Biggest Blowout, week 13" was the most interesting fact on the old
-    dashboard and a dead end -- there was no way to go look at week 13. This
-    focuses the team, marks the week, and moves the reader to the trend.
-    """
-    awards = stats.trophies(_scores())
+@reactive.event(input.week_pick)
+def _on_week_pick():
     try:
-        award = awards[int(input.trophy_pick())]
-    except (TypeError, ValueError, IndexError):
-        return
-
-    focus_team.set(award["focus"])
-    highlight_week.set(award["week"])
-    core_ui.update_navs("tabs", selected="Trend")
+        week.set(int(input.week_pick()))
+    except (TypeError, ValueError):
+        pass
 
 
 @reactive.effect
-def _focus_from_standings():
-    """Selecting a standings row is the primary way into a single-team view."""
-    selected = standings_table.cell_selection()
-    rows = selected.get("rows", ()) if selected else ()
-    if not rows:
-        return
-
-    # data_view() returns the rows as the reader currently sees them, so this
-    # stays correct after they sort by any column. Indexing the source frame
-    # instead would focus whichever team happened to sit at that position
-    # before the sort.
-    view = standings_table.data_view()
-    if view.empty or rows[0] >= len(view):
-        return
-    focus_team.set(str(view.iloc[rows[0]]["Team"]))
+@reactive.event(input.team_pick)
+def _on_team_pick():
+    """Every team-focused click routes through here: standings, scorebugs,
+    movers, week bests, the ledger, and the team pills themselves."""
+    team.set(input.team_pick())
+    screen.set("teams")
 
 
-# ------------------------------------------------------------- stat tiles
-
-def _tile(label, value, sub=None, spark=None, value_class=""):
-    return core_ui.div(
-        core_ui.span(label, class_="k"),
-        core_ui.span(value, class_=f"v {value_class}".strip()),
-        core_ui.HTML(spark) if spark else (core_ui.span(sub, class_="sub") if sub else None),
-        class_="tile",
-    )
+@reactive.effect
+@reactive.event(input.team_select)
+def _on_team_select():
+    """The mobile full-width <select> -- writes the same reactive.value the
+    pill rail does, per the handoff."""
+    if input.team_select():
+        team.set(input.team_select())
 
 
-@render.ui
-def stat_tiles():
+@reactive.effect
+def _on_scope_input():
+    if input.scope() is not None:
+        scope.set(input.scope())
+
+
+@reactive.effect
+def _on_sort_input():
+    if input.sort() is not None:
+        sort.set(input.sort())
+
+
+@reactive.effect
+def _advance_week():
     """
-    The four headline numbers, over the selected weeks.
-
-    One render for all four rather than one apiece: they share a single pass
-    over the season, and rendering them together means the grid can hold them
-    to a common height instead of the four different heights the old value
-    boxes settled at.
+    Advances the default week when a new snapshot lands, as long as the
+    reader has not moved it themselves. A season's week 1 then appears on its
+    own with no refresh.
     """
-    scores = _scores()
+    latest = _latest_week()
+    if latest is None:
+        return
+    if week.get() is None:
+        return  # already following latest
+    if week.get() > latest:
+        week.set(None)
+
+
+# ---------------------------------------------------------- screen: THIS WEEK
+
+def _week_headline(week_scores):
+    log = stats.game_log(week_scores)
+    played = log[log["result"] != ""]
+    matchups = played[played["is_home"] == 1]
+    parts = []
+    if not matchups.empty:
+        closest = matchups.loc[matchups["margin"].abs().idxmin()]
+        winner = closest if closest["margin"] >= 0 else None
+        if winner is None:
+            loser_name, winner_name = closest["team_name"], closest["opponent_name"]
+        else:
+            winner_name, loser_name = closest["team_name"], closest["opponent_name"]
+        parts.append(
+            f"The {winner_name} survived {loser_name} by {abs(closest['margin']):.1f}"
+        )
     standings = _standings_df()
-
-    if scores.empty:
-        tiles = [_tile(k, "--") for k in
-                 ("League Leader", "Highest Score", "Avg Weekly Score", "Weeks Shown")]
-        return core_ui.div(*tiles, class_="tiles")
-
-    leader = standings.iloc[0] if not standings.empty else None
-    high = scores.loc[scores["score"].idxmax()]
-    weekly_avg = scores.groupby("week")["score"].mean().sort_index()
-    lo, hi = _week_range()
-    collected = int(_season_scores()["week"].nunique())
-    shown = int(scores["week"].nunique())
-
-    return core_ui.div(
-        _tile(
-            "League Leader",
-            leader["team_name"] if leader is not None else "--",
-            sub=(f"{int(leader['wins'])}-{int(leader['losses'])}"
-                 if leader is not None else None),
-            value_class="name",
-        ),
-        _tile(
-            "Highest Score", f"{high['score']:.1f}",
-            sub=f"{high['team_name']} · wk {int(high['week'])}",
-        ),
-        _tile(
-            "Avg Weekly Score", f"{scores['score'].mean():.1f}",
-            spark=theme.sparkline(weekly_avg.tolist()),
-        ),
-        # Says which weeks the three numbers to its left were built from, so
-        # the basis for the average is never a guess.
-        _tile(
-            "Weeks Shown", f"{lo}–{hi}" if lo != hi else str(lo),
-            sub=f"{shown} of {collected} collected",
-        ),
-        class_="tiles",
-    )
+    if not standings.empty:
+        leader = standings.sort_values("rank").iloc[0]
+        record = f"{int(leader['wins'])}-{int(leader['losses'])}"
+        parts.append(f"{leader['team_name']} holds the 1 seed at {record}")
+    if not parts:
+        return "No completed matchups yet this week."
+    return ", and ".join(parts) + "."
 
 
-@render.ui
-def team_drilldown():
-    """
-    The focused team's season, week by week.
+def _results_rows(week_scores, styles):
+    log = stats.game_log(week_scores)
+    played = log[(log["result"] != "") & (log["is_home"] == 1)]
+    if played.empty:
+        return core_ui.p("No games played yet this week.", class_="empty-note")
 
-    An inline panel rather than a modal: it survives a tab change, needs no
-    dismiss gesture, and does not trap focus on a phone. It appears only when
-    a team is picked, so the league view keeps its full width.
-    """
-    team = focus_team()
-    if not team:
-        return None
-
-    log = stats.game_log(_scores())
-    games = log[log["team_name"] == team].sort_values("week")
-    if games.empty:
-        return None
+    proj = stats.vs_projection(week_scores)
+    proj_by_team = dict(zip(proj["team_name"], proj["vs_proj"])) if not proj.empty else {}
 
     rows = []
-    for _, g in games.iterrows():
-        result = g["result"] or "—"
-        margin = "" if pd.isna(g["margin"]) else f"{g['margin']:+.1f}"
-        projected = "—" if pd.isna(g["projected_score"]) else f"{g['projected_score']:.1f}"
-        rows.append(core_ui.tags.tr(
-            core_ui.tags.td(f"{int(g['week'])}"),
-            core_ui.tags.td(g["opponent_name"], class_="opp"),
-            core_ui.tags.td(f"{g['score']:.1f}"),
-            core_ui.tags.td(projected, class_="dim"),
-            core_ui.tags.td(result, class_=f"res res-{result.lower()}"),
-            core_ui.tags.td(margin, class_="dim"),
+    for _, g in played.sort_values("margin", key=lambda s: s.abs()).iterrows():
+        winner = g if g["margin"] >= 0 else None
+        if winner is None:
+            win_name, win_score = g["opponent_name"], g["opponent_score"]
+            lose_name, lose_score = g["team_name"], g["score"]
+        else:
+            win_name, win_score = g["team_name"], g["score"]
+            lose_name, lose_score = g["opponent_name"], g["opponent_score"]
+        margin = abs(g["margin"])
+
+        if margin < 1:
+            tag_class, tag_text = "margin nailbiter", "nailbiter"
+        elif margin > 40:
+            tag_class, tag_text = "margin", "blowout"
+        else:
+            tag_class, tag_text = "margin", f"{margin:.1f} pts"
+
+        win_delta = proj_by_team.get(win_name)
+        lose_delta = proj_by_team.get(lose_name)
+
+        def delta_span(name, value):
+            if value is None or pd.isna(value):
+                return None
+            cls = "delta over" if value >= 0 else "delta under"
+            return core_ui.span(f"{value:+.1f} vs proj", class_=cls)
+
+        rows.append(_clickable(
+            core_ui.div, "team_pick", win_name,
+            core_ui.div(
+                core_ui.span(win_name, class_="name"),
+                delta_span(win_name, win_delta),
+                class_="side left win",
+            ),
+            core_ui.span(f"{win_score:.1f}", class_="score"),
+            core_ui.span("–", class_="dash"),
+            core_ui.span(f"{lose_score:.1f}", class_="score"),
+            core_ui.div(
+                core_ui.span(lose_name, class_="name"),
+                delta_span(lose_name, lose_delta),
+                class_="side right lose",
+            ),
+            core_ui.span(tag_text, class_=tag_class),
+            class_="scorebug",
+            role="button",
         ))
+    return core_ui.div(*rows, class_="resultrows")
 
-    record = stats.derive_records(_scores())
-    mine = record[record["team_name"] == team]
-    summary = ""
-    if not mine.empty:
-        r = mine.iloc[0]
-        summary = (f"{r['record']} · {r['points_for']} for · "
-                   f"{r['points_against']} against · {r['diff']:+d} diff")
 
-    best = games.loc[games["score"].idxmax()]
-    worst = games.loc[games["score"].idxmin()]
-    colors = _styles().get(team, {})
+def _own_average_rows(week_scores):
+    if week_scores.empty:
+        return None
+    season = _season_scores()
+    avg = season.groupby("team_name")["score"].mean()
+    this_week = week_scores.set_index("team_name")["score"]
+    deviation = (this_week - avg).dropna().sort_values(ascending=False)
+    if deviation.empty:
+        return None
+    largest = deviation.abs().max() or 1.0
+
+    rows = []
+    for team_name, dev in deviation.items():
+        pct = min(abs(dev) / largest, 1.0) * 100
+        cls = "over" if dev >= 0 else "under"
+        rows.append(core_ui.div(
+            core_ui.span(team_name, class_="team"),
+            core_ui.div(
+                core_ui.div(class_=f"bar {cls}", style=f"width:{pct / 2:.1f}%"),
+                class_="track",
+            ),
+            core_ui.span(f"{dev:+.1f}", class_=f"value {cls}"),
+            class_="avgrow",
+        ))
+    return core_ui.div(*rows, class_="avgrows")
+
+
+def _movers(week_scores):
+    ranked = stats.rank_by_week(_season_scores())
+    if ranked.empty:
+        return None
+    wk = _current_week()
+    if wk is None:
+        return None
+    this = ranked[ranked["week"] == wk].set_index("team_name")["rank"]
+    prev = ranked[ranked["week"] == wk - 1].set_index("team_name")["rank"]
+    if this.empty:
+        return None
+    moved = (prev - this).reindex(this.index).fillna(0)
+    order = moved.abs().sort_values(ascending=False).index[:5]
+
+    rows = []
+    for name in order:
+        delta = int(moved.get(name, 0))
+        if delta > 0:
+            cls, glyph = "move up", f"▲ {delta}"
+        elif delta < 0:
+            cls, glyph = "move down", f"▼ {abs(delta)}"
+        else:
+            cls, glyph = "move mute", "—"
+        rows.append(_clickable(
+            core_ui.div, "team_pick", name,
+            core_ui.span(str(int(this[name])), class_="rank"),
+            core_ui.span(name, class_="name"),
+            core_ui.span(glyph, class_=cls),
+            class_="moverrow", role="button",
+        ))
+    return core_ui.div(core_ui.p("Movers", class_="section-label"),
+                       core_ui.div(*rows), class_="rail-block")
+
+
+def _week_bests(week_scores):
+    awards = stats.trophies(week_scores)
+    by_title = {a["title"]: a for a in awards}
+    wanted = [
+        ("Highest Score", "TOP SCORE"),
+        ("Biggest Blowout", "BIGGEST BLOWOUT"),
+        ("Closest Matchup", "CLOSEST GAME"),
+        ("Best vs Projection", "BEST VS PROJECTION"),
+    ]
+    rows = []
+    for key, label in wanted:
+        a = by_title.get(key)
+        if not a:
+            continue
+        value = a["detail"].split(" — ")[0].split(",")[0]
+        rows.append(_clickable(
+            core_ui.div, "team_pick", a["focus"],
+            core_ui.div(
+                core_ui.span(label, class_="label"),
+                core_ui.span(a["team"], class_="team"),
+            ),
+            core_ui.span(value, class_="value"),
+            class_="bestrow", role="button",
+        ))
+    if not rows:
+        return None
+    return core_ui.div(core_ui.p("Week bests", class_="section-label"),
+                       core_ui.div(*rows), class_="rail-block")
+
+
+@render.ui
+def screen_week():
+    if screen() != "week":
+        return None
+
+    season = _season_scores()
+    if season.empty:
+        return core_ui.div(
+            core_ui.p("No score data collected yet for this season.", class_="empty-note"),
+            class_="screen",
+        )
+
+    wk = _current_week()
+    week_scores = season[season["week"] == wk] if wk else season.iloc[0:0]
+    latest = _latest_week()
+    stamp = "Latest" if wk == latest else f"Week {wk}"
 
     return core_ui.div(
         core_ui.div(
-            core_ui.span(team, class_="dt"),
-            core_ui.span(summary, class_="ds"),
-            core_ui.HTML(theme.sparkline(games["score"].tolist(), width=150, height=32,
-                                         color=colors.get("color"))),
-            class_="drill-head",
+            core_ui.h1(f"WEEK {wk}", class_="screen-title wk"),
+            core_ui.span(f"{stamp} · {_freshness()}", class_="stamp"),
+            class_="title-row",
         ),
+        core_ui.p(_week_headline(week_scores), class_="headline"),
         core_ui.div(
-            core_ui.span(f"Best {best['score']:.1f} in wk {int(best['week'])}", class_="pill"),
-            core_ui.span(f"Worst {worst['score']:.1f} in wk {int(worst['week'])}", class_="pill"),
-            class_="drill-pills",
-        ),
-        core_ui.div(
-            core_ui.tags.table(
-                core_ui.tags.thead(core_ui.tags.tr(
-                    core_ui.tags.th("Wk"), core_ui.tags.th("Opponent", class_="opp"),
-                    core_ui.tags.th("Score"), core_ui.tags.th("Proj"),
-                    core_ui.tags.th("Res"), core_ui.tags.th("Margin"),
-                )),
-                core_ui.tags.tbody(*rows),
+            core_ui.div(
+                core_ui.p("Results", class_="section-label"),
+                _results_rows(week_scores, _styles()),
+                class_="results",
             ),
-            class_="drill-log",
+            core_ui.div(
+                core_ui.p("Against their own average", class_="section-label"),
+                _own_average_rows(week_scores),
+            ),
+            core_ui.div(
+                _movers(week_scores),
+                _week_bests(week_scores),
+                class_="rail",
+            ),
+            class_="week-body",
         ),
-        class_="drill",
+        class_="screen",
     )
 
 
-# ------------------------------------------------------------------- tabs
+@render.ui
+def week_rail():
+    if screen() != "week":
+        return None
+    season = _season_scores()
+    if season.empty:
+        return None
+    total = int(season["week"].max())
+    current = _current_week()
 
-with ui.navset_card_tab(id="tabs"):
-    with ui.nav_panel("Trend"):
-        @render.ui
-        def trend_note():
-            """
-            States the takeaway instead of restating the tab label.
+    buttons = [
+        _clickable(
+            core_ui.tags.button, "week_pick", n,
+            str(n),
+            class_="week-btn active" if n == current else "week-btn",
+            type="button",
+        )
+        for n in range(1, total + 1)
+    ]
+    return core_ui.div(
+        core_ui.span("WEEK", class_="eyebrow"),
+        *buttons,
+        class_="weekrail",
+    )
 
-            The old build opened every tab with a heading that repeated the
-            tab you had just clicked, spending the most prominent line on the
-            page saying nothing.
-            """
-            scores = _scores()
-            if scores.empty:
-                return core_ui.HTML("<p class='takeaway'>No weeks in this range.</p>")
 
-            rec = stats.derive_records(scores)
-            if rec.empty:
-                return core_ui.HTML("<p class='takeaway'>No completed matchups yet.</p>")
+# ------------------------------------------------------------- screen: LEAGUE
 
-            by_points = rec.sort_values("points_for", ascending=False)
-            top_scorer = by_points.iloc[0]
-            leader = rec.iloc[0]
+@render.ui
+def screen_league():
+    if screen() != "league":
+        return None
 
-            if top_scorer["team_name"] == leader["team_name"]:
-                line = (f"<b>{leader['team_name']}</b> leads at {leader['record']} "
-                        f"and has scored the most points — {leader['points_for']}.")
-            else:
-                place = int(rec.index[rec["team_name"] == top_scorer["team_name"]][0]) + 1
-                line = (f"<b>{leader['team_name']}</b> leads at {leader['record']}, but "
-                        f"<b>{top_scorer['team_name']}</b> has scored the most points "
-                        f"({top_scorer['points_for']}) while sitting {place}th.")
-            return core_ui.HTML(f"<p class='takeaway'>{line}</p>")
+    scoped = _scope_scores()
+    lo, hi = _scope_bounds()
 
-        with ui.div(class_="viewswitch"):
-            ui.input_radio_buttons(
-                "trend_view", None,
-                {
-                    "score": "Weekly score",
-                    "cumulative": "Cumulative",
-                    "rank": "Rank by week",
-                    "projection": "vs Projection",
-                },
-                selected="score", inline=True,
-            )
+    if scoped.empty:
+        return core_ui.div(
+            _scope_sort_row(),
+            core_ui.p("No weeks in this range.", class_="empty-note"),
+            class_="screen",
+        )
 
-        with ui.div(class_="chart-wrap"):
-            @render_widget
-            def score_trend_plot():
-                df = _scores()
-                if df.empty:
-                    return charts.as_widget(charts.empty_fig())
+    rec = stats.derive_records(scoped)
+    espn = _standings_df()
+    seeds = dict(zip(espn["team_name"], espn["rank"])) if not espn.empty else {}
+    styles = _styles()
 
-                view = input.trend_view()
-                styles, focus = _styles(), focus_team()
+    current_sort = sort.get()
+    if current_sort == "points":
+        rec = rec.sort_values("points_for", ascending=False).reset_index(drop=True)
+        note = "Sorted by total points for over the scoped weeks."
+    elif current_sort == "form":
+        recent_wins = rec["form"].map(lambda f: f.count("W"))
+        rec = rec.assign(_form_wins=recent_wins).sort_values(
+            "_form_wins", ascending=False).drop(columns="_form_wins").reset_index(drop=True)
+        note = "Sorted by wins in the last five games."
+    else:
+        rec = rec.sort_values(
+            ["wins", "points_for"], ascending=[False, False]
+        ).reset_index(drop=True)
+        note = "Sorted by record, then points for -- the same rule the standings use every week."
 
-                if view == "cumulative":
-                    fig = charts.cumulative_points(df, styles, focus)
-                elif view == "rank":
-                    fig = charts.rank_curve(stats.rank_by_week(df), styles, focus)
-                elif view == "projection":
-                    proj = stats.vs_projection(df)
-                    if proj.empty:
-                        return charts.as_widget(charts.empty_fig(
-                            "No projections were recorded for these weeks."))
-                    fig = charts.projection_bars(proj, styles, focus)
-                else:
-                    fig = charts.score_trend(df, styles, focus, highlight_week())
+    log = stats.game_log(scoped)
 
-                return charts.as_widget(fig)
+    rows = []
+    for i, r in rec.iterrows():
+        team_name = r["team_name"]
+        colors = styles.get(team_name, {"color": theme.INK_MUTE})
+        seed = seeds.get(team_name)
+        row_scores = log[log["team_name"] == team_name].sort_values("week")
 
-    with ui.nav_panel("Standings"):
-        @render.ui
-        def standings_note():
-            return core_ui.HTML(
-                "<p class='takeaway'>Ordered by wins, then points for, over the "
-                "weeks selected above. <b>Seed</b> is ESPN's official standing "
-                "for the full regular season — it applies division and "
-                "head-to-head tiebreaks that aren't published, so it can "
-                "disagree with the order here.</p>"
-            )
+        results = row_scores["result"].tolist()[-5:]
+        pips = [core_ui.span(class_=f"pip {r2.lower() if r2 else 't'}") for r2 in results] or [None]
 
-        @render.data_frame
-        def standings_table():
-            scores = _scores()
-            cols = ["#", "Team", "Record", "Win%", "PF", "PA", "Diff",
-                    "Streak", "Last 5", "Seed"]
-            if scores.empty:
-                return render.DataGrid(pd.DataFrame(columns=cols))
+        diff = r["diff"]
+        diff_cls = "pvalue pos" if diff >= 0 else "pvalue neg"
 
-            rec = stats.derive_records(scores)
-            espn = _standings_df()
-            seeds = dict(zip(espn["team_name"], espn["rank"])) if not espn.empty else {}
+        streak = r["streak"]
+        streak_chip = None
+        if streak:
+            streak_chip = core_ui.span(streak, class_=f"streak-chip {streak[0].lower()}")
 
-            out = pd.DataFrame({
-                "#": range(1, len(rec) + 1),
-                "Team": rec["team_name"],
-                "Record": rec["record"],
-                # Formatted to a fixed three decimals so the column is a
-                # block of digits rather than a ragged mix of 0.5 and 0.643.
-                # Safe to sort as text: every value is 0.000-1.000, so the
-                # lexicographic order and the numeric order are the same.
-                "Win%": rec["win_pct"].map("{:.3f}".format),
-                "PF": rec["points_for"],
-                "PA": rec["points_against"],
-                "Diff": rec["diff"],
-                "Streak": rec["streak"],
-                "Last 5": rec["form"],
-                "Seed": rec["team_name"].map(seeds),
-            })[cols]
+        rows.append(_clickable(
+            core_ui.div, "team_pick", team_name,
+            core_ui.span(str(seed) if seed else str(i + 1), class_="seed"),
+            core_ui.div(
+                core_ui.div(class_="colorbar", style=f"background:{colors['color']}"),
+                core_ui.span(team_name, class_="team-name"),
+                streak_chip,
+                class_="team-cell",
+            ),
+            core_ui.span(r["record"], class_="record"),
+            core_ui.div(*pips, class_="form-pips"),
+            core_ui.div(
+                core_ui.div(core_ui.span("PF", class_="plabel"),
+                            core_ui.span(str(r["points_for"]), class_="pvalue")),
+                core_ui.div(core_ui.span("PA", class_="plabel"),
+                            core_ui.span(str(r["points_against"]), class_="pvalue")),
+                core_ui.div(core_ui.span("DIFF", class_="plabel"),
+                            core_ui.span(f"{diff:+d}", class_=diff_cls)),
+                class_="points-stack",
+            ),
+            core_ui.div(
+                core_ui.HTML(theme.sparkline(row_scores["score"].tolist(),
+                                             color=colors.get("color"))),
+                class_="trend",
+            ),
+            class_=f"board-row seed-{seed}" if seed == 1 else "board-row",
+            role="button",
+        ))
+        # The playoff cutoff line: only meaningful in seed order, so it is
+        # simply absent for any other sort.
+        if current_sort == "seed" and i == len(rec) // 2 - 1:
+            rows.append(core_ui.div(
+                core_ui.span("PLAYOFF CUTOFF", class_="label"),
+                class_="cutoff-row",
+            ))
 
-            # Tint the qualifying rows rather than drawing a divider under the
-            # fourth one. A line only means "cutoff" while the table is in
-            # rank order -- sort by points for and it strands itself mid-table,
-            # reading as a stray rule. A tint belongs to the team, so it
-            # travels with the row wherever the reader sorts it.
-            cutoff = len(out) // 2
-            styles = [
-                {"rows": [i], "style": {"backgroundColor": "rgba(240, 99, 30, 0.07)"}}
-                for i in range(cutoff)
-            ]
-            styles.append({"rows": [0], "style": {"color": theme.INK, "fontWeight": "600"}})
+    board = core_ui.div(
+        core_ui.div(
+            core_ui.span("Seed", class_="col"), core_ui.span("Team", class_="col"),
+            core_ui.span("Record", class_="col"), core_ui.span("Last 5", class_="col"),
+            core_ui.span("Points", class_="col"), core_ui.span("Trend", class_="col"),
+            class_="board-head",
+        ),
+        *rows,
+    )
 
-            # Left to itself the grid hands every column a similar width, which
-            # squeezes "Seemed like the thing to do" into three wrapped lines
-            # while a two-character Streak column sits half empty. The numeric
-            # columns only ever hold a few characters, so cap them and give the
-            # remainder to the names.
-            # Numbers right-align so their digits stack into a scannable
-            # column; the rank and the team name are text and read from the
-            # left. The stylesheet's default assumes the name is the first
-            # column, which is true of every grid here except this one.
-            styles += [
-                {"cols": [0], "style": {"width": "3.5rem", "textAlign": "left",
-                                        "color": theme.INK_MUTE, "fontWeight": "400"}},
-                {"cols": [1], "style": {"minWidth": "13rem", "whiteSpace": "nowrap",
-                                        "textAlign": "left", "color": theme.INK,
-                                        "fontWeight": "600"}},
-                {"cols": [2, 3, 4, 5, 6, 7, 9], "style": {"width": "5rem"}},
-                {"cols": [8], "style": {"width": "7rem", "whiteSpace": "nowrap"}},
-            ]
+    range_note = f"weeks {lo}–{hi}" if lo != hi else f"week {lo}"
 
-            return render.DataGrid(
-                out, width="100%", height="fit-content",
-                selection_mode="row", styles=styles,
-            )
+    return core_ui.div(
+        _scope_sort_row(range_note),
+        core_ui.h1("STANDINGS", class_="screen-title board"),
+        core_ui.p(core_ui.HTML(note), class_="screen-note"),
+        board,
+        class_="screen",
+    )
 
-    with ui.nav_panel("Spread"):
-        @render.ui
-        def spread_note():
-            return core_ui.HTML(
-                "<p class='takeaway'>Each box is one team's range of weekly "
-                "scores; the dots are the weeks themselves. The table ranks "
-                "them from steadiest to streakiest — <b>CV</b> is the spread "
-                "as a percentage of the team's own average, so a high scorer "
-                "and a low scorer can be compared directly.</p>"
-            )
 
-        with ui.div(class_="split"):
-            with ui.div(class_="chart-wrap"):
-                @render_widget
-                def consistency_plot():
-                    df = _scores()
-                    if df.empty:
-                        return charts.as_widget(charts.empty_fig())
-                    order = (df.groupby("team_name")["score"].median()
-                             .sort_values(ascending=False).index)
-                    return charts.as_widget(
-                        charts.spread_box(df, _styles(), list(order), focus_team())
-                    )
+@render.ui
+def race_visibility_style():
+    """
+    Toggles the race chart's container rather than conditionally rendering
+    the widget itself -- shinywidgets fixes a Plotly widget's output slot at
+    the point it is defined in the script, so it has to live outside the
+    conditional screen trees; this hides it everywhere but League instead.
+    """
+    display = "block" if screen() == "league" else "none"
+    return core_ui.tags.style(f"#race-wrap {{ display: {display}; }}")
 
-            @render.data_frame
-            def consistency_table():
-                df = _scores()
-                cols = ["Team", "Median", "Floor", "Ceiling", "Std", "CV"]
-                if df.empty:
-                    return render.DataGrid(pd.DataFrame(columns=cols))
 
-                con = stats.consistency(df)
-                out = pd.DataFrame({
-                    "Team": con["team_name"],
-                    "Median": con["median"],
-                    "Floor": con["floor"],
-                    "Ceiling": con["ceiling"],
-                    "Std": con["std"],
-                    "CV": con["cv"].map("{:.1f}%".format),
-                })[cols]
-                return render.DataGrid(out, width="100%", height="fit-content",
-                                       selection_mode="row")
-
-    with ui.nav_panel("Head to head"):
-        @render.ui
-        def h2h_note():
-            return core_ui.HTML(
-                "<p class='takeaway'>Read a row against a column: the cell "
-                "holds the row team's record against that opponent, tinted by "
-                "the average margin. Green means the row team usually wins "
-                "that matchup.</p>"
-            )
-
-        with ui.div(class_="chart-wrap chart-tall"):
-            @render_widget
-            def h2h_plot():
-                df = _scores()
-                if df.empty:
-                    return charts.as_widget(charts.empty_fig())
-                records, margins = stats.head_to_head(df)
-                if records.empty:
-                    return charts.as_widget(charts.empty_fig(
-                        "No completed matchups in these weeks."))
-                return charts.as_widget(charts.h2h_grid(records, margins))
-
-    with ui.nav_panel("Trophies"):
-        @render.ui
-        def trophy_cards():
-            """
-            Highlights as a card grid rather than a sortable table.
-
-            A table invited sorting, which could only scramble a curated
-            order, and it had a column headed "Icon" holding one emoji per
-            row -- a header naming the mechanism rather than the content.
-            Cards drop both problems and give each award room for its value
-            in words: "0.8 pt margin", not a bare 0.8 under "Detail".
-            """
-            awards = stats.trophies(_scores())
-            if not awards:
-                return core_ui.HTML(
-                    "<p class='takeaway'>No completed weeks in this range yet.</p>"
-                )
-
-            cards = []
-            for i, a in enumerate(awards):
-                week = (core_ui.span(f"WK {a['week']}", class_="tw")
-                        if a["week"] is not None else
-                        core_ui.span("SEASON", class_="tw"))
-                cards.append(core_ui.tags.button(
-                    core_ui.span(a["icon"], class_="ti"),
-                    core_ui.div(
-                        core_ui.span(a["title"], class_="tt"),
-                        core_ui.span(a["team"], class_="tm"),
-                        core_ui.span(a["detail"], class_="td"),
-                        class_="tbody",
-                    ),
-                    week,
-                    class_="trophy", data_idx=str(i), type="button",
-                ))
-
-            return core_ui.div(
-                core_ui.HTML(
-                    "<p class='takeaway'>Pick any award to follow that team "
-                    "on the trend chart, with its week marked.</p>"
+def _scope_sort_row(range_note=None):
+    return core_ui.div(
+        core_ui.div(
+            core_ui.div(
+                ui.input_radio_buttons(
+                    "scope", None,
+                    {"reg": "Regular", "post": "Playoffs", "full": "Full"},
+                    selected=scope.get(), inline=True,
                 ),
-                core_ui.div(*cards, class_="trophies"),
-            )
+                class_="segment",
+            ),
+            core_ui.span(range_note or "", class_="range-note") if range_note else None,
+            class_="left",
+        ),
+        core_ui.div(
+            ui.input_radio_buttons(
+                "sort", None,
+                {"seed": "Seed", "points": "Points", "form": "Form"},
+                selected=sort.get(), inline=True,
+            ),
+            class_="segment",
+        ),
+        class_="controlrow",
+    )
+
+
+with ui.div(id="race-wrap", class_="race-wrap"):
+    core_ui.p("The race", class_="section-label")
+
+    with ui.div(class_="chart-wrap"):
+        @render_widget
+        def race_plot_widget():
+            scoped = _scope_scores()
+            if scoped.empty:
+                return charts.as_widget(charts.empty_fig())
+            ranked = stats.rank_by_week(scoped)
+            return charts.as_widget(charts.rank_curve(ranked, _styles()))
+
+
+# -------------------------------------------------------------- screen: TEAMS
+
+@render.ui
+def screen_teams():
+    if screen() != "teams":
+        return None
+
+    styles = _styles()
+    if not styles:
+        return core_ui.div(
+            core_ui.p("No score data collected yet for this season.", class_="empty-note"),
+            class_="screen",
+        )
+
+    current = _current_team()
+    scoped = _scope_scores()
+    log = stats.game_log(scoped)
+    games = log[log["team_name"] == current].sort_values("week") if not log.empty else log
+    colors = styles.get(current, {"color": theme.INK_MUTE})
+
+    records = stats.derive_records(scoped)
+    mine = records[records["team_name"] == current]
+    espn = _standings_df()
+    seed_row = espn[espn["team_name"] == current] if not espn.empty else espn
+    seed = int(seed_row.iloc[0]["rank"]) if not seed_row.empty else None
+    lo, hi = _scope_bounds()
+
+    record_text = mine.iloc[0]["record"] if not mine.empty else "0-0"
+    streak_text = mine.iloc[0]["streak"] if not mine.empty else ""
+
+    con = stats.consistency(scoped)
+    mine_con = con[con["team_name"] == current]
+    league_avg = scoped["score"].mean() if not scoped.empty else None
+    league_median = scoped["score"].median() if not scoped.empty else None
+
+    ceiling_wk = floor_wk = None
+    proj_avg = None
+    if not games.empty:
+        ceiling_wk = int(games.loc[games["score"].idxmax()]["week"])
+        floor_wk = int(games.loc[games["score"].idxmin()]["week"])
+        proj_games = games[games["projected_score"].notna() & (games["projected_score"] > 0)]
+        if not proj_games.empty:
+            proj_avg = (proj_games["score"] - proj_games["projected_score"]).mean()
+
+    stat_cells = core_ui.div(
+        core_ui.div(
+            core_ui.span("Average", class_="k"),
+            core_ui.span(f"{games['score'].mean():.1f}" if not games.empty else "--", class_="v"),
+            core_ui.span(f"League avg {league_avg:.1f}" if league_avg is not None else "",
+                        class_="sub"),
+            class_="cell",
+        ),
+        core_ui.div(
+            core_ui.span("Ceiling", class_="k"),
+            core_ui.span(f"{games['score'].max():.1f}" if not games.empty else "--", class_="v"),
+            core_ui.span(f"Week {ceiling_wk}" if ceiling_wk else "", class_="sub"),
+            class_="cell",
+        ),
+        core_ui.div(
+            core_ui.span("Floor", class_="k"),
+            core_ui.span(f"{games['score'].min():.1f}" if not games.empty else "--", class_="v"),
+            core_ui.span(f"Week {floor_wk}" if floor_wk else "", class_="sub"),
+            class_="cell",
+        ),
+        core_ui.div(
+            core_ui.span("Vs projection", class_="k"),
+            core_ui.span(f"{proj_avg:+.1f}" if proj_avg is not None else "--", class_="v"),
+            core_ui.span("per week", class_="sub"),
+            class_="cell",
+        ),
+        class_="profile-stats",
+    )
+
+    profile = core_ui.div(
+        core_ui.div(
+            core_ui.div(
+                core_ui.span(f"SEED {seed} · WEEKS {lo}–{hi}" if seed else f"WEEKS {lo}–{hi}",
+                            class_="eyebrow"),
+                core_ui.h1(current, class_="team-name"),
+            ),
+            core_ui.span(f"{record_text} · {streak_text}" if streak_text else record_text,
+                        class_="record-streak"),
+            class_="profile-head",
+            style=(f"background: linear-gradient(180deg, {colors['color']}26 0%, "
+                   f"{colors['color']}00 100%)"),
+        ),
+        stat_cells,
+        class_="profile",
+        style=f"border-top-color:{colors['color']}",
+    )
+
+    log_rows = []
+    for _, g in games.iterrows():
+        result = g["result"] or "—"
+        res_cls = {"W": "win", "L": "loss"}.get(result, "mute")
+        delta = None
+        if pd.notna(g.get("projected_score")) and g["projected_score"]:
+            d = g["score"] - g["projected_score"]
+            delta = core_ui.span(f"{d:+.1f}", class_=f"delta {'over' if d >= 0 else 'under'}")
+        log_rows.append(core_ui.div(
+            core_ui.span(f"WK {int(g['week'])}", class_="wk"),
+            core_ui.span(result, class_=f"res {res_cls}"),
+            core_ui.span(g["opponent_name"], class_="opp"),
+            core_ui.span(f"{g['score']:.1f}", class_="score"),
+            core_ui.span(f"{g['opponent_score']:.1f}" if pd.notna(g["opponent_score"]) else "—",
+                        class_="oscore"),
+            delta,
+            class_="gamelog-row",
+        ))
+
+    range_block = None
+    if not scoped.empty and not mine_con.empty:
+        lo_score, hi_score = scoped["score"].min(), scoped["score"].max()
+        span = (hi_score - lo_score) or 1.0
+        floor_v, ceil_v = mine_con.iloc[0]["floor"], mine_con.iloc[0]["ceiling"]
+        band_left = (floor_v - lo_score) / span * 100
+        band_width = (ceil_v - floor_v) / span * 100
+        my_median = mine_con.iloc[0]["median"]
+        my_tick = (my_median - lo_score) / span * 100
+        league_tick = (league_median - lo_score) / span * 100 if league_median is not None else 0
+
+        range_block = core_ui.div(
+            core_ui.p("Range vs the league", class_="section-label"),
+            core_ui.div(
+                core_ui.div(
+                    core_ui.div(class_="line"),
+                    core_ui.div(class_="band", style=(
+                        f"left:{band_left:.1f}%;width:{band_width:.1f}%;"
+                        f"background:{colors['color']}44")),
+                    core_ui.div(class_="tick mine", style=f"left:{my_tick:.1f}%"),
+                    core_ui.div(class_="tick league", style=f"left:{league_tick:.1f}%"),
+                    class_="range-track",
+                ),
+                core_ui.div(
+                    core_ui.span(f"Floor {floor_v:.1f}"),
+                    core_ui.span(f"Ceiling {ceil_v:.1f}"),
+                    class_="range-values",
+                ),
+                core_ui.div(
+                    core_ui.span(core_ui.span(class_="swatch", style="background:var(--ink)"),
+                                "team median", class_="item"),
+                    core_ui.span(core_ui.span(class_="swatch", style="background:var(--ink-mute)"),
+                                "league median", class_="item"),
+                    class_="range-legend",
+                ),
+                class_="range-block",
+            ),
+        )
+
+    h2h_rows = []
+    records_tbl, margins_tbl = stats.head_to_head(scoped)
+    if current in records_tbl.index:
+        row_margins = margins_tbl.loc[current].dropna().sort_values(ascending=False)
+        for opp in row_margins.index:
+            m = row_margins[opp]
+            rec_text = records_tbl.at[current, opp]
+            pct = min(abs(m) / 40, 1.0) * 100
+            h2h_rows.append(core_ui.div(
+                core_ui.span(opp, class_="opp"),
+                core_ui.span(rec_text, class_="record"),
+                core_ui.div(
+                    core_ui.div(class_=f"bar {'pos' if m >= 0 else 'neg'}",
+                                style=f"width:{pct / 2:.1f}%"),
+                    class_="bar-track",
+                ),
+                class_="h2h-row",
+            ))
+
+    return core_ui.div(
+        _team_rail(styles, current),
+        profile,
+        core_ui.div(
+            core_ui.div(
+                core_ui.p("Game log", class_="section-label"),
+                core_ui.div(*log_rows) if log_rows else
+                core_ui.p("No games played yet in this range.", class_="empty-note"),
+            ),
+            core_ui.div(
+                range_block,
+                core_ui.p("Head to head", class_="section-label"),
+                core_ui.div(*h2h_rows) if h2h_rows else None,
+            ),
+            class_="team-body",
+        ),
+        class_="screen",
+    )
+
+
+def _team_rail(styles, current):
+    pills = [
+        _clickable(
+            core_ui.tags.button, "team_pick", name,
+            core_ui.span(class_="dot", style=f"background:{style['color']}"),
+            core_ui.span(name),
+            class_="team-pill active" if name == current else "team-pill",
+            type="button",
+        )
+        for name, style in styles.items()
+    ]
+    return core_ui.div(
+        core_ui.div(*pills, class_="teamrail"),
+        core_ui.div(
+            ui.input_select(
+                "team_select", None,
+                choices=list(styles.keys()),
+                selected=current,
+            ),
+            class_="team-select-mobile",
+        ),
+    )
+
+
+# ------------------------------------------------------------ screen: RECORDS
+
+@render.ui
+def screen_records():
+    if screen() != "records":
+        return None
+
+    scoped = _scope_scores()
+    lo, hi = _scope_bounds()
+    if scoped.empty:
+        return core_ui.div(
+            _scope_sort_row_records(),
+            core_ui.p("No weeks in this range.", class_="empty-note"),
+            class_="screen",
+        )
+
+    awards = stats.trophies(scoped)
+    single_week = [a for a in awards if a["week"] is not None]
+    season = [a for a in awards if a["week"] is None]
+
+    def ledger_row(a):
+        value_text = a["detail"].split(" ")[0]
+        scoreline = a["detail"].split(" — ")[1] if " — " in a["detail"] else ""
+        week_badge = f"WK {a['week']}" if a["week"] is not None else "SEASON"
+        return _clickable(
+            core_ui.div, "team_pick", a["focus"],
+            core_ui.span(a["icon"], class_="glyph"),
+            core_ui.div(
+                core_ui.span(a["title"], class_="award"),
+                core_ui.span(a["team"], class_="team"),
+                core_ui.span(scoreline, class_="scoreline") if scoreline else None,
+                class_="stack",
+            ),
+            core_ui.span(value_text, class_="value"),
+            core_ui.div(
+                core_ui.span(week_badge, class_="weekbadge"),
+                core_ui.span("→", class_="arrow"),
+                class_="meta",
+            ),
+            class_="ledger-row",
+            role="button",
+        )
+
+    range_note = f"weeks {lo}–{hi}" if lo != hi else f"week {lo}"
+
+    return core_ui.div(
+        _scope_sort_row_records(range_note),
+        core_ui.h1("RECORD BOOK", class_="screen-title board"),
+        core_ui.p(
+            "Every line goes somewhere — click one and you land on that "
+            "team's page with the week already loaded.",
+            class_="screen-note",
+        ),
+        core_ui.div(
+            core_ui.p("Single week", class_="ledger-heading"),
+            *[ledger_row(a) for a in single_week],
+            class_="ledger-group",
+        ) if single_week else None,
+        core_ui.div(
+            core_ui.p("Season", class_="ledger-heading"),
+            *[ledger_row(a) for a in season],
+            class_="ledger-group",
+        ) if season else None,
+        class_="screen",
+    )
+
+
+def _scope_sort_row_records(range_note=None):
+    return core_ui.div(
+        core_ui.div(
+            core_ui.div(
+                ui.input_radio_buttons(
+                    "scope", None,
+                    {"reg": "Regular", "post": "Playoffs", "full": "Full"},
+                    selected=scope.get(), inline=True,
+                ),
+                class_="segment",
+            ),
+            core_ui.span(range_note or "", class_="range-note") if range_note else None,
+            class_="left",
+        ),
+        class_="controlrow",
+    )
+
+
+# ---------------------------------------------------------------- bottom bar
+
+@render.ui
+def bottom_nav():
+    current = screen()
+    cells = [
+        _clickable(
+            core_ui.tags.button, "nav_pick", key,
+            core_ui.div(class_="bb-bar"),
+            core_ui.span(label.upper(), class_="bb-label"),
+            class_="bb-item active" if key == current else "bb-item",
+            type="button",
+        )
+        for key, label in NAV_ITEMS
+    ]
+    return core_ui.div(*cells, class_="bottombar")
 
 
 ui.markdown(
     "<p class='footnote'>New snapshots are collected every Tuesday during the "
-    "season and appear here on their own — no refresh needed. Pick a team in "
-    "the standings to follow it across every tab. On the charts, click a team "
-    "in the legend to hide it, or double-click to show only that team.</p>"
+    "season and appear here on their own — no refresh needed.</p>"
 )

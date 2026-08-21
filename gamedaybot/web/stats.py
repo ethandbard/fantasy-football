@@ -270,6 +270,14 @@ def trophies(scores_df):
                 "detail": f"{beaten['points_against']} pts faced",
             })
 
+            top_scorer = records.loc[records["points_for"].idxmax()]
+            awards.append({
+                "icon": "🏆", "title": "Most Points For",
+                "team": top_scorer["team_name"], "week": None,
+                "focus": top_scorer["team_name"],
+                "detail": f"{top_scorer['points_for']} pts",
+            })
+
     projected = log[log["projected_score"].notna() & (log["projected_score"] > 0)].copy()
     if not projected.empty:
         projected["vs_proj"] = projected["score"] - projected["projected_score"]
