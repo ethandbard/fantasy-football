@@ -114,13 +114,6 @@ def get_env_vars():
     data['top_half_scoring'] = top_half_scoring
 
     try:
-        random_phrase = utils.str_to_bool(os.environ["RANDOM_PHRASE"])
-    except KeyError:
-        random_phrase = False
-
-    data['random_phrase'] = random_phrase
-
-    try:
         waiver_report = utils.str_to_bool(os.environ["WAIVER_REPORT"])
     except KeyError:
         waiver_report = False

@@ -97,18 +97,33 @@ def trophies_embed(text, league=None):
     return payload
 
 
-def init_embed(year, ff_start_date, ff_end_date):
+INIT_TITLE = "🤖 Fantasy Football Bot Started!"
+
+
+def init_lines(data):
+    """
+    Startup summary as a list of lines, built from the resolved env config so
+    it reports what the bot will actually do. Shared by the plain-text
+    (GroupMe/Slack) and embed (Discord) renderings so the two can't drift.
+
+    `data` is the dict returned by gamedaybot.espn.env_vars.get_env_vars().
+    """
+    return [
+        "✅ **Connected to league successfully!**",
+        f"📅 **Season:** {data['year']} ({data['ff_start_date']} - {data['ff_end_date']})",
+        f"⏰ **Timezone:** {data['my_timezone']}",
+        f"📊 **Waiver reports:** {'Every day' if data['daily_waiver'] else 'Wednesdays only'}",
+        f"🏥 **Player monitoring:** {'Enabled' if data['monitor_report'] else 'Disabled'}",
+        "",
+        "🎯 **Bot is now running and will send automatic updates on schedule!**",
+        f"🔥 **Ready for the {data['year']} fantasy season!**",
+    ]
+
+
+def init_embed(data):
     return {
-        "title": "🤖 Fantasy Football Bot Started!",
-        "description": (
-            "✅ **Connected to league successfully!**\n"
-            f"📅 **Season:** {year} ({ff_start_date} - {ff_end_date})\n"
-            "⏰ **Timezone:** America/New_York\n"
-            "📊 **Daily waiver reports:** Enabled\n"
-            "🏥 **Player monitoring:** Enabled\n\n"
-            "🎯 **Bot is now running and will send automatic updates on schedule!**\n"
-            f"🔥 **Ready for the {year} fantasy season!**"
-        ),
+        "title": INIT_TITLE,
+        "description": "\n".join(init_lines(data)),
         "color": EMBED_COLORS["init"],
         "timestamp": _now_iso(),
     }

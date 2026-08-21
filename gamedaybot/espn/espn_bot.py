@@ -77,8 +77,6 @@ def espn_bot(function):
         If not provided, defaults to '1'.
     top_half_scoring: a boolean that indicates whether to include only the top half of the league in the standings.
         If not provided, defaults to False.
-    random_phrase: a boolean that indicates whether to include a random phrase in the message.
-        If not provided, defaults to False.
 
     The function creates GroupMe, Slack, and Discord objects, and a League object using the provided information.
     It then uses the specified function to generate a message and sends it through the appropriate messaging platform.
@@ -145,15 +143,10 @@ def espn_bot(function):
     except KeyError:
         espn_s2 = '1'
 
-    try:
-        top_half_scoring = util.str_to_bool(data['top_half_scoring'])
-    except KeyError:
-        top_half_scoring = False
-
-    try:
-        random_phrase = util.str_to_bool(data['random_phrase'])
-    except KeyError:
-        random_phrase = False
+    # get_env_vars() already coerced this to a real bool. Passing it through
+    # str_to_bool again hits that function's bare except (bools have no
+    # .strip()) and silently forces it back to False.
+    top_half_scoring = data['top_half_scoring']
 
     groupme_bot = GroupMe(bot_id)
     slack_bot = Slack(slack_webhook_url)
@@ -178,7 +171,7 @@ def espn_bot(function):
     logger.info("Function: " + function)
 
     if function == "get_matchups":
-        text = espn.get_matchups(league, random_phrase)
+        text = espn.get_matchups(league)
         text = text + "\n\n" + espn.get_projected_scoreboard(league)
     elif function == "get_monitor":
         text = espn.get_monitor(league)
@@ -220,25 +213,21 @@ def espn_bot(function):
             # do nothing here, empty broadcast message
             pass
     elif function == "init":
-        # Handle init message specially - send with proper Discord formatting
-        # Create a nicely formatted init message with working emojis
-        init_text = f"""🤖 **Fantasy Football Bot Started!** 🏈
+        init_msg = data.get('init_msg')
+        if init_msg:
+            # INIT_MSG replaces the generated summary outright.
+            groupme_bot.send_message(init_msg)
+            slack_bot.send_message(init_msg)
+            discord_bot.send_message(text=init_msg)
+            return
 
-✅ **Connected to league successfully!**
-📅 **Season:** {year} ({data['ff_start_date']} - {data['ff_end_date']})
-⏰ **Timezone:** America/New_York
-📊 **Daily waiver reports:** Enabled
-🏥 **Player monitoring:** Enabled
-
-🎯 **Bot is now running and will send automatic updates on schedule!**
-🔥 **Ready for the {year} fantasy season!**"""
-        
-        # Send to GroupMe and Slack normally (they handle formatting differently)
-        groupme_bot.send_message(init_text)
-        slack_bot.send_message(init_text)
-        # Send to Discord as a rich embed instead of plain/code-block text
-        init_payload = discord_fmt.init_embed(year, data['ff_start_date'], data['ff_end_date'])
-        discord_bot.send_message(embed=init_payload)
+        # Same summary lines rendered two ways: plain text for GroupMe/Slack,
+        # a rich embed for Discord.
+        plain = '\n'.join(
+            [discord_fmt.INIT_TITLE + ' 🏈', ''] + discord_fmt.init_lines(data))
+        groupme_bot.send_message(plain)
+        slack_bot.send_message(plain)
+        discord_bot.send_message(embed=discord_fmt.init_embed(data))
         return  # Skip the normal message sending at the end
     else:
         text = "Something bad happened. HALP"

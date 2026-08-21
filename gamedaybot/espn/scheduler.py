@@ -22,15 +22,8 @@ def scheduler():
     ff_end_date = data['ff_end_date']
     my_timezone = data['my_timezone']
 
-    # close scores (within 15.99 points): monday evening at 6:30pm east coast time.
-    # power rankings:                     tuesday evening at 6:30pm local time.
-    # trophies:                           tuesday morning at 7:30am local time.
-    # standings:                          wednesday morning at 7:30am local time.
-    # waiver report:                      wednesday morning at 7:31am local time. (optional)
-    # matchups:                           thursday evening at 7:30pm east coast time.
-    # score update:                       friday, monday, and tuesday morning at 7:30am local time.
-    # player monitor report:              sunday morning at 7:30am local time.
-    # score update:                       sunday at 4pm, 8pm east coast time.
+    # Jobs marked `game_timezone` are pinned to Eastern because they follow the
+    # NFL game clock; the rest use TIMEZONE. See the schedule table in README.md.
 
     sched.add_job(espn_bot, 'cron', ['get_close_scores'], id='close_scores',
                   day_of_week='mon', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
@@ -44,15 +37,13 @@ def scheduler():
     sched.add_job(espn_bot, 'cron', ['get_standings'], id='standings',
                   day_of_week='wed', hour=9, minute=0, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=my_timezone, replace_existing=True)
+    # Waivers process Wednesday morning; DAILY_WAIVER widens the same report to
+    # every day. This has to stay a single job -- two jobs sharing an id with
+    # replace_existing=True means the second silently overwrites the first.
+    waiver_days = '*' if data['daily_waiver'] else 'wed'
     sched.add_job(espn_bot, 'cron', ['get_waiver_report'], id='waiver_report',
-                  day_of_week='wed', hour=9, minute=1, start_date=ff_start_date, end_date=ff_end_date,
+                  day_of_week=waiver_days, hour=9, minute=1, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=my_timezone, replace_existing=True)
-
-    if data['daily_waiver']:
-        sched.add_job(
-            espn_bot, 'cron', ['get_waiver_report'],
-            id='waiver_report', day_of_week='mon, tue, thu, fri, sat, sun', hour=9, minute=1, start_date=ff_start_date,
-            end_date=ff_end_date, timezone=my_timezone, replace_existing=True)
 
     sched.add_job(espn_bot, 'cron', ['get_matchups'], id='matchups',
                   day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,

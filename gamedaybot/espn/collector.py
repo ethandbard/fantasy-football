@@ -16,14 +16,20 @@ def collect_weekly_snapshot(league):
     upserts them into the local database. Safe to call multiple times for
     the same week (idempotent via INSERT OR REPLACE on (year, week, team_id)).
 
-    Silently no-ops (with a log message) if the season hasn't started yet --
-    ESPN doesn't have box score data available before the draft.
+    No-ops (with a log message) if the season hasn't started yet. Standings
+    are gated on scores because league.standings() succeeds before the draft
+    even though box_scores() doesn't -- collecting it unconditionally writes
+    a meaningless 0-0 snapshot of however many teams have joined so far.
     """
     db.init_db()
     year = league.year
     week = league.current_week
 
-    _collect_scores(league, year, week)
+    if not _collect_scores(league, year, week):
+        logger.info("No box scores for %s week %s -- skipping standings "
+                    "(season likely hasn't started)", year, week)
+        return
+
     _collect_standings(league, year, week)
 
 
@@ -44,9 +50,7 @@ def collect_historical_season(league):
 
     collected_any = False
     for week in range(1, last_week + 1):
-        before = _row_count(year, week)
-        _collect_scores(league, year, week)
-        if _row_count(year, week) > before:
+        if _collect_scores(league, year, week):
             collected_any = True
 
     if collected_any:
@@ -55,17 +59,13 @@ def collect_historical_season(league):
     return collected_any
 
 
-def _row_count(year, week):
-    rows = db.get_weekly_scores(year)
-    return sum(1 for r in rows if r["week"] == week)
-
-
 def _collect_scores(league, year, week):
+    """Returns True if any score rows were written for the given week."""
     try:
         box_scores = league.box_scores(week=week)
     except Exception as e:
         logger.info("Skipping score collection for %s week %s: %s", year, week, e)
-        return
+        return False
 
     rows = []
     for b in box_scores:
@@ -86,9 +86,12 @@ def _collect_scores(league, year, week):
             "is_home": 0,
         })
 
-    if rows:
-        db.upsert_weekly_scores(rows)
-        logger.info("Collected %d score rows for %s week %s", len(rows), year, week)
+    if not rows:
+        return False
+
+    db.upsert_weekly_scores(rows)
+    logger.info("Collected %d score rows for %s week %s", len(rows), year, week)
+    return True
 
 
 def _collect_standings(league, year, week):
