@@ -1,0 +1,282 @@
+/*-- scss:defaults --*/
+
+$ground:   #0E1116;
+$surface:  #161A21;
+$raised:   #1E242D;
+$line:     #2A313B;
+$ink:      #F2F5F8;
+$ink-dim:  #98A4B3;
+$ink-mute: #5E6A78;
+$accent:   #F0631E;
+$win:      #4CB782;
+$loss:     #E4574C;
+
+$body-bg: $ground;
+$body-color: $ink-dim;
+$link-color: $accent;
+$selection-bg: $accent;
+$presentation-heading-color: $ink;
+$presentation-heading-font-weight: 800;
+$presentation-heading-letter-spacing: -0.03em;
+$code-block-bg: $raised;
+$font-family-sans-serif: "Archivo", "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+/*-- scss:rules --*/
+
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap");
+
+.reveal {
+  font-family: $font-family-sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.reveal .slides {
+  text-align: left;
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  font-family: $font-family-sans-serif;
+  color: $ink;
+  text-transform: none;
+  font-weight: 800;
+}
+
+.reveal h1 {
+  font-size: 2.4em;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.reveal h2 {
+  font-size: 1.55em;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.7em;
+}
+
+.reveal p,
+.reveal li {
+  color: $ink-dim;
+  font-size: 1.05em;
+  line-height: 1.4;
+}
+
+.reveal strong {
+  color: $ink;
+  font-weight: 600;
+}
+
+.reveal a {
+  color: $accent;
+}
+
+.reveal .kicker,
+.reveal .num,
+.reveal .day-name,
+.reveal .when,
+.reveal .what {
+  p {
+    margin: 0;
+  }
+}
+
+.reveal .kicker {
+  font-family: $font-family-monospace;
+  font-size: 0.42em;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: $accent;
+  margin-bottom: 0.8em;
+}
+
+.reveal .subtitle {
+  color: $ink-dim;
+}
+
+.reveal .slide-number {
+  font-family: $font-family-monospace;
+  color: $ink-mute;
+  background: transparent;
+}
+
+.reveal .footer {
+  font-family: $font-family-monospace;
+  font-size: 0.35em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $ink-mute;
+}
+
+.reveal .progress span {
+  background: $accent;
+}
+
+/* three-up cards */
+
+.reveal .trio {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.8em;
+  margin-top: 0.4em;
+}
+
+.reveal .trio article {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 0.9em 0.95em 1em;
+}
+
+.reveal .trio .num {
+  font-family: $font-family-monospace;
+  font-size: 0.42em;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: $accent;
+  display: block;
+  margin-bottom: 0.45em;
+}
+
+.reveal .trio h3 {
+  font-size: 0.72em;
+  margin: 0 0 0.35em;
+}
+
+.reveal .trio p {
+  font-size: 0.58em;
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* week strip */
+
+.reveal .week {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5em;
+  margin-top: 0.2em;
+}
+
+.reveal .day {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 10px;
+  padding: 0.55em 0.5em 0.65em;
+}
+
+.reveal .day-name {
+  font-family: $font-family-monospace;
+  font-size: 0.38em;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: $ink;
+  border-bottom: 1px solid $line;
+  padding-bottom: 0.3em;
+  margin-bottom: 0.4em;
+}
+
+.reveal .slot {
+  margin: 0 0 0.4em;
+}
+
+.reveal .slot:last-child {
+  margin-bottom: 0;
+}
+
+.reveal .when {
+  display: block;
+  font-family: $font-family-monospace;
+  font-size: 0.32em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $accent;
+}
+
+.reveal .what {
+  display: block;
+  font-size: 0.42em;
+  color: $ink-dim;
+  line-height: 1.25;
+}
+
+/* command list */
+
+.reveal .cmds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45em 1.4em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reveal .cmds li {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 8px;
+  padding: 0.45em 0.7em;
+  font-size: 0.7em;
+}
+
+.reveal .cmds code {
+  color: $ink;
+  background: transparent;
+  font-size: 0.95em;
+}
+
+.reveal .cmds span {
+  color: $ink-mute;
+  font-size: 0.85em;
+  margin-left: 0.4em;
+}
+
+/* dashboard tabs */
+
+.reveal .tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55em;
+}
+
+.reveal .tab {
+  background: $surface;
+  border: 1px solid $line;
+  border-left: 3px solid $accent;
+  border-radius: 8px;
+  padding: 0.55em 0.75em 0.6em;
+}
+
+.reveal .tab h3 {
+  font-size: 0.62em;
+  margin: 0 0 0.15em;
+}
+
+.reveal .tab p {
+  font-size: 0.5em;
+  margin: 0;
+}
+
+.reveal .center-slide {
+  text-align: left;
+}
+
+.reveal .title-slide h1 {
+  max-width: 14ch;
+}
+
+.reveal .title-slide p {
+  font-size: 0.9em;
+  max-width: 28em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal .slides {
+    transition: none !important;
+  }
+}

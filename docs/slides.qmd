@@ -1,0 +1,330 @@
+---
+title: "Fantasy football, week by week"
+subtitle: "Discord reports, slash commands, and a live dashboard"
+format:
+  revealjs:
+    theme: [dark, slides.scss]
+    slide-number: true
+    transition: fade
+    width: 1280
+    height: 720
+    footer: "Fantasy football bot"
+    preview-links: auto
+    hash: true
+    chalkboard: false
+    highlight-style: a11y-dark
+    title-slide-attributes:
+      data-background-color: "#0E1116"
+---
+
+## What this is
+
+A bot that watches your ESPN fantasy league.
+
+It talks in Discord. It also keeps a website of the season.
+
+You do not start it on game day. It is already running.
+
+::: {.notes}
+The container stays up all season. League members only need Discord and a browser. No one has to remember a schedule or log into ESPN to see the same numbers.
+:::
+
+## Three things you get
+
+::: {.trio}
+::: {#post}
+
+::: {.num}
+Channel
+:::
+
+### Scheduled posts
+
+Scoreboards, matchups, standings, and trophies land in Discord on their own.
+
+:::
+
+::: {#ask}
+
+::: {.num}
+Anytime
+:::
+
+### Slash commands
+
+Type a command in the server when you want the current week, not the last post.
+
+:::
+
+::: {#see}
+
+::: {.num}
+The season
+:::
+
+### Web dashboard
+
+Charts, records, and season awards from every week the bot has saved.
+
+:::
+:::
+
+::: {.notes}
+These are the only three surfaces. Scheduled posts use a webhook. Slash commands need the bot invited to the server. The dashboard is a web page, local or on a public URL.
+:::
+
+## What shows up in Discord
+
+Each post is one report. Typical reports:
+
+- Current scores and projections
+- Close games
+- Final scores and weekly trophies
+- Power rankings and standings
+- Thursday matchups
+- Waiver moves
+- Sunday injury watch
+
+::: {.notes}
+The tone matches ESPN's own reports: names, scores, ranks. Private leagues need ESPN cookies before waiver moves appear. Public leagues skip that report.
+:::
+
+## A week in the league channel
+
+:::: {.week}
+
+::: {.day}
+::: {.day-name}
+Mon
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Scores
+:::
+:::
+
+::: {.slot}
+::: {.when}
+evening
+:::
+::: {.what}
+Close games
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Tue
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Finals, trophies
+:::
+:::
+
+::: {.slot}
+::: {.when}
+evening
+:::
+::: {.what}
+Power rankings
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Wed
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Standings
+:::
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Waivers
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Thu
+:::
+
+::: {.slot}
+::: {.when}
+evening
+:::
+::: {.what}
+This week's matchups
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Fri
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Scores
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Sun
+:::
+
+::: {.slot}
+::: {.when}
+morning
+:::
+::: {.what}
+Injuries
+:::
+:::
+
+::: {.slot}
+::: {.when}
+afternoon / night
+:::
+::: {.what}
+Live scores
+:::
+:::
+:::
+
+::::
+
+::: {.notes}
+Tuesday morning also saves the finished week to the dashboard database. That is why the website trails live Discord by a day: it waits until Monday night football is over.
+:::
+
+## Ask the bot yourself
+
+Type `/` in Discord. Pick a command:
+
+::: {.cmds}
+- `/matchups` <span>this week's games</span>
+- `/scoreboard` <span>live scores</span>
+- `/standings` <span>the table</span>
+- `/power-rankings` <span>who is hot</span>
+- `/monitor` <span>injuries</span>
+- `/trophies` <span>this week's awards</span>
+- `/waiver-report` <span>adds and drops</span>
+- `/dashboard` <span>link to the site</span>
+:::
+
+::: {.notes}
+Commands read ESPN live. The dashboard reads the saved season. If they disagree on year, the dashboard is behind until the next Tuesday snapshot, or until someone backfills a prior season.
+:::
+
+## The dashboard
+
+A dark page of the whole season, not only this week.
+
+- Filter weeks: regular season, playoffs, or a custom range
+- Pick a season if more than one is saved
+- Click a team. Every chart follows that team
+- Click a trophy. You jump to that week on the trend chart
+
+The page refreshes itself about every 30 seconds.
+
+::: {.notes}
+Empty dashboard means no snapshot has run yet. A completed past season can be loaded with the backfill script. League members never need that command; it is a maintainer step.
+:::
+
+## Five views
+
+::: {.tabs}
+::: {.tab}
+### Trend
+
+How each team scored, week by week. Cumulative, rank, or versus projection.
+:::
+
+::: {.tab}
+### Standings
+
+Wins, point differential, streak, and recent form.
+:::
+
+::: {.tab}
+### Spread
+
+Who is steady and who swings. Median, floor, ceiling.
+:::
+
+::: {.tab}
+### Head to head
+
+Every pairing, tinted by typical margin.
+:::
+
+::: {.tab}
+### Trophies
+
+Eleven season awards. Click one to jump to that week.
+:::
+:::
+
+::: {.notes}
+Trophies is the fifth tab. It did not fit the four-up grid. Cover it on the next slide. Eleven awards: highest and lowest score, closest game, biggest blowout, luckiest win, unluckiest loss, streak, points against, best and worst versus projection, biggest week-to-week swing.
+:::
+
+## Season trophies
+
+Eleven awards, not a single champion graphic.
+
+Highest score. Closest game. Biggest blowout. Luckiest win.
+
+Click an award. The dashboard focuses that team and marks the week.
+
+::: {.notes}
+This is the feature people remember. The old version showed the award and stopped. Now the card is a way into the chart.
+:::
+
+## What you do
+
+Nothing on Sunday morning.
+
+Open Discord for the latest post, or type a slash command.
+
+Open the dashboard when you want the season, not the week.
+
+::: {.notes}
+If someone asks how to log in: they don't. Discord is the league server they already belong to. The dashboard is a public URL if the tunnel is up, or localhost:8000 on the host machine.
+:::
+
+## Credits
+
+Built on [gamedaybot](https://github.com/dtcarls/fantasy_football_chat_bot) by Dean Carlson.
+
+Source: [ethandbard/fantasy-football](https://github.com/ethandbard/fantasy-football)
+
+A longer write-up lives on the [overview page](index.qmd).

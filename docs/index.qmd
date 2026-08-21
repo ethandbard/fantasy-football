@@ -1,0 +1,320 @@
+---
+pagetitle: "Fantasy football Discord bot"
+description: "A Discord bot that posts ESPN fantasy football updates, answers slash commands, and serves a web dashboard of league history."
+---
+
+::: {.hero}
+::: {.kicker}
+ESPN fantasy football
+:::
+
+# League updates in Discord. The season on a dashboard.
+
+::: {.lede}
+One Docker container posts ESPN reports on a schedule, answers slash commands, and serves a web dashboard of league history.
+:::
+:::
+
+::: {.trio}
+::: {#scheduled}
+
+::: {.num}
+Channel
+:::
+
+### Scheduled posts
+
+Reports land in the Discord channel that owns the webhook. Jobs run only between `START_DATE` and `END_DATE`.
+
+:::
+
+::: {#commands}
+
+::: {.num}
+On demand
+:::
+
+### Slash commands
+
+If `DISCORD_BOT_TOKEN` is set, anyone in the server can ask for the current week. The bot syncs its command tree when it connects.
+
+:::
+
+::: {#dash}
+
+::: {.num}
+The season
+:::
+
+### Web dashboard
+
+A Tuesday snapshot writes the finished week to SQLite. The dashboard charts every season stored in that file.
+
+:::
+:::
+
+## A typical week
+
+The scheduler follows the NFL game clock for some jobs. Those times stay on Eastern. All other times follow `TIMEZONE`.
+
+:::: {.week}
+
+::: {.day}
+::: {.day-name}
+Mon
+:::
+
+::: {.slot}
+::: {.when}
+9:00 AM
+:::
+::: {.what}
+Score update
+:::
+:::
+
+::: {.slot}
+::: {.when}
+6:30 PM ET
+:::
+::: {.what}
+Close scores
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Tue
+:::
+
+::: {.slot}
+::: {.when}
+6:00 AM ET
+:::
+::: {.what}
+Dashboard snapshot
+:::
+:::
+
+::: {.slot}
+::: {.when}
+9:00 AM
+:::
+::: {.what}
+Finals and trophies
+:::
+:::
+
+::: {.slot}
+::: {.when}
+6:30 PM
+:::
+::: {.what}
+Power rankings
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Wed
+:::
+
+::: {.slot}
+::: {.when}
+9:00 AM
+:::
+::: {.what}
+Standings
+:::
+:::
+
+::: {.slot}
+::: {.when}
+9:01 AM
+:::
+::: {.what}
+Waiver report
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Thu
+:::
+
+::: {.slot}
+::: {.when}
+7:30 PM ET
+:::
+::: {.what}
+Matchups
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Fri
+:::
+
+::: {.slot}
+::: {.when}
+9:00 AM
+:::
+::: {.what}
+Score update
+:::
+:::
+:::
+
+::: {.day}
+::: {.day-name}
+Sun
+:::
+
+::: {.slot}
+::: {.when}
+9:00 AM
+:::
+::: {.what}
+Injury monitor
+:::
+:::
+
+::: {.slot}
+::: {.when}
+4:00 / 8:00 PM ET
+:::
+::: {.what}
+Score updates
+:::
+:::
+:::
+
+::::
+
+::: {.note}
+Set `DAILY_WAIVER` to `True` to post the waiver report every day at 9:01 AM, not only Wednesday. The Tuesday snapshot waits until Monday night football is final.
+:::
+
+## Slash commands
+
+Slash commands need `DISCORD_BOT_TOKEN`. If ESPN returns an error, the bot explains that the season may not have started yet.
+
+| Command | Returns |
+| --- | --- |
+| `/matchups` | The current week's matchups. |
+| `/scoreboard` | The current scoreboard. |
+| `/standings` | The current standings. |
+| `/power-rankings` | The current power rankings. |
+| `/monitor` | The injury and player monitor report. |
+| `/trophies` | This week's trophies. |
+| `/waiver-report` | Recent waiver moves. Private leagues only. |
+| `/dashboard` | A link to the web dashboard. |
+
+## Dashboard
+
+The dashboard reads `data/fantasy.db`. It does not call ESPN on its own. A control bar sets which weeks are in play. It opens on the regular season. The regular-season boundary comes from the data. A team's wins plus losses plus ties is how many games it has played.
+
+:::: {.tabs}
+
+::: {.tab}
+### Trend
+
+Weekly score per team. Views cover cumulative points, rank by week, and performance against ESPN's projection.
+:::
+
+::: {.tab}
+### Standings
+
+Records, point differential, current streak, and last-five form, next to ESPN's official seed.
+:::
+
+::: {.tab}
+### Spread
+
+Score distribution per team, with median, floor, ceiling, standard deviation, and coefficient of variation.
+:::
+
+::: {.tab}
+### Head to head
+
+Every pairing's record, tinted by average margin.
+:::
+
+::: {.tab}
+### Trophies
+
+Eleven season awards. Selecting one follows that team to Trend with its week marked.
+:::
+
+::::
+
+Selecting a team — from a standings row or a trophy — follows it across every tab. Other lines mute. A game-log panel shows that team's weeks. **Reset** returns to the league view.
+
+A dropdown in the masthead selects the season. Only seasons in the database appear there. The page polls the database every 30 seconds, so a new snapshot reaches an open tab on its own.
+
+Reach the dashboard at `http://localhost:8000` locally, or at the Cloudflare Tunnel hostname.
+
+## How it runs
+
+The entrypoint `gamedaybot/run.py` starts three parts in one process:
+
+```{mermaid}
+flowchart LR
+  ESPN["ESPN API"] --> Bot["fantasy-bot container"]
+  Bot --> Hook["Discord webhook"]
+  Bot --> Slash["Slash-command bot"]
+  Bot --> DB["SQLite in data/"]
+  DB --> Dash["Shiny dashboard :8000"]
+  Dash --> Tunnel["Cloudflare Tunnel"]
+```
+
+- A scheduler posts recurring reports to a Discord webhook.
+- A Discord gateway bot answers slash commands, if `DISCORD_BOT_TOKEN` is set.
+- A Shiny dashboard on port `8000`, backed by SQLite in `data/`.
+
+A second container, `cloudflared`, publishes the dashboard at the hostname in `cloudflared/config.yml`. The live stack also sets `DASHBOARD_URL` so `/dashboard` returns that public link.
+
+Secrets stay in `config.env`. Docker Compose loads them through `env_file`, so no secret is baked into the image.
+
+## Where the code lives
+
+| Path | Role |
+| --- | --- |
+| `gamedaybot/run.py` | Container entrypoint. |
+| `gamedaybot/espn/` | ESPN access, report text, and the scheduler. |
+| `gamedaybot/discord_bot/` | Slash commands, webhook client, and embeds. |
+| `gamedaybot/storage/db.py` | SQLite schema and queries. |
+| `gamedaybot/web/` | Dashboard layout, season math, and charts. |
+| `dev/` | API health check and season backfill. |
+| `tests/` | Tests for `web/stats.py`. |
+
+The [README](https://github.com/ethandbard/fantasy-football#readme) covers configuration, Docker setup, tunnel setup, and troubleshooting. This page is the public overview. The [slide deck](slides.qmd) is a shorter walkthrough of the same three parts.
+
+## Preview and publish this site
+
+The overview and slides are a Quarto website in `docs/`.
+
+Preview:
+
+```bash
+quarto preview docs
+```
+
+Render:
+
+```bash
+quarto render docs
+```
+
+Output lands in `docs/_site`. That folder is static HTML, so GitHub Pages and Cloudflare Pages can both serve it.
+
+**GitHub Pages.** Push to `main`. The workflow in `.github/workflows/quarto-publish.yml` renders the site and deploys it to the `gh-pages` branch. In the GitHub repo, set **Settings → Pages** to deploy from `gh-pages`. The site URL is `https://ethandbard.github.io/fantasy-football/`.
+
+**Cloudflare Pages.** Create a Pages project pointed at the same `gh-pages` branch. Leave the build command empty and set the output directory to `/`. Cloudflare then serves the HTML the Action already built. You can attach a custom hostname in the Pages project.
+
+Do not run a second copy of the bot stack on another host at the same time. Two schedulers post every report twice. The docs site has no such limit: it is static files only.

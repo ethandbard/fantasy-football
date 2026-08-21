@@ -8,6 +8,11 @@ WEBHOOK_BACKUP.md
 data/
 logs/
 
+# Quarto
+.quarto/
+docs/_site/
+docs/.quarto/
+
 # Python
 __pycache__/
 *.pyc

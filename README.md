@@ -381,6 +381,24 @@ restart the container.
 `docker-compose logs fantasy-bot` for the SQLite permission error. The tunnel
 retries once the app listens.
 
+## Project site
+
+An overview page and a slide deck live in [`docs/`](docs/). They use the same palette as the dashboard and render to static HTML.
+
+Preview:
+
+```bash
+quarto preview docs
+```
+
+Render:
+
+```bash
+quarto render docs
+```
+
+A GitHub Action in [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) deploys `docs/_site` to the `gh-pages` branch. Point GitHub Pages at that branch. Cloudflare Pages can serve the same branch with an empty build command.
+
 ## Credits
 
 Built on [gamedaybot](https://github.com/dtcarls/fantasy_football_chat_bot) by

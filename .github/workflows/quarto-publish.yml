@@ -1,0 +1,40 @@
+# Renders docs/ and publishes the static site to the gh-pages branch.
+# GitHub Pages: Settings → Pages → Deploy from branch `gh-pages`.
+# Cloudflare Pages: create a project on the same branch, empty build command,
+# output directory `/`. That way both hosts serve one render.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/quarto-publish.yml"
+
+name: Publish docs
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Render
+        uses: quarto-dev/quarto-actions/render@v2
+        with:
+          path: docs
+
+      - name: Disable Jekyll processing
+        run: touch docs/_site/.nojekyll
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/_site
+          force_orphan: true

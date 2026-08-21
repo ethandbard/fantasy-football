@@ -1,0 +1,57 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - slides.qmd
+  resources:
+    - .nojekyll
+
+website:
+  title: "Fantasy football bot"
+  description: "A Discord bot that posts ESPN fantasy football updates, answers slash commands, and serves a web dashboard of league history."
+  site-url: https://ethandbard.github.io/fantasy-football
+  repo-url: https://github.com/ethandbard/fantasy-football
+  repo-subdir: docs
+  repo-branch: main
+  repo-actions: [source, issue]
+  open-graph: true
+  search: false
+  page-navigation: true
+  navbar:
+    background: "#161A21"
+    foreground: "#F2F5F8"
+    left:
+      - href: index.qmd
+        text: Overview
+      - href: slides.qmd
+        text: Slides
+    right:
+      - icon: github
+        href: https://github.com/ethandbard/fantasy-football
+        aria-label: GitHub repository
+  page-footer:
+    left: "Built with Quarto. Forked from gamedaybot."
+    right:
+      - href: https://github.com/ethandbard/fantasy-football
+        text: Source
+      - href: slides.qmd
+        text: Slide deck
+
+format:
+  html:
+    theme:
+      - darkly
+      - theme.scss
+    toc: true
+    toc-location: right
+    toc-title: On this page
+    smooth-scroll: true
+    link-external-icon: true
+    link-external-newtab: true
+    mermaid:
+      theme: dark
+    page-layout: article
+    mainfont: Archivo
+    monofont: JetBrains Mono
+    highlight-style: a11y-dark
