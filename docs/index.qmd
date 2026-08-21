@@ -251,7 +251,7 @@ Selecting a team — a standings row, a matchup, a record-book row, or the team 
 
 A dropdown in the masthead selects the season. Only seasons in the database appear there. The page polls the database every 30 seconds, so a new snapshot reaches an open tab on its own, advancing This week's default view along with it.
 
-Reach the dashboard at `http://localhost:8000` locally, or at the Cloudflare Tunnel hostname.
+Reach the dashboard at http://localhost:8000 locally, or at https://fantasy.ethandbard.com/.
 
 ## Before and after
 
@@ -356,6 +356,7 @@ Secrets stay in `config.env`. Docker Compose loads them through `env_file`, so n
 | `gamedaybot/web/` | Dashboard layout, season math, and charts. |
 | `dev/` | API health check and season backfill. |
 | `tests/` | Tests for `web/stats.py`. |
+| `docs/` | This overview, the slide deck, and the docs Worker. |
 
 The [README](https://github.com/ethandbard/fantasy-football#readme) covers configuration, Docker setup, tunnel setup, and troubleshooting. This page is the public overview. The [slide deck](slides.qmd) is a shorter walkthrough of the same three parts.
 
@@ -375,10 +376,22 @@ Render:
 quarto render docs
 ```
 
-Output lands in `docs/_site`. That folder is static HTML.
+Output lands in `docs/_site`. Two public URLs serve that folder:
 
-**Public site.** Push to `main`. The workflow in `.github/workflows/quarto-publish.yml` renders the site and deploys it to the `gh-pages` branch. That updates https://ethandbard.github.io/fantasy-football/ and https://fantasy-docs.ethandbard.com/.
+| URL | How it is served |
+| --- | --- |
+| https://ethandbard.github.io/fantasy-football/ | GitHub Pages, from the `gh-pages` branch |
+| https://fantasy-docs.ethandbard.com/ | A Cloudflare Worker that fetches the GitHub Pages copy |
 
-In the GitHub repo, set **Settings → Pages** to deploy from `gh-pages`. A Cloudflare Worker on the custom hostname fetches that GitHub Pages copy.
+Push to `main` to publish content. The workflow in `.github/workflows/quarto-publish.yml` renders `docs/` and deploys `docs/_site` to `gh-pages`. GitHub Pages serves that branch. The Worker at the custom hostname fetches the same GitHub Pages site. Both URLs then show the new render.
+
+The Worker script is `proxy-worker.js` in this directory. Redeploy it only when that file changes:
+
+```bash
+cd docs
+npx wrangler deploy
+```
+
+A change to the Quarto pages does not need `wrangler deploy`. Push to `main` is enough.
 
 Do not run a second copy of the bot stack on another host at the same time. Two schedulers post every report twice. The docs site has no such limit: it is static files only.

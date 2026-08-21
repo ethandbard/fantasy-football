@@ -1,7 +1,8 @@
 # Renders docs/ and publishes the static site to the gh-pages branch.
-# GitHub Pages: Settings → Pages → Deploy from branch `gh-pages`.
-# Cloudflare Pages: create a project on the same branch, empty build command,
-# output directory `/`. That way both hosts serve one render.
+# GitHub Pages serves https://ethandbard.github.io/fantasy-football/ from that
+# branch. A Cloudflare Worker at fantasy-docs.ethandbard.com fetches the same
+# GitHub Pages copy, so both URLs update from this workflow. Redeploy the
+# Worker from docs/ only when proxy-worker.js changes.
 on:
   workflow_dispatch:
   push:

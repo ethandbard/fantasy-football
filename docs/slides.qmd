@@ -417,7 +417,34 @@ Open Discord for the latest post, or type a slash command.
 Open the dashboard when you want the season, not the week.
 
 ::: {.notes}
-If someone asks how to log in: they don't. Discord is the league server they already belong to. The dashboard is a public URL if the tunnel is up, or localhost:8000 on the host machine.
+If someone asks how to log in: they don't. Discord is the league server they already belong to. The dashboard is https://fantasy.ethandbard.com/, or localhost:8000 on the host machine.
+:::
+
+## Where to read more
+
+The longer write-up is the same site at two URLs:
+
+- https://fantasy-docs.ethandbard.com/ — the URL to share
+- https://ethandbard.github.io/fantasy-football/ — GitHub Pages
+
+The dashboard is separate. That lives at https://fantasy.ethandbard.com/.
+
+::: {.notes}
+The custom hostname is the one to send people. GitHub Pages is the origin copy. The live league dashboard is a different host: the Shiny app behind Cloudflare Tunnel, not these static files.
+:::
+
+## How that write-up updates
+
+Push to `main`. A GitHub Action renders `docs/` onto the `gh-pages` branch.
+
+GitHub Pages serves one URL from that branch.
+
+A Cloudflare Worker fetches that copy for the custom hostname.
+
+A content change needs a push. Redeploy the Worker only if `proxy-worker.js` changes.
+
+::: {.notes}
+The Action is `.github/workflows/quarto-publish.yml`. Wrangler deploy from `docs/` is only for the Worker script. The two docs URLs stay in sync because the Worker does not store its own HTML.
 :::
 
 ## Credits
@@ -426,4 +453,4 @@ Built on [gamedaybot](https://github.com/dtcarls/fantasy_football_chat_bot) by D
 
 Source: [ethandbard/fantasy-football](https://github.com/ethandbard/fantasy-football)
 
-A longer write-up lives on the [overview page](index.qmd).
+Overview: [fantasy-docs.ethandbard.com](https://fantasy-docs.ethandbard.com/)

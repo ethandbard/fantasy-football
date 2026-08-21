@@ -490,6 +490,7 @@ next run, so `backfill_season.py` is only needed for prior seasons.
 | `dev/` | Maintenance scripts. Copied into the image, so `docker compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
 | `cloudflared/config.yml` | Reference copy of the tunnel config. The `cloudflared` container reads `~/.cloudflared` on the host instead. |
+| `docs/` | Overview, slide deck, and the Worker for https://fantasy-docs.ethandbard.com/. |
 | `config.env` | Secrets and runtime settings. Excluded by [.gitignore](.gitignore). |
 
 Container logs go to Docker's `json-file` driver, capped at three 10 MB files.
@@ -561,7 +562,23 @@ Render:
 quarto render docs
 ```
 
-The public site is https://fantasy-docs.ethandbard.com/. A GitHub Action in [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) deploys `docs/_site` to the `gh-pages` branch. That updates GitHub Pages and the custom hostname.
+Output lands in `docs/_site`. Two public URLs serve that folder:
+
+| URL | How it is served |
+| --- | --- |
+| https://ethandbard.github.io/fantasy-football/ | GitHub Pages, from the `gh-pages` branch |
+| https://fantasy-docs.ethandbard.com/ | A Cloudflare Worker that fetches the GitHub Pages copy |
+
+Push to `main` to publish content. The workflow in [`.github/workflows/quarto-publish.yml`](.github/workflows/quarto-publish.yml) renders `docs/` and deploys `docs/_site` to `gh-pages`. GitHub Pages serves that branch. The Worker at the custom hostname fetches the same GitHub Pages site. Both URLs then show the new render.
+
+The Worker script is [`docs/proxy-worker.js`](docs/proxy-worker.js). Redeploy it only when that file changes:
+
+```bash
+cd docs
+npx wrangler deploy
+```
+
+A change to the Quarto pages does not need `wrangler deploy`. Push to `main` is enough.
 
 ## Credits
 
