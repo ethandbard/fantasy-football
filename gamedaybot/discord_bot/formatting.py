@@ -1,9 +1,9 @@
 """
 Shared Discord embed formatting, used by both the slash-command bot
 (gamedaybot.discord_bot.bot, via the live gateway) and the scheduled webhook
-sender (gamedaybot.chat.discord, via espn_bot.py's dispatch). Keeping this in
-one place means a scheduled /standings post and a manual /standings command
-look identical.
+sender (gamedaybot.discord_bot.webhook, via espn_bot.py's dispatch). Keeping
+this in one place means a scheduled standings post and a manual /standings
+command look identical.
 
 Payloads here are plain JSON-serializable dicts matching Discord's embed
 object shape (https://discord.com/developers/docs/resources/message#embed-object)
@@ -97,18 +97,14 @@ def trophies_embed(text, league=None):
     return payload
 
 
-INIT_TITLE = "🤖 Fantasy Football Bot Started!"
-
-
-def init_lines(data):
+def init_embed(data):
     """
-    Startup summary as a list of lines, built from the resolved env config so
-    it reports what the bot will actually do. Shared by the plain-text
-    (GroupMe/Slack) and embed (Discord) renderings so the two can't drift.
+    Startup summary, built from the resolved env config so it reports what the
+    bot will actually do rather than a hardcoded guess.
 
     `data` is the dict returned by gamedaybot.espn.env_vars.get_env_vars().
     """
-    return [
+    lines = [
         "✅ **Connected to league successfully!**",
         f"📅 **Season:** {data['year']} ({data['ff_start_date']} - {data['ff_end_date']})",
         f"⏰ **Timezone:** {data['my_timezone']}",
@@ -118,12 +114,9 @@ def init_lines(data):
         "🎯 **Bot is now running and will send automatic updates on schedule!**",
         f"🔥 **Ready for the {data['year']} fantasy season!**",
     ]
-
-
-def init_embed(data):
     return {
-        "title": INIT_TITLE,
-        "description": "\n".join(init_lines(data)),
+        "title": "🤖 Fantasy Football Bot Started!",
+        "description": "\n".join(lines),
         "color": EMBED_COLORS["init"],
         "timestamp": _now_iso(),
     }

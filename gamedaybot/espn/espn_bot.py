@@ -1,35 +1,25 @@
-import os
-if os.environ.get("AWS_EXECUTION_ENV") is not None:
-    # For use in lambda function
-    import utils.util as util
-    from chat.groupme import GroupMe
-    from chat.slack import Slack
-    from chat.discord import Discord
-else:
-    # For local use
-    import sys
-    sys.path.insert(1, os.path.abspath('.'))
-    import gamedaybot.utils.util as util
-    from gamedaybot.chat.groupme import GroupMe
-    from gamedaybot.chat.slack import Slack
-    from gamedaybot.chat.discord import Discord
-    from gamedaybot.espn.env_vars import get_env_vars
-    import gamedaybot.espn.functionality as espn
-    import gamedaybot.espn.season_recap as recap
-    import gamedaybot.espn.collector as collector
-    import gamedaybot.discord_bot.formatting as discord_fmt
+"""
+Generates a named report and posts it to the Discord webhook.
 
-
-from espn_api.football import League
+The scheduler drives this. The slash-command bot in gamedaybot.discord_bot.bot
+serves the same reports over its gateway connection, calling the same
+functionality.py helpers and the same embed builders so the two stay identical.
+"""
 import logging
 
-logger = logging.getLogger(__name__)
-# logger.setLevel(logging.INFO)
-logger.setLevel(logging.DEBUG)
+from espn_api.football import League
 
-# Maps espn_bot() "function" names to the embed formatting keys in
-# gamedaybot.discord_bot.formatting. Functions not listed here (e.g.
-# "broadcast", "win_matrix") keep the old plain code-block behavior.
+import gamedaybot.discord_bot.formatting as discord_fmt
+import gamedaybot.espn.collector as collector
+import gamedaybot.espn.functionality as espn
+from gamedaybot.discord_bot.webhook import Discord
+from gamedaybot.espn.env_vars import NO_ESPN_S2, NO_SWID, get_env_vars
+
+logger = logging.getLogger(__name__)
+
+# Maps a report name to its embed formatting key in
+# gamedaybot.discord_bot.formatting. get_trophies is absent deliberately -- it
+# renders as discrete embed fields rather than one code block.
 FUNCTION_TO_EMBED_KEY = {
     "get_matchups": "matchups",
     "get_monitor": "monitor",
@@ -43,219 +33,107 @@ FUNCTION_TO_EMBED_KEY = {
 }
 
 
+def _build_league(data):
+    """Private leagues need the ESPN_S2/SWID cookie pair; public ones don't."""
+    if data['swid'] == NO_SWID or data['espn_s2'] == NO_ESPN_S2:
+        return League(league_id=data['league_id'], year=data['year'])
+    return League(league_id=data['league_id'], year=data['year'],
+                  espn_s2=data['espn_s2'], swid=data['swid'])
+
+
+def _report_text(function, league, data):
+    """Returns the report body, or None if there is nothing to post."""
+    if function == "get_matchups":
+        return espn.get_matchups(league) + "\n\n" + espn.get_projected_scoreboard(league)
+    if function == "get_monitor":
+        return espn.get_monitor(league)
+    if function == "get_scoreboard_short":
+        return espn.get_scoreboard_short(league) + "\n\n" + espn.get_projected_scoreboard(league)
+    if function == "get_projected_scoreboard":
+        return espn.get_projected_scoreboard(league)
+    if function == "get_close_scores":
+        return espn.get_close_scores(league)
+    if function == "get_power_rankings":
+        return espn.get_power_rankings(league)
+    if function == "get_trophies":
+        return espn.get_trophies(league)
+    if function == "get_standings":
+        return espn.get_standings(league, data['top_half_scoring'])
+    if function == "get_final":
+        # Runs Tuesday, so it reports the week that just finished.
+        week = league.current_week - 1
+        return ("Final " + espn.get_scoreboard_short(league, week=week) + "\n\n"
+                + espn.get_trophies(league, week=week))
+    if function == "get_waiver_report":
+        if data['swid'] == NO_SWID or data['espn_s2'] == NO_ESPN_S2:
+            logger.warning("Waiver report needs ESPN_S2/SWID (ESPN treats "
+                           "transactions as private) -- skipping")
+            return None
+        return espn.get_waiver_report(league, league.settings.faab)
+
+    logger.error("Unknown report: %s", function)
+    return None
+
+
+def _send_init(discord_bot, data):
+    init_msg = data.get('init_msg')
+    if init_msg:
+        # INIT_MSG replaces the generated summary outright.
+        discord_bot.send_message(text=init_msg)
+        return
+    discord_bot.send_message(embed=discord_fmt.init_embed(data))
+
+
 def espn_bot(function):
     """
-    This function is used to send messages to a messaging platform (e.g. Slack, Discord, or GroupMe) with information
-    about a fantasy football league.
+    Generate one report and post it to DISCORD_WEBHOOK_URL.
 
     Parameters
     ----------
     function: str
-        A string that specifies which type of information to send (e.g. "get_matchups", "get_power_rankings").
+        Which report to send. One of:
 
-    Returns
-    -------
-    None
-
-    Notes
-    -----
-    The function uses the following information from the data dictionary:
-
-    str_limit: the character limit for messages on slack.
-    bot_id: the id of the GroupMe bot.
-        If not provided, defaults to 1.
-    slack_webhook_url: the webhook url for the slack bot.
-        If not provided, defaults to 1.
-    discord_webhook_url: the webhook url for the discord bot.
-        If not provided, defaults to 1.
-    league_id: the id of the fantasy football league.
-    year: the year of the league.
-        If not provided, defaults to current year.
-    swid: the swid of the league.
-        If not provided, defaults to '{1}'.
-    espn_s2: the espn s2 of the league.
-        If not provided, defaults to '1'.
-    top_half_scoring: a boolean that indicates whether to include only the top half of the league in the standings.
-        If not provided, defaults to False.
-
-    The function creates GroupMe, Slack, and Discord objects, and a League object using the provided information.
-    It then uses the specified function to generate a message and sends it through the appropriate messaging platform.
-
-    Possible function values:
-
-    get_matchups: sends the current week's matchups and the projected scores for the remaining games.
-    get_monitor: sends a message with a summary of the current week's scores.
-    get_scoreboard_short: sends a short version of the current week's scores.
-    get_projected_scoreboard: sends the projected scores for the remaining games.
-    get_close_scores: sends a message with the scores of games that have a difference of less than 7 points.
-    get_power_rankings: sends a message with the power rankings for the league.
-    get_trophies: sends a message with the trophies for the league.
-    get_standings: sends a message with the standings for the league.
-    get_final: sends the final scores and trophies for the previous week.
-    get_waiver_report: sends a message with the waiver report for the league.
-    init: sends a message to confirm that the bot has been set up.
+        get_matchups              the week's matchups plus projected scores
+        get_monitor               injured/questionable starters to watch
+        get_scoreboard_short      current scores plus projected scores
+        get_projected_scoreboard  projected scores only
+        get_close_scores          games projected to finish within 15 points
+        get_power_rankings        power rankings with week-over-week movement
+        get_standings             current standings
+        get_trophies              this week's trophies
+        get_final                 last week's final scores and trophies
+        get_waiver_report         today's waiver moves (private leagues only)
+        collect_snapshot          persist the week to SQLite; posts nothing
+        init                      startup confirmation message
     """
-
     data = get_env_vars()
-    str_limit = data['str_limit']  # slack char limit
+    discord_bot = Discord(data['discord_webhook_url'])
+    # Built before the init branch on purpose: the startup message claims the
+    # league connected, so it has to have actually connected.
+    league = _build_league(data)
 
-    try:
-        bot_id = data['bot_id']
-    except KeyError:
-        bot_id = 1
+    if function == "init":
+        # Exempt from the season check -- the startup confirmation is worth
+        # sending in the offseason too.
+        _send_init(discord_bot, data)
+        return
 
-    try:
-        slack_webhook_url = data['slack_webhook_url']
-    except KeyError:
-        slack_webhook_url = 1
-
-    try:
-        discord_webhook_url = data['discord_webhook_url']
-    except KeyError:
-        discord_webhook_url = 1
-
-    if (len(str(bot_id)) <= 1 and
-        len(str(slack_webhook_url)) <= 1 and
-            len(str(discord_webhook_url)) <= 1):
-        # Ensure that there's info for at least one messaging platform,
-        # use length of str in case of blank but non null env variable
-        raise Exception("No messaging platform info provided. Be sure one of BOT_ID, SLACK_WEBHOOK_URL, or DISCORD_WEBHOOK_URL env variables are set")
-
-    league_id = data['league_id']
-
-    try:
-        year = int(data['year'])
-    except KeyError:
-        year = 2026
-
-    try:
-        swid = data['swid']
-    except KeyError:
-        swid = '{1}'
-
-    if swid.find("{", 0) == -1:
-        swid = "{" + swid
-    if swid.find("}", -1) == -1:
-        swid = swid + "}"
-
-    try:
-        espn_s2 = data['espn_s2']
-    except KeyError:
-        espn_s2 = '1'
-
-    # get_env_vars() already coerced this to a real bool. Passing it through
-    # str_to_bool again hits that function's bare except (bools have no
-    # .strip()) and silently forces it back to False.
-    top_half_scoring = data['top_half_scoring']
-
-    groupme_bot = GroupMe(bot_id)
-    slack_bot = Slack(slack_webhook_url)
-    discord_bot = Discord(discord_webhook_url)
-
-    if swid == '{1}' or espn_s2 == '1':
-        league = League(league_id=league_id, year=year)
-    else:
-        league = League(league_id=league_id, year=year, espn_s2=espn_s2, swid=swid)
-
-    try:
-        broadcast_message = data['broadcast_message']
-    except KeyError:
-        broadcast_message = None
-
-    # always let init and broadcast run
-    if function not in ["init", "broadcast", "win_matrix", "trophy_recap"] and league.scoringPeriodId > len(league.settings.matchup_periods):
+    if league.scoringPeriodId > len(league.settings.matchup_periods):
         logger.info("Not in active season")
         return
 
-    text = ''
-    logger.info("Function: " + function)
+    logger.info("Report: %s", function)
 
-    if function == "get_matchups":
-        text = espn.get_matchups(league)
-        text = text + "\n\n" + espn.get_projected_scoreboard(league)
-    elif function == "get_monitor":
-        text = espn.get_monitor(league)
-    elif function == "get_scoreboard_short":
-        text = espn.get_scoreboard_short(league)
-        text = text + "\n\n" + espn.get_projected_scoreboard(league)
-    elif function == "get_projected_scoreboard":
-        text = espn.get_projected_scoreboard(league)
-    elif function == "get_close_scores":
-        text = espn.get_close_scores(league)
-    elif function == "get_power_rankings":
-        text = espn.get_power_rankings(league)
-    elif function == "get_trophies":
-        text = espn.get_trophies(league)
-    elif function == "get_standings":
-        text = espn.get_standings(league, top_half_scoring)
-    elif function == "win_matrix":
-        text = recap.win_matrix(league)
-    elif function == "trophy_recap":
-        text = recap.trophy_recap(league)
-        # groupme_bot.send_message(text, file_path='/tmp/season_recap.png')
-        # slack_bot.send_message(text, file_path='/tmp/season_recap.png')
-        # discord_bot.send_message(text, file_path='/tmp/season_recap.png')
-    elif function == "get_final":
-        # on Tuesday we need to get the scores of last week
-        week = league.current_week - 1
-        text = "Final " + espn.get_scoreboard_short(league, week=week)
-        text = text + "\n\n" + espn.get_trophies(league, week=week)
-    elif function == "get_waiver_report" and swid != '{1}' and espn_s2 != '1':
-        faab = league.settings.faab
-        text = espn.get_waiver_report(league, faab)
-    elif function == "collect_snapshot":
+    if function == "collect_snapshot":
         collector.collect_weekly_snapshot(league)
         return
-    elif function == "broadcast":
-        try:
-            text = broadcast_message
-        except KeyError:
-            # do nothing here, empty broadcast message
-            pass
-    elif function == "init":
-        init_msg = data.get('init_msg')
-        if init_msg:
-            # INIT_MSG replaces the generated summary outright.
-            groupme_bot.send_message(init_msg)
-            slack_bot.send_message(init_msg)
-            discord_bot.send_message(text=init_msg)
-            return
 
-        # Same summary lines rendered two ways: plain text for GroupMe/Slack,
-        # a rich embed for Discord.
-        plain = '\n'.join(
-            [discord_fmt.INIT_TITLE + ' 🏈', ''] + discord_fmt.init_lines(data))
-        groupme_bot.send_message(plain)
-        slack_bot.send_message(plain)
-        discord_bot.send_message(embed=discord_fmt.init_embed(data))
-        return  # Skip the normal message sending at the end
+    text = _report_text(function, league, data)
+    if not text:
+        return
+
+    if function == "get_trophies":
+        discord_bot.send_message(embed=discord_fmt.trophies_embed(text, league=league))
     else:
-        text = "Something bad happened. HALP"
-
-    logger.debug(data)
-    if text != '':
-        logger.debug(text)
-        messages = util.str_limit_check(text, str_limit)
-        for message in messages:
-            groupme_bot.send_message(message)
-            slack_bot.send_message(message)
-
-        # Discord gets a single rich embed instead of chunked code blocks,
-        # matching the style used by the slash commands.
-        if function == "get_trophies":
-            discord_bot.send_message(embed=discord_fmt.trophies_embed(text, league=league))
-        else:
-            embed_key = FUNCTION_TO_EMBED_KEY.get(function)
-            if embed_key:
-                discord_bot.send_message(
-                    embed=discord_fmt.code_block_embed(embed_key, text, league=league))
-            else:
-                for message in messages:
-                    discord_bot.send_message(message)
-
-
-if __name__ == '__main__':
-    from gamedaybot.espn.scheduler import scheduler
-
-    espn_bot("init")
-    scheduler()
+        discord_bot.send_message(embed=discord_fmt.code_block_embed(
+            FUNCTION_TO_EMBED_KEY[function], text, league=league))

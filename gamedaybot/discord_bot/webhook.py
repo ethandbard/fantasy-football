@@ -1,3 +1,8 @@
+"""
+Posts scheduled reports to DISCORD_WEBHOOK_URL. Separate from
+gamedaybot.discord_bot.bot, which holds a live gateway connection to serve
+slash commands; both render through gamedaybot.discord_bot.formatting.
+"""
 import requests
 import json
 import logging
@@ -70,14 +75,11 @@ class Discord(object):
             return None
 
         headers = {'content-type': 'application/json'}
+        r = requests.post(self.webhook_url,
+                          data=json.dumps(template), headers=headers)
 
-        if self.webhook_url not in (1, "1", ''):
-            r = requests.post(self.webhook_url,
-                              data=json.dumps(template), headers=headers)
+        if r.status_code != 204:
+            logger.error(r.content)
+            raise DiscordException(r.content)
 
-            if r.status_code != 204:
-                print(r.content)
-                logger.error(r.content)
-                raise DiscordException(r.content)
-
-            return r
+        return r

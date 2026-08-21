@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY gamedaybot/ ./gamedaybot/
 COPY dev/ ./dev/
-COPY setup.py ./
 
 # Runtime config (Discord tokens, ESPN cookies, league settings) is supplied
 # via docker-compose's env_file (config.env), not baked into the image --

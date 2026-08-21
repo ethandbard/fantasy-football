@@ -13,7 +13,7 @@ from espn_api.football import League
 
 import gamedaybot.espn.functionality as espn
 import gamedaybot.discord_bot.formatting as fmt
-from gamedaybot.espn.env_vars import get_env_vars
+from gamedaybot.espn.env_vars import NO_ESPN_S2, NO_SWID, get_env_vars
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def _get_league():
     data = get_env_vars()
     swid = data['swid']
     espn_s2 = data['espn_s2']
-    if swid == '{1}' or espn_s2 == '1':
+    if swid == NO_SWID or espn_s2 == NO_ESPN_S2:
         return League(league_id=data['league_id'], year=int(data['year'])), data
     return League(
         league_id=data['league_id'], year=int(data['year']),
@@ -96,7 +96,7 @@ def build_bot(dashboard_url):
         await interaction.response.defer()
         try:
             league, data = _get_league()
-            if data['swid'] == '{1}' or data['espn_s2'] == '1':
+            if data['swid'] == NO_SWID or data['espn_s2'] == NO_ESPN_S2:
                 await interaction.followup.send(
                     "Waiver report requires a private league with ESPN_S2/SWID configured.")
                 return
