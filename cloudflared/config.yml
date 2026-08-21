@@ -1,0 +1,7 @@
+tunnel: 907697ec-4c60-4b28-9c0e-47a0689de0d1
+credentials-file: /etc/cloudflared/907697ec-4c60-4b28-9c0e-47a0689de0d1.json
+
+ingress:
+  - hostname: fantasy.ethandbard.com
+    service: http://fantasy-bot:8000
+  - service: http_status:404

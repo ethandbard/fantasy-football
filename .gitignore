@@ -1,0 +1,13 @@
+# Secrets -- never commit
+config.env
+.env
+WEBHOOK_BACKUP.md
+*.secrets.md
+
+# Runtime state (recreated by the container)
+data/
+logs/
+
+# Python
+__pycache__/
+*.pyc

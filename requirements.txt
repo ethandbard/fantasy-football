@@ -1,0 +1,11 @@
+flake8==3.3.0
+apscheduler>=3.3.0,<4.0.0
+requests>=2.0.0,<3.0.0
+espn_api>=0.38.1
+datetime
+shiny==1.7.0
+shinywidgets==0.8.1
+plotly==6.9.0
+pandas==3.0.5
+jinja2==3.1.6
+discord.py>=2.4.0
