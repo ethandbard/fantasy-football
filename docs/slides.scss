@@ -289,6 +289,62 @@ $font-family-monospace: "JetBrains Mono", ui-monospace, Menlo, monospace;
   max-width: 28em;
 }
 
+/* before / after image pairs */
+
+.reveal .compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8em;
+  margin-top: 0.5em;
+}
+
+.reveal .compare figure {
+  margin: 0;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 0.5em 0.5em 0.6em;
+}
+
+.reveal .compare img {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 6px;
+  border: 1px solid $raised;
+}
+
+.reveal .compare figcaption {
+  font-family: $font-family-monospace;
+  font-size: 0.4em;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-top: 0.55em;
+  text-align: center;
+}
+
+.reveal .compare .before figcaption {
+  color: $ink-mute;
+}
+
+.reveal .compare .after figcaption {
+  color: $accent;
+}
+
+.reveal .origin {
+  text-align: center;
+  margin-top: 0.6em;
+}
+
+.reveal .origin img {
+  max-height: 46vh;
+  border-radius: 12px;
+  border: 1px solid $line;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal .slides {
     transition: none !important;

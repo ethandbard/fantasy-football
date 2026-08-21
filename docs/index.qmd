@@ -253,6 +253,76 @@ A dropdown in the masthead selects the season. Only seasons in the database appe
 
 Reach the dashboard at `http://localhost:8000` locally, or at the Cloudflare Tunnel hostname.
 
+## Before and after
+
+The dashboard has gone through three shapes. The first version proved the
+idea — one SQLite file, four stat boxes, four tabs, Bootstrap defaults. It
+grew into a five-tab dark build with a shared week-range slider. The redesign
+below restructures that build into four destinations, without changing a
+single number underneath it.
+
+::: {.compare}
+::: {.before}
+![The old Trend tab: ten teams' weekly scores on one line chart.](images/before-trend.png)
+
+Before — Trend
+:::
+
+::: {.after}
+![This week: results, movers, and the week's bests, open by default.](images/after-this-week.png)
+
+After — This week
+:::
+:::
+
+::: {.compare}
+::: {.before}
+![The 10×10 head-to-head heatmap, unreadable under about 900px.](images/before-head-to-head.png)
+
+Before — Head to head
+:::
+
+::: {.after}
+![A team's own page: game log, range vs the league, and a nine-row head-to-head strip.](images/after-teams.png)
+
+After — Teams
+:::
+:::
+
+::: {.compare}
+::: {.before}
+![The old Standings table.](images/before-standings.png)
+
+Before — Standings
+:::
+
+::: {.after}
+![The new standings board, with a sparkline per row and "the race" below it.](images/after-league.png)
+
+After — League
+:::
+:::
+
+::: {.compare}
+::: {.before}
+![The Trophies tab as a twelve-card grid.](images/before-trophies.png)
+
+Before — Trophies
+:::
+
+::: {.after}
+![The record book: every award a row, every row a link to its team.](images/after-records.png)
+
+After — Records
+:::
+:::
+
+The very first version, for scale:
+
+::: {.origin-figure}
+![The first working build — light theme, a sidebar, four stat boxes, four tabs. Same underlying data as every version since.](images/first_shiny_build.png)
+:::
+
 ## How it runs
 
 The entrypoint `gamedaybot/run.py` starts three parts in one process:

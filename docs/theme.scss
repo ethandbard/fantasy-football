@@ -341,6 +341,60 @@ div.quarto-figure,
   margin-top: 0.4rem;
 }
 
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin: 1rem 0;
+}
+
+@media (max-width: 700px) {
+  .compare {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compare figure {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.6rem 0.6rem 0.7rem;
+}
+
+.compare img {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--raised);
+}
+
+.compare figcaption {
+  font-family: $font-family-monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  margin-top: 0.6rem;
+  color: $ink-mute;
+}
+
+.compare .after figcaption {
+  color: $accent;
+}
+
+.origin-figure {
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.origin-figure img {
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
 .mermaid svg {
   max-width: 100%;
   height: auto;

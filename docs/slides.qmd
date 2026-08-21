@@ -318,6 +318,96 @@ Click a row. You land on that team's page, ready to dig further.
 This is the feature people remember. The old version showed the award and stopped. Now every row is a way into a team's own page.
 :::
 
+## Before and after: the trend chart
+
+::: {.compare}
+::: {.before}
+![](images/before-trend.png)
+
+Before
+:::
+
+::: {.after}
+![](images/after-this-week.png)
+
+After
+:::
+:::
+
+::: {.notes}
+Ten lines fighting for the same axis versus a page that opens on the one thing everyone actually wants Sunday night: what just happened.
+:::
+
+## Before and after: every pairing at once
+
+::: {.compare}
+::: {.before}
+![](images/before-head-to-head.png)
+
+Before
+:::
+
+::: {.after}
+![](images/after-teams.png)
+
+After
+:::
+:::
+
+::: {.notes}
+The 10x10 heatmap asked the reader to hold two axes of team names in their head, and broke under about 900px. One team's page carries the same information as a nine-row strip.
+:::
+
+## Before and after: standings and trophies
+
+::: {.compare}
+::: {.before}
+![](images/before-standings.png)
+
+Before
+:::
+
+::: {.after}
+![](images/after-league.png)
+
+After
+:::
+:::
+
+::: {.notes}
+Standings becomes a board with a sparkline per row and a real playoff cutoff, plus "the race" underneath -- the one chart out of five that survived, because it's the one where ten lines earn their keep.
+:::
+
+## Before and after: the card grid
+
+::: {.compare}
+::: {.before}
+![](images/before-trophies.png)
+
+Before
+:::
+
+::: {.after}
+![](images/after-records.png)
+
+After
+:::
+:::
+
+::: {.notes}
+A card grid said "here are twelve facts." A ledger with the value large and right-aligned lets the column of numbers be scanned, and the arrow promises the click.
+:::
+
+## Where it started
+
+::: {.origin}
+![](images/first_shiny_build.png)
+:::
+
+::: {.notes}
+The first working version of this dashboard: light theme, a sidebar, four stat boxes, four tabs. Same underlying data as every version since. Worth keeping around as a reminder of how far a Shiny Express app can travel without ever touching the numbers underneath it.
+:::
+
 ## What you do
 
 Nothing on Sunday morning.
