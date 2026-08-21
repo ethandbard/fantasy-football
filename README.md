@@ -93,14 +93,18 @@ you edit it.
 | `START_DATE` | No | `2026-09-04` | First day the scheduler fires jobs. |
 | `END_DATE` | No | `2027-01-05` | Last day the scheduler fires jobs. |
 | `TIMEZONE` | No | `America/New_York` | Timezone for morning and evening jobs. |
-| `DAILY_WAIVER` | No | `False` | Posts a waiver report every day at 9:01 AM. |
+| `DAILY_WAIVER` | No | `False` | Posts the waiver report every day, not only Wednesday. |
 | `MONITOR_REPORT` | No | `True` | Posts the Sunday injury report. |
 | `TOP_HALF_SCORING` | No | `False` | Adds top-half scoring to standings. |
-| `RANDOM_PHRASE` | No | `False` | Appends a random phrase to messages. |
-| `INIT_MSG` | No | None | Overrides the startup message. |
+| `INIT_MSG` | No | None | Replaces the generated startup message. |
+| `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
+| `DB_PATH` | No | `/app/data/fantasy.db` | SQLite file backing the dashboard. |
 
 `DASHBOARD_URL` is set in [docker-compose.yml](docker-compose.yml) and controls
 the link that `/dashboard` returns.
+
+Credentials for the live league are kept outside this repository, in
+`~/.fantasy-football-secrets/WEBHOOK_BACKUP.md`.
 
 `ESPN_S2` and `SWID` come from your browser cookies on espn.com. Both are
 required for waiver reports, because ESPN treats transaction data as private.
@@ -125,8 +129,8 @@ times follow `TIMEZONE`.
 | Sunday | 9:00 AM | Player monitor report |
 | Sunday | 4:00 PM and 8:00 PM Eastern | Score updates |
 
-When `DAILY_WAIVER` is `True`, the waiver report also runs at 9:01 AM on
-Monday, Tuesday, Thursday, Friday, Saturday, and Sunday.
+When `DAILY_WAIVER` is `True`, the waiver report runs at 9:01 AM every day
+instead of only on Wednesday.
 
 The Tuesday 6:00 AM snapshot writes the finished week's scores and standings to
 `data/fantasy.db`. It runs after Monday night football so the week is final.
@@ -162,6 +166,10 @@ The dashboard reads `data/fantasy.db` and offers four tabs:
 A sidebar dropdown selects the season. Only seasons present in the database
 appear there, so a new season stays empty until the first Tuesday snapshot
 runs.
+
+The dashboard polls the database every 30 seconds. New snapshots reach an open
+browser tab on their own, and a new season joins the dropdown without a
+restart or a page refresh.
 
 Reach the dashboard at `http://localhost:8000` locally, or at the tunnel
 hostname if `cloudflared` is running.
@@ -243,21 +251,22 @@ the tunnel setup on the new host. These steps assume an Ubuntu VPS.
    apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
    ```
 
-3. Copy the project to the VPS. Skip `data/` and `logs/`, which the host
-   creates fresh:
+3. Copy the project to the VPS. Skip `data/`, which the host creates fresh:
 
    ```bash
-   scp -r gamedaybot setup.py requirements.txt Dockerfile docker-compose.yml \
+   scp -r gamedaybot dev requirements.txt Dockerfile docker-compose.yml \
        .dockerignore config.env root@<vps-ip>:/opt/fantasy-football/
    ```
 
+   The image builds `dev/`, so the copy fails without it.
+
 4. Set up the tunnel on the VPS, so `~/.cloudflared` exists there. See
    [Publish the dashboard](#publish-the-dashboard-with-cloudflare-tunnel).
-5. Create `data/` and `logs/`, then give them to the container's non-root user:
+5. Create `data/`, then give it to the container's non-root user:
 
    ```bash
-   mkdir -p /opt/fantasy-football/{data,logs}
-   chown -R 1000:1000 /opt/fantasy-football/{data,logs}
+   mkdir -p /opt/fantasy-football/data
+   chown -R 1000:1000 /opt/fantasy-football/data
    ```
 
    Docker creates a missing bind-mount directory as root. The container runs as
@@ -294,7 +303,12 @@ docker-compose exec fantasy-bot python dev/backfill_season.py 2025
 ```
 
 The year is a command-line argument because `LEAGUE_YEAR` stays pinned to the
-current season.
+current season. Both scripts run in the container that is already up, so
+neither needs a rebuild or a restart.
+
+The Tuesday snapshot also fills in any week it finds missing for the current
+season. A container that was down over a Tuesday repairs its own gap on the
+next run, so `backfill_season.py` is only needed for prior seasons.
 
 ## Project layout
 
@@ -302,15 +316,16 @@ current season.
 | --- | --- |
 | `gamedaybot/run.py` | Container entrypoint. |
 | `gamedaybot/espn/` | ESPN API access, report text, and the scheduler. |
-| `gamedaybot/discord_bot/` | Slash-command bot and embed formatting. |
-| `gamedaybot/chat/` | Webhook clients for Discord, Slack, and GroupMe. |
+| `gamedaybot/discord_bot/` | Slash-command bot, webhook client, and embed formatting. |
 | `gamedaybot/storage/db.py` | SQLite schema and queries. |
 | `gamedaybot/web/app.py` | Shiny dashboard. |
 | `dev/` | Maintenance scripts. Copied into the image, so `docker-compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
-| `logs/` | Log output. Mounted from the host. |
 | `cloudflared/config.yml` | Reference copy of the tunnel config. The `cloudflared` container reads `~/.cloudflared` on the host instead. |
 | `config.env` | Secrets and runtime settings. Excluded by [.gitignore](.gitignore). |
+
+Container logs go to Docker's `json-file` driver, capped at three 10 MB files.
+Read them with `docker-compose logs fantasy-bot`.
 
 ## Troubleshooting
 
@@ -326,7 +341,8 @@ restart it after inviting it to a new server.
 in `config.env`, then restart the container.
 
 **The dashboard is empty.** No snapshot has run yet for the selected season.
-Use `dev/backfill_season.py` to load a completed season.
+Use `dev/backfill_season.py` to load a completed season. The dashboard picks
+the new season up within 30 seconds, with no restart.
 
 **The bot's replies and the dashboard disagree on the season.** Slash commands
 and scheduled posts read the ESPN API live, using `LEAGUE_YEAR`. The dashboard
@@ -335,9 +351,9 @@ falls back to the current calendar year until a snapshot exists. Run
 `dev/backfill_season.py` for the year you want.
 
 **The `fantasy-bot` container exits with `sqlite3.OperationalError: unable to
-open database file`.** Docker created the `data/` and `logs/` bind mounts as
-root, but the container runs as uid `1000`. Run `chown -R 1000:1000 data logs`
-on the host, then restart the container.
+open database file`.** Docker created the `data/` bind mount as root, but the
+container runs as uid `1000`. Run `chown -R 1000:1000 data` on the host, then
+restart the container.
 
 **Cloudflare Tunnel returns a 502.** Either `cloudflared` connected before
 `fantasy-bot` finished starting, or `fantasy-bot` crashed. Check
