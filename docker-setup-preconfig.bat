@@ -15,7 +15,7 @@ if errorlevel 1 (
 )
 
 echo ✅ Docker is installed
-echo 📋 Configuration is pre-built into the container
+echo 📋 Reading configuration from config.env
 echo 🚀 Starting Fantasy Football Bot...
 echo.
 
@@ -38,6 +38,6 @@ echo    Restart bot:   docker-compose restart fantasy-bot
 echo    Bot status:    docker-compose ps
 echo.
 echo 🎯 The bot is now running and will send messages to Discord automatically!
-echo    No configuration needed - everything is pre-set!
+echo    Settings come from config.env; restart after editing it.
 echo.
 pause

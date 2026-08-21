@@ -19,7 +19,7 @@ if ! command -v docker-compose &> /dev/null; then
 fi
 
 echo "✅ Docker is installed"
-echo "📋 Configuration is pre-built into the container"
+echo "📋 Reading configuration from config.env"
 echo "🚀 Starting Fantasy Football Bot..."
 
 # Build and start the container
@@ -36,7 +36,7 @@ if [ $? -eq 0 ]; then
     echo "   Bot status:    docker-compose ps"
     echo ""
     echo "🎯 The bot is now running and will send messages to Discord automatically!"
-    echo "   No configuration needed - everything is pre-set!"
+    echo "   Settings come from config.env; restart after editing it."
 else
     echo "❌ Failed to start the bot. Check the error messages above."
     exit 1
