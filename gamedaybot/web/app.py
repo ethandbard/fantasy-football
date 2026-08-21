@@ -1,8 +1,10 @@
-"""
-Shiny dashboard for the fantasy league: score trends, standings/power
-rankings, season recap. Reads directly from the SQLite snapshots written by
-gamedaybot.espn.collector -- no separate API layer needed.
-"""
+# Shiny dashboard for the fantasy league: score trends, standings/power
+# rankings, season recap. Reads directly from the SQLite snapshots written by
+# gamedaybot.espn.collector -- no separate API layer needed.
+#
+# Deliberately comments rather than a module docstring: Shiny Express renders
+# top-level string expressions as page content, so a docstring here shows up
+# on the live dashboard.
 import re
 from datetime import datetime
 
@@ -10,6 +12,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import shiny.ui as core_ui  # express ui.value_box is a context manager; @render.ui needs the plain function
+from shiny import reactive
 from shiny.express import input, render, ui
 from shinywidgets import render_widget
 
@@ -18,6 +21,10 @@ import gamedaybot.storage.db as db
 db.init_db()
 
 CURRENT_YEAR = datetime.now().year
+
+# How often to check whether the collector has written new snapshots. The
+# check is a single cheap aggregate query, not a full reload.
+DB_POLL_SECONDS = 30
 
 # One color per team, stable across tabs, so a team's line on Weekly Scores
 # is the same color as its box on Consistency.
@@ -53,20 +60,57 @@ with ui.sidebar(width=220):
         choices=[str(y) for y in (db.get_years() or [CURRENT_YEAR])],
     )
     ui.markdown(
-        "Data updates automatically every Tuesday during the season. "
-        "Charts below are interactive -- hover for detail, click a legend "
-        "entry to isolate a team."
+        "New snapshots are collected every Tuesday during the season and "
+        "appear here on their own -- no refresh needed. Charts are "
+        "interactive: hover for detail, click a legend entry to isolate a team."
     )
 
 
+# Everything below reads through these two polls, so a snapshot written by the
+# collector reaches an already-open browser tab within DB_POLL_SECONDS -- no
+# restart, no rebuild, no page refresh.
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_scores():
+    return pd.DataFrame(db.get_all_weekly_scores())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_standings():
+    return pd.DataFrame(db.get_all_latest_standings())
+
+
 def _weekly_scores_df(year):
-    rows = db.get_weekly_scores(year)
-    return pd.DataFrame(rows)
+    df = _all_scores()
+    return df[df["year"] == year] if not df.empty else df
 
 
 def _standings_df(year):
-    rows = db.get_latest_standings(year)
-    return pd.DataFrame(rows)
+    df = _all_standings()
+    return df[df["year"] == year] if not df.empty else df
+
+
+@reactive.effect
+def _sync_season_choices():
+    """
+    Keeps the season dropdown in step with the database. Without this the
+    choices are whatever existed when the process started: Shiny Express
+    tagifies the UI once at startup and serves that same markup to every
+    request, so a new season would stay invisible until a container restart.
+
+    input.year() is read under isolate() so this effect depends only on the
+    data, not on the selection it sets.
+    """
+    df = _all_scores()
+    years = sorted(df["year"].unique().tolist(), reverse=True) if not df.empty else [CURRENT_YEAR]
+    choices = [str(y) for y in years]
+
+    with reactive.isolate():
+        current = input.year()
+
+    core_ui.update_select(
+        "year", choices=choices,
+        selected=current if current in choices else choices[0],
+    )
 
 
 with ui.layout_columns(fill=False):
@@ -178,7 +222,6 @@ with ui.navset_card_tab():
             colors = _team_colors(df["team_name"])
             order = (df.groupby("team_name")["score"].median()
                      .sort_values(ascending=False).index)
-            df = df.assign(team_label=df["team_name"].map(_clean_label))
             fig = px.box(
                 df, x="team_name", y="score", color="team_name",
                 color_discrete_map=colors,
@@ -200,8 +243,7 @@ with ui.navset_card_tab():
 
         @render.data_frame
         def recap_table():
-            year = int(input.year())
-            rows = db.get_weekly_scores(year)
+            rows = _weekly_scores_df(int(input.year())).to_dict("records")
             cols = ["Icon", "Trophy", "Team", "Week", "Detail"]
             if not rows:
                 return render.DataGrid(pd.DataFrame(columns=cols))

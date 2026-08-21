@@ -55,6 +55,11 @@ def get_connection():
 
 def init_db():
     with get_connection() as conn:
+        # WAL lets the dashboard read while the collector writes. Under the
+        # default journal mode the writer takes an exclusive lock, so a read
+        # landing mid-snapshot fails with "database is locked". The setting is
+        # stored in the file header, so this sticks for every later connection.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
 
 
@@ -102,29 +107,61 @@ def get_years():
         return [r["year"] for r in rows]
 
 
-def get_weekly_scores(year):
+def get_all_weekly_scores():
+    """
+    Every season's scores in one query. A full league season is only a few
+    hundred rows, so the dashboard loads the lot once per change and filters
+    by year in memory rather than re-querying on every interaction.
+    """
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM weekly_scores WHERE year = ? ORDER BY week, team_name",
-            (year,),
+            "SELECT * FROM weekly_scores ORDER BY year, week, team_name"
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_latest_standings(year):
+def get_all_latest_standings():
+    """The most recent standings snapshot for each season, in one query."""
     with get_connection() as conn:
-        latest_week = conn.execute(
-            "SELECT MAX(week) AS w FROM standings_snapshot WHERE year = ?",
-            (year,),
-        ).fetchone()["w"]
-        if latest_week is None:
-            return []
         rows = conn.execute(
             """
-            SELECT * FROM standings_snapshot
-            WHERE year = ? AND week = ?
-            ORDER BY rank
-            """,
-            (year, latest_week),
+            SELECT s.* FROM standings_snapshot s
+            JOIN (
+                SELECT year, MAX(week) AS week FROM standings_snapshot GROUP BY year
+            ) latest ON s.year = latest.year AND s.week = latest.week
+            ORDER BY s.year DESC, s.rank
+            """
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_collected_weeks(year):
+    """Weeks that already have score rows, so the collector can spot gaps."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT week FROM weekly_scores WHERE year = ?", (year,)
+        ).fetchall()
+        return {r["week"] for r in rows}
+
+
+def fingerprint():
+    """
+    Cheap change-detector driving the dashboard's reactive poll.
+
+    Sums are included alongside counts because snapshots are written with
+    INSERT OR REPLACE: a corrected score overwrites a row without changing
+    the row count, and a count-only fingerprint would miss it.
+
+    Polling the file's mtime instead would be unreliable -- WAL writes land
+    in the -wal sidecar and leave the main .db file untouched until a
+    checkpoint, so mtime can sit still while data changes underneath.
+    """
+    with get_connection() as conn:
+        return tuple(conn.execute(
+            """
+            SELECT (SELECT COUNT(*) FROM weekly_scores),
+                   (SELECT COALESCE(SUM(score), 0) FROM weekly_scores),
+                   (SELECT COUNT(*) FROM standings_snapshot),
+                   (SELECT COALESCE(SUM(wins), 0) FROM standings_snapshot)
+            """
+        ).fetchone())

@@ -25,8 +25,20 @@ def collect_weekly_snapshot(league):
     year = league.year
     week = league.current_week
 
-    if not _collect_scores(league, year, week):
-        logger.info("No box scores for %s week %s -- skipping standings "
+    # Fill any earlier week we're missing, so a container that was down for a
+    # Tuesday -- or a mid-season LEAGUE_YEAR change -- repairs itself instead
+    # of leaving a permanent hole. The current week is always re-collected,
+    # since its scores may have been corrected since the last run.
+    already_have = db.get_collected_weeks(year)
+    collected = False
+    for w in range(1, week + 1):
+        if w in already_have and w != week:
+            continue
+        if _collect_scores(league, year, w):
+            collected = True
+
+    if not collected:
+        logger.info("No box scores for %s through week %s -- skipping standings "
                     "(season likely hasn't started)", year, week)
         return
 
