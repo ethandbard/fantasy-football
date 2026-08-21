@@ -281,9 +281,10 @@ of the tunnel. `/opt/fantasy-football/.env` sets
 publishes no host port. The connector in `/opt/cloudflared` routes
 `fantasy.ethandbard.com` by container name.
 
-Deployment is a file copy over SSH followed by a rebuild. The repository is
-not cloned on the VPS, so `git push` deploys nothing. `deploy-pipeline`
-documents the shared tunnel and the deploy script.
+Deployment is a copy of `HEAD` over SSH followed by a rebuild. The
+repository is not cloned on the VPS, so `git push` deploys nothing.
+`deploy-pipeline` documents the shared tunnel and `deploy.sh`. The public
+hostname is not behind Cloudflare Access.
 
 Connection details (SSH host, key, tunnel UUID) live in the private
 `deploy-pipeline` skill. This README does not repeat them.
