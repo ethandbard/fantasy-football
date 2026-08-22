@@ -60,7 +60,58 @@ def game_log(scores_df):
         # means the opponent's row was never collected, which is not one.
         default=np.where(log["margin"].isna(), "", "T"),
     )
+    # A playoff round spans two weeks under one matchup_period; older rows
+    # collected before that column existed fall back to one round per week.
+    if "matchup_period" in log.columns:
+        log["matchup_period"] = log["matchup_period"].fillna(log["week"])
+    else:
+        log["matchup_period"] = log["week"]
     return log.sort_values(["team_name", "week"])
+
+
+def matchup_log(scores_df):
+    """
+    One row per (team, matchup_period) instead of per week, so a two-week
+    playoff round counts as a single game.
+
+    Uses matchup_score -- the round total ESPN actually decided the win on --
+    rather than summing the per-week `score` column, since the per-week
+    figures come from a lineup split (or an even split) that is only an
+    estimate of how the round's total broke down.
+    """
+    if scores_df.empty:
+        return scores_df.assign(
+            opponent_score=None, margin=None, result=None, matchup_period=None
+        )
+
+    df = scores_df.copy()
+    if "matchup_period" in df.columns:
+        df["matchup_period"] = df["matchup_period"].fillna(df["week"])
+    else:
+        df["matchup_period"] = df["week"]
+    if "matchup_score" in df.columns:
+        df["matchup_score"] = df["matchup_score"].fillna(df["score"])
+    else:
+        df["matchup_score"] = df["score"]
+
+    rounds = (df.groupby(["team_id", "team_name", "matchup_period"], sort=False)
+                .agg(week=("week", "max"),
+                     score=("matchup_score", "first"),
+                     opponent_id=("opponent_id", "first"),
+                     opponent_name=("opponent_name", "first"),
+                     is_home=("is_home", "first"))
+                .reset_index())
+
+    opponent = (rounds[["matchup_period", "team_id", "score"]]
+                .rename(columns={"team_id": "opponent_id", "score": "opponent_score"}))
+    log = rounds.merge(opponent, on=["matchup_period", "opponent_id"], how="left")
+    log["margin"] = log["score"] - log["opponent_score"]
+    log["result"] = np.select(
+        [log["margin"] > 0, log["margin"] < 0],
+        ["W", "L"],
+        default=np.where(log["margin"].isna(), "", "T"),
+    )
+    return log.sort_values(["team_name", "matchup_period"])
 
 
 def _streak(results):
@@ -90,7 +141,7 @@ def derive_records(scores_df, last_n=5):
     tiebreaks it does not publish, so the two orders can disagree; the
     dashboard shows both rather than pretending either is the whole story.
     """
-    log = game_log(scores_df)
+    log = matchup_log(scores_df)
     if log.empty:
         return pd.DataFrame(columns=[
             "team_id", "team_name", "wins", "losses", "ties", "record",
@@ -163,8 +214,9 @@ def head_to_head(scores_df):
 
     Returns (records, margins): records holds "2-0" style strings, margins
     holds the average points difference, which is what the grid is tinted by.
+    Uses the matchup-level view so a two-week playoff round counts once.
     """
-    log = game_log(scores_df)
+    log = matchup_log(scores_df)
     teams = sorted(log["team_name"].unique()) if not log.empty else []
     records = pd.DataFrame("", index=teams, columns=teams, dtype=object)
     margins = pd.DataFrame(np.nan, index=teams, columns=teams, dtype=float)
@@ -183,6 +235,66 @@ def head_to_head(scores_df):
     return records, margins
 
 
+def _cross_season(scores_df):
+    """
+    A multi-year frame with `week` and `matchup_period` offset by year, so
+    the matchup-level views never merge two different seasons' week 3 (or
+    round 2) into one game just because the numbers match. `year` and the
+    original week survive as `season_week` for display.
+
+    A no-op on a single-season frame beyond adding `season_week`.
+    """
+    if scores_df.empty or "year" not in scores_df.columns:
+        return scores_df.assign(season_week=scores_df.get("week"))
+
+    df = scores_df.copy()
+    offset = df["year"].astype(int) * 1000
+    df["season_week"] = df["week"]
+    df["week"] = offset + df["week"]
+    mp = df["matchup_period"] if "matchup_period" in df.columns else df["season_week"]
+    mp = mp.fillna(df["season_week"])
+    df["matchup_period"] = offset + mp.astype(int)
+    return df
+
+
+def head_to_head_all_time(scores_df):
+    """head_to_head() over every season in scores_df at once, via _cross_season
+    so identical round numbers in different years don't collide."""
+    return head_to_head(_cross_season(scores_df))
+
+
+def _longest_streak(scores_df, result_char):
+    """
+    Longest run of `result_char` ('W' or 'L') by any team, anywhere in the
+    scoped range -- not just the trailing run `_streak()` reports. Uses the
+    round-level view so a two-week playoff round counts as one result.
+
+    Returns (team_name, length, start_week, end_week), or None if no team
+    has a run of that result.
+    """
+    log = matchup_log(scores_df)
+    if log.empty:
+        return None
+
+    best = None
+    for (_, team_name), games in log.groupby(["team_id", "team_name"], sort=False):
+        games = games.sort_values("week")
+        run_len = cur_len = 0
+        run_start = run_end = cur_start = None
+        for _, g in games.iterrows():
+            if g["result"] == result_char:
+                if cur_len == 0:
+                    cur_start = g["week"]
+                cur_len += 1
+                if cur_len > run_len:
+                    run_len, run_start, run_end = cur_len, cur_start, g["week"]
+            else:
+                cur_len = 0
+        if run_len and (best is None or run_len > best[1]):
+            best = (team_name, run_len, int(run_start), int(run_end))
+    return best
+
+
 def trophies(scores_df):
     """
     The season's highlights.
@@ -196,6 +308,13 @@ def trophies(scores_df):
     log = game_log(scores_df)
     if log.empty:
         return []
+
+    # Highest-Scoring Loss / Lowest-Scoring Win read off the round's actual
+    # W/L, not a single week's -- a team can put up its best week of the
+    # round and still lose the round on the other week's number.
+    round_result = matchup_log(scores_df)[["team_id", "matchup_period", "result"]] \
+        .rename(columns={"result": "round_result"})
+    log = log.merge(round_result, on=["team_id", "matchup_period"], how="left")
 
     played = log[log["result"] != ""]
     awards = []
@@ -238,27 +357,42 @@ def trophies(scores_df):
                 f"{abs(blowout['margin']):.1f} pt margin — {scoreline(blowout)}",
                 team=f"{blowout['team_name']} vs {blowout['opponent_name']}")
 
-        losses = played[played["result"] == "L"]
+        losses = played[played["round_result"] == "L"]
         if not losses.empty:
             unlucky = losses.loc[losses["score"].idxmax()]
             add("😤", "Highest-Scoring Loss", unlucky,
                 f"{unlucky['score']:.1f} pts and still lost — {scoreline(unlucky)}")
 
-        wins = played[played["result"] == "W"]
+        wins = played[played["round_result"] == "W"]
         if not wins.empty:
             lucky = wins.loc[wins["score"].idxmin()]
             add("🍀", "Lowest-Scoring Win", lucky,
                 f"{lucky['score']:.1f} pts and still won — {scoreline(lucky)}")
 
         records = derive_records(scores_df)
-        hot = records.loc[records["streak"].str.startswith("W")]
-        if not hot.empty:
-            best_run = hot.loc[hot["streak"].str[1:].astype(int).idxmax()]
+
+        win_streak = _longest_streak(scores_df, "W")
+        if win_streak:
+            team_name, length, start_week, end_week = win_streak
+            week_text = (f"weeks {start_week}–{end_week}"
+                         if start_week != end_week else f"week {start_week}")
             awards.append({
-                "icon": "📈", "title": "Longest Active Streak",
-                "team": best_run["team_name"], "week": None,
-                "focus": best_run["team_name"],
-                "detail": f"{best_run['streak'][1:]} straight wins",
+                "icon": "📈", "title": "Longest Win Streak",
+                "team": team_name, "week": None,
+                "focus": team_name,
+                "detail": f"{length} straight wins ({week_text})",
+            })
+
+        loss_streak = _longest_streak(scores_df, "L")
+        if loss_streak:
+            team_name, length, start_week, end_week = loss_streak
+            week_text = (f"weeks {start_week}–{end_week}"
+                         if start_week != end_week else f"week {start_week}")
+            awards.append({
+                "icon": "📉", "title": "Longest Losing Streak",
+                "team": team_name, "week": None,
+                "focus": team_name,
+                "detail": f"{length} straight losses ({week_text})",
             })
 
         if not records.empty:
@@ -311,13 +445,25 @@ def rank_by_week(scores_df):
 
     Ranked on cumulative wins then cumulative points for, the same stateable
     rule the standings table uses.
+
+    A playoff round's win is only credited on the round's last week, so a
+    two-week round does not show a phantom win at its midpoint -- the
+    per-week x-positions are unchanged, only when the win lands on them.
     """
     log = game_log(scores_df)
     if log.empty:
         return log.assign(cum_wins=None, cum_points=None, rank=None)
 
     log = log.sort_values(["team_name", "week"]).copy()
-    credit = (log["result"] == "W").astype(float) + 0.5 * (log["result"] == "T")
+
+    round_result = matchup_log(scores_df)[["team_id", "matchup_period", "result"]] \
+        .rename(columns={"result": "round_result"})
+    log = log.merge(round_result, on=["team_id", "matchup_period"], how="left")
+
+    last_week_of_round = log.groupby("matchup_period")["week"].transform("max")
+    is_final_week = log["week"] == last_week_of_round
+    credited_result = log["round_result"].where(is_final_week, "")
+    credit = (credited_result == "W").astype(float) + 0.5 * (credited_result == "T")
     log["cum_wins"] = credit.groupby(log["team_name"]).cumsum()
     log["cum_points"] = log.groupby("team_name")["score"].cumsum()
 
@@ -351,3 +497,173 @@ def vs_projection(scores_df):
     ).reset_index()
     out["vs_proj"] = out["vs_proj"].round(1)
     return out.sort_values("vs_proj", ascending=False)
+
+
+def all_time_trophies(scores_df):
+    """
+    League records across every season in the database at once.
+
+    Mirrors trophies(), but scans the whole history rather than one season,
+    and keys every award on (year, week) via _cross_season so two seasons'
+    week 3 never collide into a single fake matchup. Championships are
+    skipped -- that needs playoff-bracket/final-round logic this schema
+    doesn't carry yet.
+    """
+    if scores_df.empty:
+        return []
+
+    cross = _cross_season(scores_df)
+    log = game_log(cross)
+    if log.empty:
+        return []
+    played = log[log["result"] != ""]
+    awards = []
+
+    def add(icon, title, row, detail, team=None):
+        awards.append({
+            "icon": icon,
+            "title": title,
+            "team": team if team is not None else row["team_name"],
+            "year": int(row["year"]),
+            "week": int(row["season_week"]),
+            "detail": detail,
+            "focus": row["team_name"],
+        })
+
+    def scoreline(row):
+        return (f"{row['team_name']} {row['score']:.1f} – "
+                f"{row['opponent_score']:.1f} {row['opponent_name']}")
+
+    best = log.loc[log["score"].idxmax()]
+    add("🔥", "Highest Single-Week Score", best,
+        f"{best['score']:.1f} pts ({int(best['year'])})")
+
+    worst = log.loc[log["score"].idxmin()]
+    add("🥶", "Lowest Single-Week Score", worst,
+        f"{worst['score']:.1f} pts ({int(worst['year'])})")
+
+    if not played.empty:
+        matchups = played[played["is_home"] == 1].copy()
+        decisive = matchups[matchups["margin"] != 0]
+        if not decisive.empty:
+            tight = decisive.loc[decisive["margin"].abs().idxmin()]
+            add("😅", "Smallest Margin of Victory", tight,
+                f"{abs(tight['margin']):.1f} pts — {scoreline(tight)} ({int(tight['year'])})",
+                team=f"{tight['team_name']} vs {tight['opponent_name']}")
+
+            blowout = decisive.loc[decisive["margin"].abs().idxmax()]
+            add("💥", "Largest Margin of Victory", blowout,
+                f"{abs(blowout['margin']):.1f} pts — {scoreline(blowout)} ({int(blowout['year'])})",
+                team=f"{blowout['team_name']} vs {blowout['opponent_name']}")
+
+        if not matchups.empty:
+            matchups["combined"] = matchups["score"] + matchups["opponent_score"]
+            highest = matchups.loc[matchups["combined"].idxmax()]
+            add("🎆", "Highest-Scoring Matchup", highest,
+                f"{highest['combined']:.1f} combined pts — "
+                f"{scoreline(highest)} ({int(highest['year'])})",
+                team=f"{highest['team_name']} vs {highest['opponent_name']}")
+
+    season_totals = (cross.groupby(["year", "team_id", "team_name"])["score"]
+                      .sum().reset_index())
+    if not season_totals.empty:
+        top = season_totals.loc[season_totals["score"].idxmax()]
+        awards.append({
+            "icon": "🏆", "title": "Most Points in a Season",
+            "team": top["team_name"], "year": int(top["year"]), "week": None,
+            "focus": top["team_name"],
+            "detail": f"{top['score']:.1f} pts ({int(top['year'])})",
+        })
+
+    season_records = []
+    for yr, yr_scores in scores_df.groupby("year"):
+        rec = derive_records(yr_scores)
+        if rec.empty:
+            continue
+        rec = rec.assign(year=yr)
+        season_records.append(rec)
+    if season_records:
+        all_records = pd.concat(season_records, ignore_index=True)
+        best_rec = all_records.loc[all_records["win_pct"].idxmax()]
+        awards.append({
+            "icon": "👑", "title": "Best Season Record",
+            "team": best_rec["team_name"], "year": int(best_rec["year"]), "week": None,
+            "focus": best_rec["team_name"],
+            "detail": f"{best_rec['record']} ({int(best_rec['year'])})",
+        })
+        worst_rec = all_records.loc[all_records["win_pct"].idxmin()]
+        awards.append({
+            "icon": "🪦", "title": "Worst Season Record",
+            "team": worst_rec["team_name"], "year": int(worst_rec["year"]), "week": None,
+            "focus": worst_rec["team_name"],
+            "detail": f"{worst_rec['record']} ({int(worst_rec['year'])})",
+        })
+
+    # Streaks scanned one season at a time -- a run must not be allowed to
+    # bridge two different years just because the week numbers are adjacent
+    # once offset.
+    best_streak = worst_streak = None
+    for yr, yr_scores in scores_df.groupby("year"):
+        win_run = _longest_streak(yr_scores, "W")
+        if win_run and (best_streak is None or win_run[1] > best_streak[2]):
+            best_streak = (yr, *win_run)
+        loss_run = _longest_streak(yr_scores, "L")
+        if loss_run and (worst_streak is None or loss_run[1] > worst_streak[2]):
+            worst_streak = (yr, *loss_run)
+
+    if best_streak:
+        yr, team_name, length, start_week, end_week = best_streak
+        week_text = (f"weeks {start_week}–{end_week}"
+                     if start_week != end_week else f"week {start_week}")
+        awards.append({
+            "icon": "📈", "title": "Longest Win Streak", "team": team_name,
+            "year": int(yr), "week": None, "focus": team_name,
+            "detail": f"{length} straight wins ({week_text}, {int(yr)})",
+        })
+    if worst_streak:
+        yr, team_name, length, start_week, end_week = worst_streak
+        week_text = (f"weeks {start_week}–{end_week}"
+                     if start_week != end_week else f"week {start_week}")
+        awards.append({
+            "icon": "📉", "title": "Longest Losing Streak", "team": team_name,
+            "year": int(yr), "week": None, "focus": team_name,
+            "detail": f"{length} straight losses ({week_text}, {int(yr)})",
+        })
+
+    projected = log[log["projected_score"].notna() & (log["projected_score"] > 0)].copy()
+    if not projected.empty:
+        projected["vs_proj"] = projected["score"] - projected["projected_score"]
+        over = projected.loc[projected["vs_proj"].idxmax()]
+        add("🚀", "Best Week vs Projection", over,
+            f"{over['vs_proj']:+.1f} over a {over['projected_score']:.1f} "
+            f"projection ({int(over['year'])})")
+
+        under = projected.loc[projected["vs_proj"].idxmin()]
+        add("🧊", "Worst Week vs Projection", under,
+            f"{under['vs_proj']:+.1f} under a {under['projected_score']:.1f} "
+            f"projection ({int(under['year'])})")
+
+    records_tbl, _margins = head_to_head_all_time(scores_df)
+    best_pair = None
+    for team_name in records_tbl.index:
+        for opp in records_tbl.columns:
+            rec = records_tbl.at[team_name, opp]
+            if not rec:
+                continue
+            wins, losses = (int(x) for x in rec.split("-"))
+            games = wins + losses
+            if games < 2:
+                continue
+            pct = wins / games
+            if best_pair is None or (pct, games) > (best_pair[0], best_pair[3]):
+                best_pair = (pct, team_name, opp, games, rec)
+    if best_pair:
+        _, team_name, opp, _games, rec = best_pair
+        awards.append({
+            "icon": "😈", "title": "Most Dominant Rivalry",
+            "team": f"{team_name} vs {opp}", "year": None, "week": None,
+            "focus": team_name,
+            "detail": f"{rec} all-time against {opp}",
+        })
+
+    return awards

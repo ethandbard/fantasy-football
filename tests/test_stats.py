@@ -50,6 +50,34 @@ def scores():
     ]).assign(year=2025)
 
 
+# Two teams, two regular weeks, then a two-week playoff round (matchup_period
+# 3 spans weeks 3 and 4). Aces lose week 3 outright (50 vs 60) but win the
+# round on the combined total (130 vs 100) -- the case that breaks anything
+# still counting wins per week instead of per round.
+PLAYOFF_FIXTURE = [
+    # week, team_id, team_name, score, projected, matchup_period, matchup_score, opp_id, opp_name, is_home
+    (1, 1, "Aces", 100.0, 95.0, 1, 100.0, 2, "Bees", 1),
+    (1, 2, "Bees", 50.0, 95.0, 1, 50.0, 1, "Aces", 0),
+
+    (2, 1, "Aces", 100.0, 95.0, 2, 100.0, 2, "Bees", 1),
+    (2, 2, "Bees", 50.0, 95.0, 2, 50.0, 1, "Aces", 0),
+
+    (3, 1, "Aces", 50.0, 95.0, 3, 130.0, 2, "Bees", 1),
+    (3, 2, "Bees", 60.0, 95.0, 3, 100.0, 1, "Aces", 0),
+
+    (4, 1, "Aces", 80.0, 95.0, 3, 130.0, 2, "Bees", 1),
+    (4, 2, "Bees", 40.0, 95.0, 3, 100.0, 1, "Aces", 0),
+]
+
+
+@pytest.fixture
+def playoff_scores():
+    return pd.DataFrame(PLAYOFF_FIXTURE, columns=[
+        "week", "team_id", "team_name", "score", "projected_score",
+        "matchup_period", "matchup_score", "opponent_id", "opponent_name", "is_home",
+    ]).assign(year=2025)
+
+
 @pytest.fixture
 def records(scores):
     return stats.derive_records(scores).set_index("team_name")
@@ -230,6 +258,25 @@ def test_trophies_find_the_unlucky_and_lucky_results(scores):
     assert awards["Lowest-Scoring Win"]["week"] == 4
 
 
+def test_longest_streak_trophies_scan_the_whole_range_not_just_the_tail(scores):
+    awards = {a["title"]: a for a in stats.trophies(scores)}
+
+    # Lions went W W W L: the trailing streak is a single loss, but the
+    # longest run anywhere in the range is the three wins that opened it.
+    win_streak = awards["Longest Win Streak"]
+    assert win_streak["team"] == "Lions"
+    assert win_streak["week"] is None
+    assert "3 straight wins" in win_streak["detail"]
+    assert "weeks 1–3" in win_streak["detail"]
+
+    # Ravens and Bears both have a two-loss run (weeks 3-4 and 1-2), so this
+    # only pins down the length and span, not which team wins the tie.
+    loss_streak = awards["Longest Losing Streak"]
+    assert loss_streak["team"] in ("Ravens", "Bears")
+    assert loss_streak["week"] is None
+    assert "2 straight losses" in loss_streak["detail"]
+
+
 def test_matchup_trophies_expose_a_single_team_to_focus(scores):
     awards = {a["title"]: a for a in stats.trophies(scores)}
 
@@ -247,6 +294,53 @@ def test_every_trophy_is_clickable_and_labelled(scores):
         assert award["week"] is None or 1 <= award["week"] <= 4
 
 
+def test_matchup_log_collapses_a_two_week_round_into_one_game(playoff_scores):
+    log = stats.matchup_log(playoff_scores)
+
+    aces = log[log["team_name"] == "Aces"]
+    assert len(aces) == 3  # two regular weeks + one playoff round, not four
+
+    round3 = aces[aces["matchup_period"] == 3].iloc[0]
+    assert round3["score"] == 130.0
+    assert round3["opponent_score"] == 100.0
+    assert round3["result"] == "W"
+
+
+def test_derive_records_counts_a_playoff_round_as_one_game_not_two(playoff_scores):
+    records = stats.derive_records(playoff_scores).set_index("team_name")
+
+    assert records.loc["Aces", "record"] == "3-0"
+    assert records.loc["Bees", "record"] == "0-3"
+    # Points still add up over every real week played, since the round total
+    # already equals the sum of its two weeks.
+    assert records.loc["Aces", "points_for"] == 330  # 100 + 100 + 50 + 80
+
+
+def test_rank_by_week_only_credits_a_win_at_the_end_of_a_round(playoff_scores):
+    ranked = stats.rank_by_week(playoff_scores)
+    aces = ranked[ranked["team_name"] == "Aces"].set_index("week")
+
+    # Aces are behind in week 3 of the round (50 vs Bees' 60), so the round
+    # win must not land until the round finishes at week 4.
+    assert aces.loc[3, "cum_wins"] == 2.0
+    assert aces.loc[4, "cum_wins"] == 3.0
+
+
+def test_trophies_credit_wins_and_losses_by_round(playoff_scores):
+    awards = {a["title"]: a for a in stats.trophies(playoff_scores)}
+
+    # Bees' week-3 score of 60 beat Aces' week-3 score outright, but the
+    # round Bees actually lost -- so it reads as their highest-scoring loss,
+    # not a win.
+    assert awards["Highest-Scoring Loss"]["team"] == "Bees"
+    assert awards["Highest-Scoring Loss"]["week"] == 3
+
+    # Aces' week-3 score of 50 was their worst week, but the round it
+    # belongs to was won on the combined total.
+    assert awards["Lowest-Scoring Win"]["team"] == "Aces"
+    assert awards["Lowest-Scoring Win"]["week"] == 3
+
+
 def test_empty_season_returns_empty_shapes_not_errors():
     empty = pd.DataFrame(columns=[
         "week", "team_id", "team_name", "score", "projected_score",
@@ -261,3 +355,93 @@ def test_empty_season_returns_empty_shapes_not_errors():
 
     records, margins = stats.head_to_head(empty)
     assert records.empty and margins.empty
+
+
+# A second season, reusing week numbers 1-4 and the same team_ids as `scores`,
+# so any all-time derivation that forgets to key on year will silently merge
+# 2024's week 3 into 2025's week 3.
+FIXTURE_2024 = [
+    (1, 1, "Ravens", 200.0, 150.0, 2, "Bears", 1),
+    (1, 2, "Bears", 40.0, 150.0, 1, "Ravens", 0),
+
+    (2, 1, "Ravens", 85.0, 100.0, 3, "Colts", 1),
+    (2, 3, "Colts", 88.0, 95.0, 1, "Ravens", 0),
+
+    (3, 1, "Ravens", 70.0, 90.0, 4, "Lions", 1),
+    (3, 4, "Lions", 71.0, 90.0, 1, "Ravens", 0),
+
+    (4, 1, "Ravens", 95.0, 90.0, 2, "Bears", 1),
+    (4, 2, "Bears", 94.0, 90.0, 1, "Ravens", 0),
+]
+
+
+@pytest.fixture
+def multi_season_scores(scores):
+    prior = pd.DataFrame(FIXTURE_2024, columns=[
+        "week", "team_id", "team_name", "score", "projected_score",
+        "opponent_id", "opponent_name", "is_home",
+    ]).assign(year=2024)
+    return pd.concat([scores, prior], ignore_index=True)
+
+
+def test_all_time_trophies_keys_on_year_not_just_week(multi_season_scores):
+    awards = {a["title"]: a for a in stats.all_time_trophies(multi_season_scores)}
+
+    # 200.0 (Ravens, 2024 week 1) beats every 2025 score.
+    highest = awards["Highest Single-Week Score"]
+    assert highest["team"] == "Ravens"
+    assert highest["year"] == 2024
+    assert highest["week"] == 1
+    assert "200.0" in highest["detail"]
+
+    # 40.0 (Bears, 2024 week 1) is the lowest across both seasons.
+    lowest = awards["Lowest Single-Week Score"]
+    assert lowest["team"] == "Bears"
+    assert lowest["year"] == 2024
+
+
+def test_all_time_trophies_scopes_season_records_and_points(multi_season_scores):
+    awards = {a["title"]: a for a in stats.all_time_trophies(multi_season_scores)}
+
+    # Colts and Lions each only appear in one 2024 fixture row and go 1-0,
+    # edging out every full-season record including Lions' real 3-1 in 2025 --
+    # the point of this assertion is that the search runs season by season
+    # rather than crowning a single global winner some other way.
+    best = awards["Best Season Record"]
+    assert best["team"] in ("Colts", "Lions")
+    assert best["year"] == 2024
+
+    # Most points in a season: Lions' 2025 total (110+140+115+149=514) beats
+    # every other team-season, including Ravens' inflated 2024 total.
+    top_points = awards["Most Points in a Season"]
+    assert top_points["team"] == "Lions"
+    assert top_points["year"] == 2025
+
+
+def test_all_time_trophies_streaks_do_not_bridge_seasons(multi_season_scores):
+    awards = {a["title"]: a for a in stats.all_time_trophies(multi_season_scores)}
+
+    # Ravens' 2024 form is W L L W (no run over 1); their 2025 form is
+    # W W L L. If year offsets leaked into one continuous timeline, the
+    # trailing 2024 win and the leading 2025 wins could misread as one run.
+    win_streak = awards["Longest Win Streak"]
+    assert win_streak["detail"].count("straight wins") == 1
+    assert win_streak["team"] in ("Ravens", "Lions")
+
+
+def test_all_time_trophies_finds_the_dominant_rivalry(multi_season_scores):
+    awards = {a["title"]: a for a in stats.all_time_trophies(multi_season_scores)}
+
+    # Lions beat Ravens in week 3 of both seasons -- a clean 2-0, and a
+    # better win pct than Ravens' 3-1 against Bears over the same two years.
+    rivalry = awards["Most Dominant Rivalry"]
+    assert rivalry["team"] == "Lions vs Ravens"
+    assert rivalry["detail"].startswith("2-0")
+
+
+def test_all_time_trophies_empty_season_returns_empty_list():
+    empty = pd.DataFrame(columns=[
+        "week", "team_id", "team_name", "score", "projected_score",
+        "opponent_id", "opponent_name", "is_home", "year",
+    ])
+    assert stats.all_time_trophies(empty) == []

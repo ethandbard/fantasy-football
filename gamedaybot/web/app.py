@@ -86,6 +86,8 @@ week = reactive.value(None)
 scope = reactive.value("reg")
 sort = reactive.value("seed")
 team = reactive.value(None)
+chart = reactive.value("race")
+h2h_scope = reactive.value("season")
 
 
 # Everything below reads through these two polls, so a snapshot written by the
@@ -238,6 +240,16 @@ with ui.div(class_="topbar"):
             choices=[str(y) for y in (db.get_years() or [CURRENT_YEAR])],
         )
 
+    with ui.div(class_="topbar-links"):
+        core_ui.tags.a(
+            "ethandbard.com", href="https://ethandbard.com",
+            target="_blank", rel="noopener",
+        )
+        core_ui.tags.a(
+            "Docs", href="https://fantasy-docs.ethandbard.com/",
+            target="_blank", rel="noopener",
+        )
+
     @render.ui
     def synced_label():
         return core_ui.span(_freshness(), class_="synced")
@@ -301,25 +313,25 @@ def _on_team_select():
 
 @reactive.effect
 def _on_scope_input():
-    if input.scope() is not None:
+    if input.scope() is not None and input.scope() != scope.get():
         scope.set(input.scope())
 
 
 @reactive.effect
-def _on_scope_records_input():
-    # Records gets its own radio-button ID rather than reusing "scope":
-    # League and Records are two separate @render.ui trees, and their scope
-    # segments can both be present in the client's input-binding table across
-    # a screen switch (Shiny's client-side duplicate-ID check fires on the
-    # overlap), so this one writes the same reactive.value under a name of
-    # its own.
-    if input.scope_records() is not None:
-        scope.set(input.scope_records())
+def _on_chart_input():
+    if input.chart_pick() is not None and input.chart_pick() != chart.get():
+        chart.set(input.chart_pick())
+
+
+@reactive.effect
+def _on_h2h_scope_input():
+    if input.h2h_scope_pick() is not None and input.h2h_scope_pick() != h2h_scope.get():
+        h2h_scope.set(input.h2h_scope_pick())
 
 
 @reactive.effect
 def _on_sort_input():
-    if input.sort() is not None:
+    if input.sort() is not None and input.sort() != sort.get():
         sort.set(input.sort())
 
 
@@ -348,13 +360,12 @@ def _week_headline(week_scores):
     parts = []
     if not matchups.empty:
         closest = matchups.loc[matchups["margin"].abs().idxmin()]
-        winner = closest if closest["margin"] >= 0 else None
-        if winner is None:
-            loser_name, winner_name = closest["team_name"], closest["opponent_name"]
-        else:
+        if closest["margin"] >= 0:
             winner_name, loser_name = closest["team_name"], closest["opponent_name"]
+        else:
+            winner_name, loser_name = closest["opponent_name"], closest["team_name"]
         parts.append(
-            f"The {winner_name} survived {loser_name} by {abs(closest['margin']):.1f}"
+            f"{winner_name} survived {loser_name} by {abs(closest['margin']):.1f}"
         )
     standings = _standings_df()
     if not standings.empty:
@@ -515,6 +526,52 @@ def _week_bests(week_scores):
                        core_ui.div(*rows), class_="rail-block")
 
 
+def _round_weeks(season, wk):
+    """
+    Every week sharing wk's matchup_period, so a playoff round picked from
+    the week rail (which points at the round's first week) pulls in both.
+    Returns [wk] for a regular week, or when matchup_period isn't collected.
+    """
+    if wk is None or season.empty or "matchup_period" not in season.columns:
+        return [wk] if wk is not None else []
+    row = season[season["week"] == wk]
+    if row.empty or pd.isna(row["matchup_period"].iloc[0]):
+        return [wk]
+    mp = row["matchup_period"].iloc[0]
+    weeks = sorted(season[season["matchup_period"] == mp]["week"].unique().tolist())
+    return weeks or [wk]
+
+
+def _round_rows(round_scores, weeks):
+    """
+    One row per team for a playoff round: each week's real score plus the
+    round total that actually decided the win, rather than pretending the
+    round was a single game.
+    """
+    log = stats.matchup_log(round_scores)
+    if log.empty:
+        return core_ui.p("No data for this round.", class_="empty-note")
+
+    rows = []
+    for _, r in log.sort_values("score", ascending=False).iterrows():
+        per_week = (round_scores[round_scores["team_id"] == r["team_id"]]
+                    .set_index("week")["score"])
+        week_spans = [
+            core_ui.span(f"Wk {w}: {per_week[w]:.1f}", class_="round-week")
+            for w in weeks if w in per_week.index
+        ]
+        result_cls = f"round-result {r['result'].lower()}" if r["result"] else "round-result"
+        rows.append(_clickable(
+            core_ui.div, "team_pick", r["team_name"],
+            core_ui.span(r["team_name"], class_="team"),
+            core_ui.div(*week_spans, class_="round-weeks"),
+            core_ui.span(f"{r['score']:.1f}", class_="round-total"),
+            core_ui.span(r["result"] or "-", class_=result_cls),
+            class_="round-row", role="button",
+        ))
+    return core_ui.div(*rows, class_="round-rows")
+
+
 @render.ui
 def screen_week():
     if screen() != "week":
@@ -528,8 +585,30 @@ def screen_week():
         )
 
     wk = _current_week()
+    weeks = _round_weeks(season, wk)
+    is_round = len(weeks) > 1
     week_scores = season[season["week"] == wk] if wk else season.iloc[0:0]
     latest = _latest_week()
+
+    if is_round:
+        round_scores = season[season["week"].isin(weeks)]
+        round_label = f"ROUND {weeks[0]}-{weeks[-1]}"
+        return core_ui.div(
+            core_ui.div(
+                core_ui.h1(round_label, class_="screen-title wk"),
+                core_ui.span(f"Weeks {weeks[0]}-{weeks[-1]} · {_freshness()}", class_="stamp"),
+                class_="title-row",
+            ),
+            core_ui.p("Two-week playoff round -- the total decides it, not either week alone.",
+                       class_="headline"),
+            core_ui.div(
+                core_ui.p("Round results", class_="section-label"),
+                _round_rows(round_scores, weeks),
+                class_="results",
+            ),
+            class_="screen",
+        )
+
     stamp = "Latest" if wk == latest else f"Week {wk}"
 
     return core_ui.div(
@@ -569,6 +648,8 @@ def week_rail():
         return None
     total = int(season["week"].max())
     current = _current_week()
+    reg = stats.regular_season_weeks(_standings_df(), season) or total
+    reg = min(reg, total)
 
     buttons = [
         _clickable(
@@ -577,8 +658,24 @@ def week_rail():
             class_="week-btn active" if n == current else "week-btn",
             type="button",
         )
-        for n in range(1, total + 1)
+        for n in range(1, reg + 1)
     ]
+
+    if total > reg and "matchup_period" in season.columns:
+        playoffs = season[season["week"] > reg]
+        for i, mp in enumerate(sorted(playoffs["matchup_period"].dropna().unique()), start=1):
+            round_weeks = sorted(playoffs[playoffs["matchup_period"] == mp]["week"].unique())
+            if not round_weeks:
+                continue
+            label = (f"R{i} · {round_weeks[0]}-{round_weeks[-1]}"
+                      if len(round_weeks) > 1 else f"R{i} · {round_weeks[0]}")
+            buttons.append(_clickable(
+                core_ui.tags.button, "week_pick", round_weeks[0],
+                label,
+                class_="week-btn round active" if current in round_weeks else "week-btn round",
+                type="button",
+            ))
+
     return core_ui.div(
         core_ui.span("WEEK", class_="eyebrow"),
         *buttons,
@@ -588,17 +685,138 @@ def week_rail():
 
 # ------------------------------------------------------------- screen: LEAGUE
 
+with ui.div(id="scope-sort-wrap", class_="controlrow"):
+    with ui.div(class_="left"):
+        with ui.div(class_="segment"):
+            # Built once at page level (not inside a @render.ui tree, which
+            # was the root cause of the echo loop -- see _on_scope_input).
+            # scope/sort are read via reactive.isolate() here since this
+            # code runs once at page build time, outside any reactive
+            # context; `selected` only needs each value's initial default.
+            with reactive.isolate():
+                initial_scope, initial_sort = scope.get(), sort.get()
+            ui.input_radio_buttons(
+                "scope", None,
+                {"reg": "Regular", "post": "Playoffs", "full": "Full"},
+                selected=initial_scope, inline=True,
+            )
+
+        @render.ui
+        def _range_note_ui():
+            lo, hi = _scope_bounds()
+            if lo > hi:
+                return None
+            text = f"weeks {lo}–{hi}" if lo != hi else f"week {lo}"
+            return core_ui.span(text, class_="range-note")
+
+    with ui.div(id="sort-only-wrap", class_="segment"):
+        ui.input_radio_buttons(
+            "sort", None,
+            {"seed": "Seed", "points": "Points", "form": "Form"},
+            selected=initial_sort, inline=True,
+        )
+
+
+@render.ui
+def scope_sort_visibility_style():
+    """Shows the scope/sort segments per screen without rebuilding them --
+    the same display-toggle trick as race-wrap, so the controls that drive
+    `scope` and `sort` are never recreated by the value they set."""
+    current = screen()
+    scope_display = "flex" if current in ("league", "records") else "none"
+    sort_display = "inline-flex" if current == "league" else "none"
+    return core_ui.tags.style(
+        f"#scope-sort-wrap {{ display: {scope_display}; }} "
+        f"#sort-only-wrap {{ display: {sort_display}; }}"
+    )
+
+
+with reactive.isolate():
+    initial_h2h_scope = h2h_scope.get()
+
+with ui.div(id="h2h-scope-wrap", class_="controlrow"):
+    with ui.div(class_="segment"):
+        ui.input_radio_buttons(
+            "h2h_scope_pick", None,
+            {"season": "Season", "all": "All-time"},
+            selected=initial_h2h_scope, inline=True,
+        )
+
+
+@render.ui
+def h2h_scope_visibility_style():
+    display = "flex" if screen() in ("league", "teams") else "none"
+    return core_ui.tags.style(f"#h2h-scope-wrap {{ display: {display}; }}")
+
+
+def _h2h_frame():
+    """The head-to-head (records, margins) pair for whichever scope the
+    Season | All-time toggle is set to."""
+    if h2h_scope.get() == "all":
+        return stats.head_to_head_all_time(_all_scores())
+    return stats.head_to_head(_season_scores())
+
+
+def _h2h_matrix(records_tbl, margins_tbl, current=None):
+    """
+    The head-to-head grid: row team vs column opponent, cells tinted by
+    average margin (green toward the row team's wins, red toward its
+    losses), diagonal blank. When `current` is set, that team's row and
+    column are raised and everything else dims -- the team-screen variant.
+    """
+    teams_list = list(records_tbl.index)
+    if not teams_list:
+        return core_ui.p("No matchups in this range.", class_="empty-note")
+
+    def head_cls(name, base):
+        return f"{base} raised" if current and name == current else base
+
+    header = [core_ui.span("", class_="h2h-corner")]
+    header += [core_ui.span(opp, class_=head_cls(opp, "h2h-col-head")) for opp in teams_list]
+    rows = [core_ui.div(*header, class_="h2h-grid-row h2h-head")]
+
+    for team_name in teams_list:
+        if current:
+            row_cls = "h2h-grid-row raised" if team_name == current else "h2h-grid-row dim"
+        else:
+            row_cls = "h2h-grid-row"
+        cells = [core_ui.span(team_name, class_=head_cls(team_name, "h2h-row-head"))]
+        for opp in teams_list:
+            if opp == team_name:
+                cells.append(core_ui.span("", class_="h2h-cell blank"))
+                continue
+            rec = records_tbl.at[team_name, opp]
+            if not rec:
+                cells.append(core_ui.span("", class_="h2h-cell empty"))
+                continue
+            margin = margins_tbl.at[team_name, opp]
+            pct = min(abs(margin) / 40, 1.0) if pd.notna(margin) else 0.0
+            color = "var(--win)" if margin >= 0 else "var(--loss)"
+            alpha = round(18 + pct * 42)
+            cell_cls = head_cls(opp, "h2h-cell")
+            cells.append(_clickable(
+                core_ui.div, "team_pick", team_name,
+                core_ui.span(rec, class_="h2h-cell-record"),
+                core_ui.span(f"{margin:+.1f}", class_="h2h-cell-margin"),
+                class_=cell_cls,
+                style=f"background:color-mix(in srgb, {color} {alpha}%, transparent)",
+                role="button",
+            ))
+        rows.append(core_ui.div(*cells, class_=row_cls))
+
+    return core_ui.div(*rows, class_="h2h-matrix",
+                       style=f"--h2h-cols:{len(teams_list)}")
+
+
 @render.ui
 def screen_league():
     if screen() != "league":
         return None
 
     scoped = _scope_scores()
-    lo, hi = _scope_bounds()
 
     if scoped.empty:
         return core_ui.div(
-            _scope_sort_row(),
             core_ui.p("No weeks in this range.", class_="empty-note"),
             class_="screen",
         )
@@ -689,13 +907,17 @@ def screen_league():
         *rows,
     )
 
-    range_note = f"weeks {lo}–{hi}" if lo != hi else f"week {lo}"
+    h2h_records, h2h_margins = _h2h_frame()
 
     return core_ui.div(
-        _scope_sort_row(range_note),
         core_ui.h1("STANDINGS", class_="screen-title board"),
         core_ui.p(core_ui.HTML(note), class_="screen-note"),
         board,
+        core_ui.div(
+            core_ui.p("Head to head", class_="section-label"),
+            _h2h_matrix(h2h_records, h2h_margins),
+            class_="h2h-section",
+        ),
         class_="screen",
     )
 
@@ -703,39 +925,37 @@ def screen_league():
 @render.ui
 def race_visibility_style():
     """
-    Toggles the race chart's container rather than conditionally rendering
-    the widget itself -- shinywidgets fixes a Plotly widget's output slot at
-    the point it is defined in the script, so it has to live outside the
-    conditional screen trees; this hides it everywhere but League instead.
+    Toggles each chart's container rather than conditionally rendering the
+    widget itself -- shinywidgets fixes a Plotly widget's output slot at the
+    point it is defined in the script, so both charts have to live outside
+    the conditional screen trees; this hides them everywhere but League, and
+    between each other, by CSS instead.
     """
-    display = "block" if screen() == "league" else "none"
-    return core_ui.tags.style(f"#race-wrap {{ display: {display}; }}")
-
-
-def _scope_sort_row(range_note=None):
-    return core_ui.div(
-        core_ui.div(
-            core_ui.div(
-                ui.input_radio_buttons(
-                    "scope", None,
-                    {"reg": "Regular", "post": "Playoffs", "full": "Full"},
-                    selected=scope.get(), inline=True,
-                ),
-                class_="segment",
-            ),
-            core_ui.span(range_note or "", class_="range-note") if range_note else None,
-            class_="left",
-        ),
-        core_ui.div(
-            ui.input_radio_buttons(
-                "sort", None,
-                {"seed": "Seed", "points": "Points", "form": "Form"},
-                selected=sort.get(), inline=True,
-            ),
-            class_="segment",
-        ),
-        class_="controlrow",
+    on_league = screen() == "league"
+    race_display = "block" if on_league and chart() == "race" else "none"
+    scores_display = "block" if on_league and chart() == "scores" else "none"
+    return core_ui.tags.style(
+        f"#race-wrap {{ display: {race_display}; }} "
+        f"#scores-wrap {{ display: {scores_display}; }}"
     )
+
+
+with reactive.isolate():
+    initial_chart = chart.get()
+
+with ui.div(id="chart-toggle-wrap", class_="controlrow"):
+    with ui.div(class_="segment"):
+        ui.input_radio_buttons(
+            "chart_pick", None,
+            {"race": "Race", "scores": "Scores"},
+            selected=initial_chart, inline=True,
+        )
+
+
+@render.ui
+def chart_toggle_visibility_style():
+    display = "flex" if screen() == "league" else "none"
+    return core_ui.tags.style(f"#chart-toggle-wrap {{ display: {display}; }}")
 
 
 with ui.div(id="race-wrap", class_="race-wrap"):
@@ -748,7 +968,33 @@ with ui.div(id="race-wrap", class_="race-wrap"):
             if scoped.empty:
                 return charts.as_widget(charts.empty_fig())
             ranked = stats.rank_by_week(scoped)
-            return charts.as_widget(charts.rank_curve(ranked, _styles()))
+            widget = charts.as_widget(charts.rank_curve(ranked, _styles()))
+            charts.bind_hover_dim(widget)
+            return widget
+
+
+@reactive.effect
+def _race_highlight():
+    charts.set_highlight(race_plot_widget.widget, team.get())
+
+
+with ui.div(id="scores-wrap", class_="race-wrap"):
+    core_ui.p("Points by week", class_="section-label")
+
+    with ui.div(class_="chart-wrap"):
+        @render_widget
+        def scores_plot_widget():
+            scoped = _scope_scores()
+            if scoped.empty:
+                return charts.as_widget(charts.empty_fig())
+            widget = charts.as_widget(charts.score_lines(scoped, _styles()))
+            charts.bind_hover_dim(widget)
+            return widget
+
+
+@reactive.effect
+def _scores_highlight():
+    charts.set_highlight(scores_plot_widget.widget, team.get())
 
 
 # -------------------------------------------------------------- screen: TEAMS
@@ -900,24 +1146,7 @@ def screen_teams():
             ),
         )
 
-    h2h_rows = []
-    records_tbl, margins_tbl = stats.head_to_head(scoped)
-    if current in records_tbl.index:
-        row_margins = margins_tbl.loc[current].dropna().sort_values(ascending=False)
-        for opp in row_margins.index:
-            m = row_margins[opp]
-            rec_text = records_tbl.at[current, opp]
-            pct = min(abs(m) / 40, 1.0) * 100
-            h2h_rows.append(core_ui.div(
-                core_ui.span(opp, class_="opp"),
-                core_ui.span(rec_text, class_="record"),
-                core_ui.div(
-                    core_ui.div(class_=f"bar {'pos' if m >= 0 else 'neg'}",
-                                style=f"width:{pct / 2:.1f}%"),
-                    class_="bar-track",
-                ),
-                class_="h2h-row",
-            ))
+    h2h_records, h2h_margins = _h2h_frame()
 
     return core_ui.div(
         _team_rail(styles, current),
@@ -931,7 +1160,7 @@ def screen_teams():
             core_ui.div(
                 range_block,
                 core_ui.p("Head to head", class_="section-label"),
-                core_ui.div(*h2h_rows) if h2h_rows else None,
+                _h2h_matrix(h2h_records, h2h_margins, current=current),
             ),
             class_="team-body",
         ),
@@ -971,10 +1200,8 @@ def screen_records():
         return None
 
     scoped = _scope_scores()
-    lo, hi = _scope_bounds()
     if scoped.empty:
         return core_ui.div(
-            _scope_sort_row_records(),
             core_ui.p("No weeks in this range.", class_="empty-note"),
             class_="screen",
         )
@@ -983,10 +1210,11 @@ def screen_records():
     single_week = [a for a in awards if a["week"] is not None]
     season = [a for a in awards if a["week"] is None]
 
-    def ledger_row(a):
+    def ledger_row(a, week_badge=None):
         value_text = a["detail"].split(" ")[0]
         scoreline = a["detail"].split(" — ")[1] if " — " in a["detail"] else ""
-        week_badge = f"WK {a['week']}" if a["week"] is not None else "SEASON"
+        if week_badge is None:
+            week_badge = f"WK {a['week']}" if a["week"] is not None else "SEASON"
         return _clickable(
             core_ui.div, "team_pick", a["focus"],
             core_ui.span(a["icon"], class_="glyph"),
@@ -1006,16 +1234,25 @@ def screen_records():
             role="button",
         )
 
-    range_note = f"weeks {lo}–{hi}" if lo != hi else f"week {lo}"
+    def all_time_row(a):
+        if a["week"] is not None:
+            badge = f"WK {a['week']} · {a['year']}"
+        elif a["year"] is not None:
+            badge = str(a["year"])
+        else:
+            badge = "ALL-TIME"
+        return ledger_row(a, week_badge=badge)
+
+    all_time_awards = stats.all_time_trophies(_all_scores())
 
     return core_ui.div(
-        _scope_sort_row_records(range_note),
         core_ui.h1("RECORD BOOK", class_="screen-title board"),
         core_ui.p(
             "Every line goes somewhere — click one and you land on that "
             "team's page with the week already loaded.",
             class_="screen-note",
         ),
+        core_ui.h2("This season", class_="records-section-title"),
         core_ui.div(
             core_ui.p("Single week", class_="ledger-heading"),
             *[ledger_row(a) for a in single_week],
@@ -1026,25 +1263,17 @@ def screen_records():
             *[ledger_row(a) for a in season],
             class_="ledger-group",
         ) if season else None,
-        class_="screen",
-    )
-
-
-def _scope_sort_row_records(range_note=None):
-    return core_ui.div(
+        core_ui.h2("All time", class_="records-section-title"),
         core_ui.div(
-            core_ui.div(
-                ui.input_radio_buttons(
-                    "scope_records", None,
-                    {"reg": "Regular", "post": "Playoffs", "full": "Full"},
-                    selected=scope.get(), inline=True,
-                ),
-                class_="segment",
-            ),
-            core_ui.span(range_note or "", class_="range-note") if range_note else None,
-            class_="left",
-        ),
-        class_="controlrow",
+            core_ui.p("Every season in the database, keyed on (year, week) so "
+                       "week numbers never collide across seasons. Championships "
+                       "are skipped -- they need playoff-bracket logic this "
+                       "schema doesn't carry yet.",
+                       class_="ledger-heading records-alltime-note"),
+            *[all_time_row(a) for a in all_time_awards],
+            class_="ledger-group",
+        ) if all_time_awards else None,
+        class_="screen",
     )
 
 
@@ -1069,4 +1298,9 @@ def bottom_nav():
 ui.markdown(
     "<p class='footnote'>New snapshots are collected every Tuesday during the "
     "season and appear here on their own — no refresh needed.</p>"
+    "<p class='footnote footnote-links'>"
+    "<a href='https://ethandbard.com' target='_blank' rel='noopener'>ethandbard.com</a>"
+    " · "
+    "<a href='https://fantasy-docs.ethandbard.com/' target='_blank' rel='noopener'>Docs</a>"
+    "</p>"
 )

@@ -102,37 +102,134 @@ def rank_curve(ranked, styles):
     """
     "The race": standing after every week, first place at the top.
 
+    Modelled on an F1 standings chart: diagonal transitions so a crossing is
+    visible, a name at both the starting order (left) and the current order
+    (right) so a line never has to be traced back to find out who it is, and
+    markers only where a team's rank actually moved -- a marker every week
+    just adds noise once the line itself carries the shape.
+
     The y-axis is reversed because a rank of 1 is the good end, and a chart
     where the leader sits at the bottom reads backwards no matter how it is
-    labelled. No legend -- each line is labelled at its own last point
-    instead, so the reader's eye is already at the right-hand edge where the
-    answer is.
+    labelled.
     """
     fig = go.Figure()
     teams = int(ranked["rank"].max()) if not ranked.empty else 1
+    weeks = sorted(ranked["week"].unique()) if not ranked.empty else []
 
     for name in sorted(ranked["team_name"].unique()):
         rows = ranked[ranked["team_name"] == name].sort_values("week")
         style = styles.get(name, {"color": theme.INK_DIM, "dash": "solid"})
+        changed = rows["rank"].diff().fillna(1) != 0  # first point always marked
+        marker_size = [7 if c else 0 for c in changed]
+
         fig.add_trace(go.Scatter(
             x=rows["week"], y=rows["rank"], name=name, mode="lines+markers",
-            line=dict(color=style["color"], width=2.4,
-                      dash=style["dash"], shape="hv"),
-            marker=dict(size=6, color=style["color"]),
+            line=dict(color=style["color"], width=3.2,
+                      dash=style["dash"], shape="linear"),
+            marker=dict(size=marker_size, color=style["color"]),
             showlegend=False,
             hovertemplate=f"<b>{name}</b><br>Week %{{x}} · rank %{{y}}<extra></extra>",
         ))
 
-        last = rows.iloc[-1]
+        first, last = rows.iloc[0], rows.iloc[-1]
+        fig.add_annotation(
+            x=first["week"], y=first["rank"], text=name + "  ",
+            showarrow=False, xanchor="right", align="right",
+            font=dict(family=_FONT, size=11, color=theme.INK_MUTE),
+        )
         fig.add_annotation(
             x=last["week"], y=last["rank"], text="  " + name,
             showarrow=False, xanchor="left", align="left",
             font=dict(family=_FONT, size=11.5, color=style["color"]),
         )
 
-    style_fig(fig, hovermode="closest", showlegend=False, height=380,
-             margin=dict(t=8, b=8, l=8, r=190))
-    fig.update_xaxes(title_text="WEEK", dtick=1)
+    style_fig(fig, hovermode="closest", showlegend=False, height=460,
+             margin=dict(t=8, b=8, l=64, r=190))
+    x_pad = 0.6
+    x_range = [weeks[0] - x_pad, weeks[-1] + x_pad] if weeks else [0.5, 1.5]
+    fig.update_xaxes(title_text="WEEK", dtick=1, range=x_range)
     fig.update_yaxes(title_text="RANK", autorange="reversed",
-                     dtick=1, range=[teams + 0.5, 0.5])
+                     dtick=1, range=[teams + 0.6, 0.4])
     return fig
+
+
+def score_lines(scores_df, styles):
+    """
+    Points per week per team, with the league average as a dashed reference.
+
+    The race chart answers "who's ahead"; this answers "by how much" -- the
+    two are complementary rather than one replacing the other, hence the
+    toggle rather than a redesign of rank_curve.
+    """
+    if scores_df.empty:
+        return empty_fig()
+
+    fig = go.Figure()
+    weeks = sorted(scores_df["week"].unique())
+    league_avg = scores_df.groupby("week")["score"].mean().reindex(weeks)
+
+    for name in sorted(scores_df["team_name"].unique()):
+        rows = scores_df[scores_df["team_name"] == name].sort_values("week")
+        style = styles.get(name, {"color": theme.INK_DIM, "dash": "solid"})
+        fig.add_trace(go.Scatter(
+            x=rows["week"], y=rows["score"], name=name, mode="lines+markers",
+            line=dict(color=style["color"], width=3.2, dash=style["dash"]),
+            marker=dict(size=5, color=style["color"]),
+            showlegend=False,
+            hovertemplate=f"<b>{name}</b><br>Week %{{x}} · %{{y:.1f}} pts<extra></extra>",
+        ))
+        last = rows.iloc[-1]
+        fig.add_annotation(
+            x=last["week"], y=last["score"], text="  " + name,
+            showarrow=False, xanchor="left", align="left",
+            font=dict(family=_FONT, size=11.5, color=style["color"]),
+        )
+
+    fig.add_trace(go.Scatter(
+        x=weeks, y=league_avg.values, name="League average", mode="lines",
+        line=dict(color=theme.INK_MUTE, width=1.6, dash="dot"),
+        showlegend=False,
+        hovertemplate="League avg<br>Week %{x} · %{y:.1f} pts<extra></extra>",
+    ))
+
+    style_fig(fig, hovermode="closest", showlegend=False, height=460,
+             margin=dict(t=8, b=8, l=8, r=190))
+    x_pad = 0.6
+    fig.update_xaxes(title_text="WEEK", dtick=1,
+                     range=[weeks[0] - x_pad, weeks[-1] + x_pad])
+    fig.update_yaxes(title_text="POINTS")
+    return fig
+
+
+def bind_hover_dim(widget):
+    """
+    Hovering a line dims every other line to ~20% opacity.
+
+    Runs through the ipywidgets comm shinywidgets already opens for the
+    FigureWidget, so this is plain Python -- no client-side JS to keep in
+    step with the trace list.
+    """
+    def _dim(target_name):
+        with widget.batch_update():
+            for trace in widget.data:
+                trace.opacity = 1.0 if trace.name == target_name else 0.2
+
+    def _reset():
+        with widget.batch_update():
+            for trace in widget.data:
+                trace.opacity = 1.0
+
+    for trace in widget.data:
+        trace.on_hover(lambda t, p, s, name=trace.name: _dim(name))
+        trace.on_unhover(lambda t, p, s: _reset())
+
+
+def set_highlight(widget, team_name):
+    """Dims every line but `team_name` -- the click-driven counterpart to
+    bind_hover_dim, called from a reactive effect on the `team` value so
+    picking a team pill elsewhere highlights its line here too."""
+    if widget is None:
+        return
+    with widget.batch_update():
+        for trace in widget.data:
+            trace.opacity = 1.0 if team_name in (None, trace.name) else 0.2

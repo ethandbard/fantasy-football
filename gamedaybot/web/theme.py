@@ -26,22 +26,31 @@ LOSS = "#E4574C"
 # Dark24 because half of Dark24 is near-black and vanishes on GROUND. The
 # darker entries are lightened here to hold contrast against a dark ground;
 # lightening preserves hue, so the scheme stays colorblind-safe.
+#
+# Ordered by hue distance rather than the source scheme's order: teams are
+# colored by assignment order (team id), and adjacent ids land on adjacent
+# race-chart lines, so blue/cyan/green sitting three apart in hue-degrees at
+# positions 0/2/4 of the old order still read as one indistinct cluster of
+# crossing lines. This order alternates cool and warm so consecutive teams
+# get maximally separated hues.
 TEAM_COLORS = [
-    "#6699DD",  # blue
-    "#EE6677",  # rose
-    "#44BB77",  # green
-    "#DDCC55",  # sand
-    "#66CCEE",  # cyan
-    "#CC66AA",  # purple
-    "#EE9944",  # amber
+    "#6699DD",  # blue    (210°)
+    "#EE9944",  # amber   ( 30°)
+    "#44BB77",  # green   (140°)
+    "#CC66AA",  # purple  (320°)
+    "#66CCEE",  # cyan    (190°)
+    "#EE6677",  # rose    (350°)
+    "#DDCC55",  # sand    ( 50°)
     "#AAAAAA",  # grey
 ]
 
 # Leagues bigger than the palette wrap around to the same hues, so the second
 # time through we vary the line dash instead. Eight distinct hues is already
 # at the limit of what a reader can tell apart on crossing lines; a 12-team
-# league gets hue + dash rather than four more colors nobody can name.
-DASH_CYCLE = ["solid", "dash", "dot", "dashdot"]
+# league gets hue + dash rather than four more colors nobody can name. Widened
+# past the two obvious choices (solid/dash) so a wrapped hue's dash is never
+# mistaken for the un-wrapped version of the same color at a glance.
+DASH_CYCLE = ["solid", "dot", "dashdot", "longdash", "longdashdot"]
 
 def team_styles(teams):
     """

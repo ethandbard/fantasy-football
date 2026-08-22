@@ -93,7 +93,63 @@ def report(league):
             print(f"\n(could not pull sample box scores yet: {e})")
 
 
+def report_matchup_periods(league):
+    """
+    Dumps settings.matchup_periods (matchup period -> list of scoring periods)
+    and, for the first playoff-looking matchup period (one covering more than
+    one scoring period), compares box.home_score against the sum of the
+    non-bench home_lineup player points -- the two numbers 1.2/1.3 need to
+    reconcile for the "real per-week score from lineups" plan to work.
+    """
+    print("\n--- matchup_periods map ---")
+    periods = league.settings.matchup_periods
+    for matchup_period in sorted(periods, key=lambda k: int(k)):
+        print(f"  matchup_period {matchup_period}: scoring periods {periods[matchup_period]}")
+
+    last_scoring_period = max(sp for sps in periods.values() for sp in sps)
+    last_matchup_period = max(int(k) for k in periods)
+    print(f"\n  last scoring period:  {last_scoring_period}")
+    print(f"  last matchup period:  {last_matchup_period}")
+    print(f"  len(matchup_periods): {len(periods)}")
+
+    multi_week = {k: v for k, v in periods.items() if len(v) > 1}
+    if not multi_week:
+        print("\n  No multi-scoring-period matchup periods found -- season may not "
+              "have reached playoffs, or this league has no two-week rounds.")
+        return
+
+    playoff_matchup_period = sorted(multi_week, key=lambda k: int(k))[0]
+    scoring_periods = multi_week[playoff_matchup_period]
+    print(f"\n--- box score vs lineup sum for matchup_period {playoff_matchup_period} "
+          f"(scoring periods {scoring_periods}) ---")
+
+    for sp in scoring_periods:
+        try:
+            box_scores = league.box_scores(week=sp)
+        except Exception as e:
+            print(f"  scoring period {sp}: could not fetch box_scores: {e}")
+            continue
+
+        for b in box_scores[:2]:
+            home_lineup_sum = sum(
+                p.points for p in b.home_lineup if getattr(p, "slot_position", None) not in ("BE", "IR")
+            )
+            print(f"  scoring period {sp}: box.home_score={b.home_score} "
+                  f"vs lineup sum(non-bench)={home_lineup_sum:.2f} "
+                  f"({b.home_team.team_abbrev if b.home_team else '?'})")
+
+
+def report_team_fields(league):
+    """Whether Team exposes logo_url, and what the values actually look like."""
+    print("\n--- team fields ---")
+    for t in league.teams[:8]:
+        logo = getattr(t, "logo_url", "<no logo_url attribute>")
+        print(f"  {t.team_name:30s} logo_url={logo}")
+
+
 if __name__ == "__main__":
     cfg = load_env()
     league = check_connection(cfg)
     report(league)
+    report_matchup_periods(league)
+    report_team_fields(league)

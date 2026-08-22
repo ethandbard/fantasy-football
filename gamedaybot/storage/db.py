@@ -26,6 +26,26 @@ CREATE TABLE IF NOT EXISTS weekly_scores (
     PRIMARY KEY (year, week, team_id)
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+    year INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    abbrev TEXT,
+    logo_url TEXT,
+    owner TEXT,
+    PRIMARY KEY (year, team_id)
+);
+
+CREATE TABLE IF NOT EXISTS schedule (
+    year INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    matchup_period INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    opponent_id INTEGER,
+    is_home INTEGER NOT NULL,
+    PRIMARY KEY (year, week, team_id)
+);
+
 CREATE TABLE IF NOT EXISTS standings_snapshot (
     year INTEGER NOT NULL,
     week INTEGER NOT NULL,
@@ -69,7 +89,11 @@ def init_db():
 # existing table exactly as it found it, so a database created before a column
 # existed needs the ALTER as well as the updated schema above.
 _ADDED_COLUMNS = {
-    "weekly_scores": {"collected_at": "TEXT"},
+    "weekly_scores": {
+        "collected_at": "TEXT",
+        "matchup_period": "INTEGER",
+        "matchup_score": "REAL",
+    },
 }
 
 
@@ -90,10 +114,44 @@ def upsert_weekly_scores(rows):
             """
             INSERT OR REPLACE INTO weekly_scores
                 (year, week, team_id, team_name, score, projected_score,
-                 opponent_id, opponent_name, is_home, collected_at)
+                 opponent_id, opponent_name, is_home, matchup_period,
+                 matchup_score, collected_at)
             VALUES
                 (:year, :week, :team_id, :team_name, :score, :projected_score,
-                 :opponent_id, :opponent_name, :is_home, datetime('now'))
+                 :opponent_id, :opponent_name, :is_home, :matchup_period,
+                 :matchup_score, datetime('now'))
+            """,
+            rows,
+        )
+
+
+def upsert_teams(rows):
+    """
+    rows: iterable of dicts with keys matching the teams columns.
+    """
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO teams
+                (year, team_id, team_name, abbrev, logo_url, owner)
+            VALUES
+                (:year, :team_id, :team_name, :abbrev, :logo_url, :owner)
+            """,
+            rows,
+        )
+
+
+def upsert_schedule(rows):
+    """
+    rows: iterable of dicts with keys matching the schedule columns.
+    """
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO schedule
+                (year, week, matchup_period, team_id, opponent_id, is_home)
+            VALUES
+                (:year, :week, :matchup_period, :team_id, :opponent_id, :is_home)
             """,
             rows,
         )
@@ -134,6 +192,24 @@ def get_all_weekly_scores():
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM weekly_scores ORDER BY year, week, team_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_teams():
+    """Every season's team metadata (name, abbrev, logo, owner) in one query."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM teams ORDER BY year, team_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_schedule():
+    """Every season's schedule rows in one query."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM schedule ORDER BY year, week, team_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
