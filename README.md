@@ -4,6 +4,8 @@ A Discord bot that posts ESPN fantasy football updates on a schedule, answers
 slash commands, and serves a web dashboard of league history. It runs as a
 Docker container with league credentials supplied through `config.env`.
 
+**Live**: [fantasy.ethandbard.com](https://fantasy.ethandbard.com), listed on [ethandbard.com](https://ethandbard.com). Docs: [ethandbard.github.io/fantasy-football](https://ethandbard.github.io/fantasy-football/).
+
 ## What the container runs
 
 The entrypoint `gamedaybot/run.py` starts three parts in one process:

@@ -27,12 +27,17 @@ website:
       - href: slides.qmd
         text: Slides
     right:
+      - icon: house
+        href: https://ethandbard.com
+        aria-label: ethandbard.com
       - icon: github
         href: https://github.com/ethandbard/fantasy-football
         aria-label: GitHub repository
   page-footer:
     left: "Built with Quarto. Forked from gamedaybot."
     right:
+      - href: https://ethandbard.com
+        text: ethandbard.com
       - href: https://github.com/ethandbard/fantasy-football
         text: Source
       - href: slides.qmd
