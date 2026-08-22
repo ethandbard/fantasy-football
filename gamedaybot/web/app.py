@@ -70,14 +70,20 @@ ui.head_content(
     # defined -- so both drew at Plotly's default 700px and stayed there
     # inside a 1232px column.
     #
-    # Watching the wrapper for a resize is not enough on its own: the wrapper
-    # is full width from the first paint and never changes, while the plot
-    # appears inside it later at the wrong size. So the check also runs on
-    # any DOM change, and compares the figure's own idea of its width against
-    # the element it was drawn into. That comparison is what stops the
-    # redraw, which is itself a DOM change, from looping.
+    # Reacting to an event is not enough on its own. The wrapper is already
+    # full width when the server paints it, so it never resizes; and Plotly
+    # arrives as a module that can finish loading after the last DOM change,
+    # so a pass triggered by that change finds no window.Plotly and gives up
+    # with nothing left to re-trigger it. Anything moving therefore starts a
+    # few seconds of cheap re-checks rather than a single pass.
+    #
+    # Each check compares the figure's own recorded width against the element
+    # it was drawn into, which is what makes it safe to run from a
+    # MutationObserver: the redraw is itself a DOM change, and once the two
+    # agree the next pass does nothing.
     core_ui.tags.script(
         "(function () {"
+        "  var timer = null, ticks = 0;"
         "  function fix(wrap) {"
         "    var plot = wrap.querySelector('.js-plotly-plot');"
         "    if (!plot || !window.Plotly || !plot._fullLayout) { return; }"
@@ -89,8 +95,15 @@ ui.head_content(
         "  function sweep() {"
         "    document.querySelectorAll('.chart-wrap').forEach(fix);"
         "  }"
+        "  function poke() {"
+        "    ticks = 0;"
+        "    if (timer) { return; }"
+        "    timer = setInterval(function () {"
+        "      sweep();"
+        "      if (++ticks > 40) { clearInterval(timer); timer = null; }"
+        "    }, 250);"
+        "  }"
         "  function start() {"
-        "    var queued = false;"
         "    if (window.ResizeObserver) {"
         "      var ro = new ResizeObserver(function (entries) {"
         "        entries.forEach(function (entry) { fix(entry.target); });"
@@ -104,12 +117,10 @@ ui.head_content(
         "      observe();"
         "      document.addEventListener('shiny:value', observe);"
         "    }"
-        "    new MutationObserver(function () {"
-        "      if (queued) { return; }"
-        "      queued = true;"
-        "      requestAnimationFrame(function () { queued = false; sweep(); });"
-        "    }).observe(document.body, {childList: true, subtree: true});"
-        "    sweep();"
+        "    new MutationObserver(poke).observe("
+        "      document.body, {childList: true, subtree: true});"
+        "    window.addEventListener('resize', poke);"
+        "    poke();"
         "  }"
         "  if (document.readyState === 'loading') {"
         "    document.addEventListener('DOMContentLoaded', start);"
