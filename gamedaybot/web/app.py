@@ -64,33 +64,52 @@ ui.head_content(
         "  }"
         "});"
     ),
-    # Plotly measures its container once, at the moment it draws. Both charts
-    # are built while their wrapper is display:none -- they have to be, since
-    # shinywidgets fixes an output's slot where it is defined and the League
-    # screen shows them by toggling that wrapper -- so both measured zero and
-    # fell back to Plotly's default 700px, which then never changed. A
-    # ResizeObserver on the wrapper redraws them the moment they have a real
-    # width, which covers the reveal, a window resize and a phone rotating.
+    # Plotly measures its container once, at the moment it draws, and never
+    # again. Both charts are built while the League screen is hidden -- they
+    # have to be, since shinywidgets fixes an output's slot where it is
+    # defined -- so both drew at Plotly's default 700px and stayed there
+    # inside a 1232px column.
+    #
+    # Watching the wrapper for a resize is not enough on its own: the wrapper
+    # is full width from the first paint and never changes, while the plot
+    # appears inside it later at the wrong size. So the check also runs on
+    # any DOM change, and compares the figure's own idea of its width against
+    # the element it was drawn into. That comparison is what stops the
+    # redraw, which is itself a DOM change, from looping.
     core_ui.tags.script(
         "(function () {"
-        "  if (!window.ResizeObserver) { return; }"
-        "  var seen = new WeakSet();"
-        "  var ro = new ResizeObserver(function (entries) {"
-        "    entries.forEach(function (entry) {"
-        "      if (entry.contentRect.width <= 0 || !window.Plotly) { return; }"
-        "      var plot = entry.target.querySelector('.js-plotly-plot');"
-        "      if (plot) { window.Plotly.Plots.resize(plot); }"
-        "    });"
-        "  });"
-        "  function scan() {"
-        "    document.querySelectorAll('.chart-wrap').forEach(function (el) {"
-        "      if (!seen.has(el)) { seen.add(el); ro.observe(el); }"
-        "    });"
+        "  function fix(wrap) {"
+        "    var plot = wrap.querySelector('.js-plotly-plot');"
+        "    if (!plot || !window.Plotly || !plot._fullLayout) { return; }"
+        "    var width = plot.clientWidth;"
+        "    if (width > 0 && Math.abs(plot._fullLayout.width - width) > 1) {"
+        "      window.Plotly.Plots.resize(plot);"
+        "    }"
+        "  }"
+        "  function sweep() {"
+        "    document.querySelectorAll('.chart-wrap').forEach(fix);"
         "  }"
         "  function start() {"
-        "    scan();"
-        "    new MutationObserver(scan).observe("
-        "      document.body, {childList: true, subtree: true});"
+        "    var queued = false;"
+        "    if (window.ResizeObserver) {"
+        "      var ro = new ResizeObserver(function (entries) {"
+        "        entries.forEach(function (entry) { fix(entry.target); });"
+        "      });"
+        "      var seen = new WeakSet();"
+        "      var observe = function () {"
+        "        document.querySelectorAll('.chart-wrap').forEach(function (el) {"
+        "          if (!seen.has(el)) { seen.add(el); ro.observe(el); }"
+        "        });"
+        "      };"
+        "      observe();"
+        "      document.addEventListener('shiny:value', observe);"
+        "    }"
+        "    new MutationObserver(function () {"
+        "      if (queued) { return; }"
+        "      queued = true;"
+        "      requestAnimationFrame(function () { queued = false; sweep(); });"
+        "    }).observe(document.body, {childList: true, subtree: true});"
+        "    sweep();"
         "  }"
         "  if (document.readyState === 'loading') {"
         "    document.addEventListener('DOMContentLoaded', start);"
