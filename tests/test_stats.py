@@ -8,6 +8,7 @@ four-team, four-week season with hand-worked expected values.
 import pandas as pd
 import pytest
 
+import gamedaybot.web.charts as charts
 import gamedaybot.web.stats as stats
 
 
@@ -445,3 +446,87 @@ def test_all_time_trophies_empty_season_returns_empty_list():
         "opponent_id", "opponent_name", "is_home", "year",
     ])
     assert stats.all_time_trophies(empty) == []
+
+
+# --------------------------------------------------------------- chart labels
+
+def test_spread_labels_leaves_a_roomy_chart_alone():
+    """Nothing is moved when nothing collides -- a label off its own line is
+    a cost, so it is only paid where it buys legibility."""
+    placed = charts.spread_labels([("a", 100.0), ("b", 80.0), ("c", 60.0)], min_gap=10)
+
+    assert placed == {"a": 100.0, "b": 80.0, "c": 60.0}
+
+
+def test_spread_labels_separates_a_cluster_by_the_minimum_gap():
+    placed = charts.spread_labels(
+        [("a", 100.0), ("b", 99.5), ("c", 99.0)], min_gap=10)
+    heights = sorted(placed.values(), reverse=True)
+
+    assert heights[0] - heights[1] == pytest.approx(10)
+    assert heights[1] - heights[2] == pytest.approx(10)
+
+
+def test_spread_labels_keeps_the_original_order():
+    """A label may move, but never past its neighbour -- a chart that renames
+    the lines is worse than one with crowded labels."""
+    placed = charts.spread_labels(
+        [("low", 99.0), ("high", 100.0), ("mid", 99.5)], min_gap=10)
+
+    assert placed["high"] > placed["mid"] > placed["low"]
+
+
+def test_spread_labels_centres_the_block_it_pushed_down():
+    """Pushing every label down from the top would drag a crowded group off
+    the bottom of the plot; the block is re-centred on the data instead."""
+    points = [("a", 100.0), ("b", 99.5), ("c", 99.0)]
+    placed = charts.spread_labels(points, min_gap=10)
+
+    before = sum(y for _, y in points) / 3
+    after = sum(placed.values()) / 3
+    assert after == pytest.approx(before)
+
+
+def test_spread_labels_handles_no_points():
+    assert charts.spread_labels([], min_gap=10) == {}
+
+
+# ------------------------------------------------------- record book: details
+
+@pytest.mark.parametrize("detail, expected", [
+    ("185.4 pts", ("185.4", "pts")),
+    ("0.8 pt margin — Ravens 97.5 – 98.3 Lions", ("0.8", "pt margin")),
+    ("1814 pts faced", ("1814", "pts faced")),
+    ("258.0 combined pts — Ravens 130.0 – 128.0 Lions (2024)",
+     ("258.0", "combined pts")),
+])
+def test_split_detail_keeps_a_short_unit_whole(detail, expected):
+    assert stats.split_detail(detail) == expected
+
+
+@pytest.mark.parametrize("detail, expected", [
+    ("142.8 pts and still lost — Ravens 142.8 – 160.8 Lions", ("142.8", "pts")),
+    ("95.7 pts and still won — Ravens 95.7 – 88.3 Lions", ("95.7", "pts")),
+    ("-86.1 pts from week 12", ("-86.1", "pts")),
+])
+def test_split_detail_trims_a_sentence_down_to_its_unit(detail, expected):
+    assert stats.split_detail(detail) == expected
+
+
+@pytest.mark.parametrize("detail", [
+    "+54.7 over a 131.0 projection",
+    "-58.9 under a 121.9 projection",
+])
+def test_split_detail_names_a_projection_delta_rather_than_quoting_it(detail):
+    """"over a 131.0 projection" is a phrase, not a unit, and the projection
+    is already on the row's scoreline."""
+    assert stats.split_detail(detail)[1] == "vs proj"
+
+
+def test_split_detail_leaves_a_self_describing_value_bare():
+    """A win-loss record needs no unit; "9-5 record" is noise."""
+    assert stats.split_detail("9-5 (2025)") == ("9-5", "")
+
+
+def test_split_detail_survives_an_empty_detail():
+    assert stats.split_detail("") == ("", "")

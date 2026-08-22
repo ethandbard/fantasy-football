@@ -27,7 +27,10 @@ def collect_weekly_snapshot(league):
 
     # Fill any earlier week we're missing, so a container that was down for a
     # Tuesday -- or a mid-season LEAGUE_YEAR change -- repairs itself instead
-    # of leaving a permanent hole. The current week is always re-collected,
+    # of leaving a permanent hole. "Missing" also covers a week whose rows
+    # predate a column the dashboard now needs, so a schema addition repairs
+    # the season behind it rather than leaving the weeks either side of the
+    # change reading differently. The current week is always re-collected,
     # since its scores may have been corrected since the last run.
     already_have = db.get_collected_weeks(year)
     collected = False

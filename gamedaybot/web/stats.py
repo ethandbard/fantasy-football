@@ -433,6 +433,33 @@ def trophies(scores_df):
     return awards
 
 
+def split_detail(detail):
+    """
+    A trophy's detail split into its number and the unit that follows it.
+
+    The record book stacks points, margins, counts, records and projection
+    deltas in one column, where a bare "0.8" under a bare "185.4" says
+    nothing about which is a margin and which is a score. This lives beside
+    trophies() because that is what writes the strings being taken apart --
+    the two have to agree on the phrasing, so they belong in one file.
+
+    Returns (number, unit); the unit is empty when the detail is a bare value
+    like a win-loss record, and is dropped down to one word when what follows
+    the number is a sentence rather than a unit.
+    """
+    head = detail.split(" — ")[0].split(" (")[0].strip()
+    words = head.split()
+    if not words:
+        return detail, ""
+
+    number, rest = words[0], words[1:]
+    # "over a 131.0 projection" is a phrase, not a unit -- and the projection
+    # itself is already spelled out on the row's scoreline.
+    if rest[:1] and rest[0] in ("over", "under"):
+        return number, "vs proj"
+    return number, " ".join(rest) if len(rest) <= 2 else rest[0]
+
+
 def rank_by_week(scores_df):
     """
     Where every team stood after each week.

@@ -98,6 +98,40 @@ def empty_fig(message="No score data collected yet for this season."):
     return fig
 
 
+def spread_labels(points, min_gap):
+    """
+    Nudge end-of-line labels apart so a cluster stays readable.
+
+    `points` is [(key, y), ...]; returns {key: y} with every pair at least
+    `min_gap` apart, keeping the original top-to-bottom order. Labels are
+    pushed down from the highest, then the whole block is shifted back up by
+    however far it overran, so a crowded chart drifts rather than sliding off
+    the bottom.
+
+    Only the label moves -- the line still ends at the real value, which is
+    the trade a slope chart always makes: four teams finishing within a point
+    of each other cannot each have a legible name at their exact height.
+    """
+    if not points:
+        return {}
+
+    ordered = sorted(points, key=lambda kv: kv[1], reverse=True)
+    placed = []
+    for key, y in ordered:
+        if placed and y > placed[-1][1] - min_gap:
+            y = placed[-1][1] - min_gap
+        placed.append((key, y))
+
+    # Push the block back up by the distance the lowest label was driven
+    # past where it started, so the group stays centred on its own data.
+    overrun = ordered[-1][1] - placed[-1][1]
+    if overrun > 0:
+        shift = overrun / 2
+        placed = [(key, y + shift) for key, y in placed]
+
+    return dict(placed)
+
+
 def rank_curve(ranked, styles):
     """
     "The race": standing after every week, first place at the top.
@@ -132,19 +166,24 @@ def rank_curve(ranked, styles):
         ))
 
         first, last = rows.iloc[0], rows.iloc[-1]
+        # xshift rather than padding spaces: the left-hand names have to clear
+        # the rank tick labels, and a pixel offset says that in a way a
+        # variable-width space never can.
         fig.add_annotation(
-            x=first["week"], y=first["rank"], text=name + "  ",
+            x=first["week"], y=first["rank"], text=name, xshift=-52,
             showarrow=False, xanchor="right", align="right",
             font=dict(family=_FONT, size=11, color=theme.INK_MUTE),
         )
         fig.add_annotation(
-            x=last["week"], y=last["rank"], text="  " + name,
+            x=last["week"], y=last["rank"], text=name, xshift=14,
             showarrow=False, xanchor="left", align="left",
             font=dict(family=_FONT, size=11.5, color=style["color"]),
         )
 
+    # Left and right margins match, because both carry a full team name --
+    # a 64px left margin clipped every one of them against the paper edge.
     style_fig(fig, hovermode="closest", showlegend=False, height=460,
-             margin=dict(t=8, b=8, l=64, r=190))
+             margin=dict(t=8, b=8, l=190, r=190))
     x_pad = 0.6
     x_range = [weeks[0] - x_pad, weeks[-1] + x_pad] if weeks else [0.5, 1.5]
     fig.update_xaxes(title_text="WEEK", dtick=1, range=x_range)
@@ -167,8 +206,24 @@ def score_lines(scores_df, styles):
     fig = go.Figure()
     weeks = sorted(scores_df["week"].unique())
     league_avg = scores_df.groupby("week")["score"].mean().reindex(weeks)
+    names = sorted(scores_df["team_name"].unique())
 
-    for name in sorted(scores_df["team_name"].unique()):
+    # Unlike the race chart's evenly spaced ranks, final scores cluster: four
+    # teams can finish a week within a point of each other, and their names
+    # then land on top of one another. Work out where each label goes before
+    # drawing any of them.
+    finals = {}
+    for name in names:
+        rows = scores_df[scores_df["team_name"] == name].sort_values("week")
+        if not rows.empty:
+            finals[name] = rows.iloc[-1]["score"]
+    span = (scores_df["score"].max() - scores_df["score"].min()) or 1.0
+    # An 11.5px label wants ~17px of vertical room. The plot area comes out
+    # around 360px tall once the height, margins and x-axis are accounted
+    # for, so that many points of the score span is the gap to ask for.
+    label_y = spread_labels(list(finals.items()), min_gap=span * 17 / 360)
+
+    for name in names:
         rows = scores_df[scores_df["team_name"] == name].sort_values("week")
         style = styles.get(name, {"color": theme.INK_DIM, "dash": "solid"})
         fig.add_trace(go.Scatter(
@@ -180,7 +235,7 @@ def score_lines(scores_df, styles):
         ))
         last = rows.iloc[-1]
         fig.add_annotation(
-            x=last["week"], y=last["score"], text="  " + name,
+            x=last["week"], y=label_y.get(name, last["score"]), text=name, xshift=14,
             showarrow=False, xanchor="left", align="left",
             font=dict(family=_FONT, size=11.5, color=style["color"]),
         )

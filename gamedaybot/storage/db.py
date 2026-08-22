@@ -230,10 +230,27 @@ def get_all_latest_standings():
 
 
 def get_collected_weeks(year):
-    """Weeks that already have score rows, so the collector can spot gaps."""
+    """
+    Weeks the collector can leave alone, so it can spot gaps.
+
+    A week only counts as collected when every one of its rows carries the
+    columns the dashboard needs today -- matchup_period and matchup_score.
+    Rows written before those columns existed hold a two-week playoff round's
+    total in the per-week `score`, and nothing about them says so, which is
+    exactly the case the dashboard renders wrong. Reporting such a week as
+    missing costs one extra ESPN call per stale week, once, and lets the
+    normal Tuesday run repair a database that would otherwise stay wrong
+    forever.
+    """
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT week FROM weekly_scores WHERE year = ?", (year,)
+            """
+            SELECT week FROM weekly_scores WHERE year = ?
+            GROUP BY week
+            HAVING COUNT(*) = COUNT(matchup_period)
+               AND COUNT(*) = COUNT(matchup_score)
+            """,
+            (year,),
         ).fetchall()
         return {r["week"] for r in rows}
 
