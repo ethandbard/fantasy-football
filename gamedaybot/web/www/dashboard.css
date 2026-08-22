@@ -1371,7 +1371,13 @@ button { font-family: inherit; }
   .topbar .wordmark { font-size: 13px; }
   .topbar .synced { font-size: 9px; letter-spacing: 0.06em; }
   .topbar .synced::before { width: 5px; height: 5px; }
-  .topbar .season-pick select { padding: 5px 22px 5px 8px; font-size: 11px; }
+  .topbar .synced-word { display: none; }
+  .topbar .season-pick select {
+    padding: 5px 18px 5px 7px;
+    font-size: 11px;
+    min-width: 58px;
+    background-position: right 4px center;
+  }
 
   .footnote-links { display: block; }
 

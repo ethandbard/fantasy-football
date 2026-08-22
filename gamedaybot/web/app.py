@@ -285,7 +285,17 @@ with ui.div(class_="topbar"):
 
     @render.ui
     def synced_label():
-        return core_ui.span(_freshness(), class_="synced")
+        text = _freshness()
+        # "synced" is split off so a phone can drop it: the topbar has no room
+        # for the long form ("synced just now" overran it by 19px), and the
+        # live dot beside the time already carries that half of the meaning.
+        if text.startswith("synced "):
+            return core_ui.span(
+                core_ui.span("synced ", class_="synced-word"),
+                text[len("synced "):],
+                class_="synced",
+            )
+        return core_ui.span(text, class_="synced")
 
 
 @reactive.effect
