@@ -97,23 +97,33 @@ def trophies_embed(text, league=None):
     return payload
 
 
-def init_embed(data):
+def init_embed(data, league=None):
     """
     Startup summary, built from the resolved env config so it reports what the
     bot will actually do rather than a hardcoded guess.
 
     `data` is the dict returned by gamedaybot.espn.env_vars.get_env_vars().
+    Year prefers the connected ESPN league, then LEAGUE_YEAR, so the
+    message cannot drift from the season the process actually opened.
     """
+    year = league.year if league is not None else data["year"]
+    league_name = None
+    if league is not None:
+        league_name = getattr(getattr(league, "settings", None), "name", None)
     lines = [
         "✅ **Connected to league successfully!**",
-        f"📅 **Season:** {data['year']} ({data['ff_start_date']} - {data['ff_end_date']})",
+    ]
+    if league_name:
+        lines.append(f"🏈 **League:** {league_name}")
+    lines.extend([
+        f"📅 **Season:** {year} season ({data['ff_start_date']} – {data['ff_end_date']})",
         f"⏰ **Timezone:** {data['my_timezone']}",
         f"📊 **Waiver reports:** {'Every day' if data['daily_waiver'] else 'Wednesdays only'}",
         f"🏥 **Player monitoring:** {'Enabled' if data['monitor_report'] else 'Disabled'}",
         "",
         "🎯 **Bot is now running and will send automatic updates on schedule!**",
-        f"🔥 **Ready for the {data['year']} fantasy season!**",
-    ]
+        f"🔥 **Ready for the {year} fantasy season!**",
+    ])
     return {
         "title": "🤖 Fantasy Football Bot Started!",
         "description": "\n".join(lines),

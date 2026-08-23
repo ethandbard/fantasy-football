@@ -75,13 +75,13 @@ def _report_text(function, league, data):
     return None
 
 
-def _send_init(discord_bot, data):
+def _send_init(discord_bot, data, league=None):
     init_msg = data.get('init_msg')
     if init_msg:
         # INIT_MSG replaces the generated summary outright.
         discord_bot.send_message(text=init_msg)
         return
-    discord_bot.send_message(embed=discord_fmt.init_embed(data))
+    discord_bot.send_message(embed=discord_fmt.init_embed(data, league=league))
 
 
 def espn_bot(function):
@@ -117,7 +117,7 @@ def espn_bot(function):
         # Exempt from the season check -- the startup confirmation is worth
         # sending in the offseason too. The player pool is collected here so
         # the draft board has data before START_DATE, when no other job fires.
-        _send_init(discord_bot, data)
+        _send_init(discord_bot, data, league=league)
         try:
             collector.collect_player_pool(league)
         except Exception as e:
