@@ -183,12 +183,17 @@ season may not have started yet.
 
 ## Dashboard
 
-The dashboard reads `data/fantasy.db` and offers four destinations:
+The dashboard reads `data/fantasy.db` and offers five destinations:
 
 - **This week**: the front page. Results ordered closest-first, who moved in
   the standings since the prior week, the week's bests, and every team
   against its own average. Opens on the latest collected week; nothing to
   configure.
+- **Draft**: ESPN's player pool for this league. Rank, ADP, bye, projected
+  FPTS (in the league's scoring), last year's FPTS, and position counting
+  stats (PC/PA/PY and the RB/WR/TE equivalents). Filter by position, search
+  by name or team, and sort any column. Opens first when the selected season
+  has a player pool and no weekly scores yet — the preseason case.
 - **League**: the standings board — record, streak, last-five form, points
   for/against, and a sparkline per row, sortable by seed, points, or recent
   form — plus "the race," rank by week for every team on one chart.
@@ -209,9 +214,10 @@ filtering a shared chart. There is no reset button: each destination shows
 either the whole league or one team, never a muted version of either.
 
 A dropdown in the masthead selects the season. Only seasons present in the
-database appear there, so a new season stays empty until the first Tuesday
-snapshot runs. With one season collected it renders as plain text rather than
-a dropdown that cannot change anything.
+database appear there. A season lands in the list once weekly scores or the
+player pool have been collected, so the draft board can show the upcoming
+year before week 1. With one season collected it renders as plain text rather
+than a dropdown that cannot change anything.
 
 The dashboard polls the database every 30 seconds. New snapshots reach an open
 browser tab on their own, and a new season joins the dropdown without a
@@ -481,20 +487,35 @@ The Tuesday snapshot also fills in any week it finds missing for the current
 season. A container that was down over a Tuesday repairs its own gap on the
 next run, so `backfill_season.py` is only needed for prior seasons.
 
+Pull ESPN's player pool (ranks, bye weeks, projected FPTS and counting stats)
+into the draft board. The full container does this on startup and every
+morning; run it yourself when the dashboard is up alone:
+
+```bash
+docker compose exec fantasy-bot python dev/collect_players.py
+```
+
+Pass a year to collect a different season than `LEAGUE_YEAR`:
+
+```bash
+docker compose exec fantasy-bot python dev/collect_players.py 2025
+```
+
 ## Project layout
 
 | Path | Contents |
 | --- | --- |
 | `gamedaybot/run.py` | Container entrypoint. |
-| `gamedaybot/espn/` | ESPN API access, report text, and the scheduler. |
+| `gamedaybot/espn/` | ESPN API access, report text, player pool, and the scheduler. |
 | `gamedaybot/discord_bot/` | Slash-command bot, webhook client, and embed formatting. |
 | `gamedaybot/storage/db.py` | SQLite schema and queries. |
 | `gamedaybot/web/app.py` | Shiny dashboard: layout and reactive wiring. |
 | `gamedaybot/web/stats.py` | Season arithmetic — records, streaks, head-to-head, trophies. |
+| `gamedaybot/web/draft.py` | Draft-board columns, filters, and sorting. |
 | `gamedaybot/web/charts.py` | Plotly figure builders and their shared styling. |
 | `gamedaybot/web/theme.py` | Team palette and the stat-tile sparkline. |
 | `gamedaybot/web/www/dashboard.css` | Dashboard styling. |
-| `tests/` | Tests for `web/stats.py`. Run with `pytest`. |
+| `tests/` | Tests for stats, storage, player parsing, and the draft board. |
 | `dev/` | Maintenance scripts. Copied into the image, so `docker compose exec` can run them. |
 | `data/` | SQLite database. Mounted from the host. |
 | `compose.vps.yml` | VPS override: join `edge`, publish no host ports. |
@@ -519,8 +540,14 @@ restart it after inviting it to a new server.
 in `config.env`, then restart the container.
 
 **The dashboard is empty.** No snapshot has run yet for the selected season.
-Use `dev/backfill_season.py` to load a completed season. The dashboard picks
-the new season up within 30 seconds, with no restart.
+Use `dev/backfill_season.py` to load a completed season, or
+`dev/collect_players.py` for the draft board before week 1. The dashboard
+picks the new data up within 30 seconds, with no restart.
+
+**The draft board is empty.** The player pool has not been collected. Restart
+the full container (it pulls the pool on startup) or run
+`dev/collect_players.py`. The daily 6:15 AM job also refreshes it, including
+before `START_DATE`.
 
 **The bot's replies and the dashboard disagree on the season.** Slash commands
 and scheduled posts read the ESPN API live, using `LEAGUE_YEAR`. The dashboard

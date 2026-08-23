@@ -5,6 +5,7 @@ Kept intentionally simple (stdlib sqlite3, no ORM) since the write volume is
 tiny (a handful of rows per team per week) and the main consumer is the Shiny
 dashboard doing read-only aggregate queries.
 """
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -58,6 +59,31 @@ CREATE TABLE IF NOT EXISTS standings_snapshot (
     points_against REAL NOT NULL,
     rank INTEGER NOT NULL,
     PRIMARY KEY (year, week, team_id)
+);
+
+CREATE TABLE IF NOT EXISTS players (
+    year INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    position TEXT NOT NULL,
+    pro_team TEXT,
+    bye_week INTEGER,
+    injury_status TEXT,
+    injured INTEGER,
+    percent_owned REAL,
+    percent_started REAL,
+    adp REAL,
+    auction_value REAL,
+    draft_rank INTEGER,
+    pos_rank INTEGER,
+    projected_points REAL,
+    projected_avg REAL,
+    last_year_points REAL,
+    projected_stats TEXT,
+    last_year_stats TEXT,
+    on_team_id INTEGER,
+    collected_at TEXT,
+    PRIMARY KEY (year, player_id)
 );
 """
 
@@ -175,10 +201,45 @@ def upsert_standings(rows):
         )
 
 
+def replace_players(year, rows):
+    """
+    Replace the player pool for one season.
+
+    Delete-then-insert rather than upsert: a player who drops out of ESPN's
+    pool (retired, cut, no longer ranked) would otherwise stay on the draft
+    board forever.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM players WHERE year = ?", (year,))
+        conn.executemany(
+            """
+            INSERT INTO players
+                (year, player_id, name, position, pro_team, bye_week,
+                 injury_status, injured, percent_owned, percent_started,
+                 adp, auction_value, draft_rank, pos_rank, projected_points,
+                 projected_avg, last_year_points, projected_stats,
+                 last_year_stats, on_team_id, collected_at)
+            VALUES
+                (:year, :player_id, :name, :position, :pro_team, :bye_week,
+                 :injury_status, :injured, :percent_owned, :percent_started,
+                 :adp, :auction_value, :draft_rank, :pos_rank, :projected_points,
+                 :projected_avg, :last_year_points, :projected_stats,
+                 :last_year_stats, :on_team_id, datetime('now'))
+            """,
+            rows,
+        )
+
+
 def get_years():
+    """Seasons present in scores or the player pool, newest first."""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT year FROM weekly_scores ORDER BY year DESC"
+            """
+            SELECT year FROM weekly_scores
+            UNION
+            SELECT year FROM players
+            ORDER BY year DESC
+            """
         ).fetchall()
         return [r["year"] for r in rows]
 
@@ -227,6 +288,35 @@ def get_all_latest_standings():
             """
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_all_players():
+    """Every season's player pool, with stats JSON decoded into dicts."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM players
+            ORDER BY year DESC, COALESCE(draft_rank, 9999), name
+            """
+        ).fetchall()
+        out = []
+        for r in rows:
+            row = dict(r)
+            row["projected_stats"] = _loads_json(row.get("projected_stats"))
+            row["last_year_stats"] = _loads_json(row.get("last_year_stats"))
+            out.append(row)
+        return out
+
+
+def _loads_json(value):
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
 
 
 def get_collected_weeks(year):
@@ -278,21 +368,29 @@ def fingerprint():
                    (SELECT COALESCE(SUM(score), 0) FROM weekly_scores),
                    (SELECT COALESCE(MAX(collected_at), '') FROM weekly_scores),
                    (SELECT COUNT(*) FROM standings_snapshot),
-                   (SELECT COALESCE(SUM(wins), 0) FROM standings_snapshot)
+                   (SELECT COALESCE(SUM(wins), 0) FROM standings_snapshot),
+                   (SELECT COUNT(*) FROM players),
+                   (SELECT COALESCE(MAX(collected_at), '') FROM players)
             """
         ).fetchone())
 
 
 def last_collected():
     """
-    When the newest score row was written, as a UTC "YYYY-MM-DD HH:MM:SS"
-    string, or None.
+    When the newest score or player row was written, as a UTC
+    "YYYY-MM-DD HH:MM:SS" string, or None.
 
-    Returns None for a database written before collected_at existed, which
-    the dashboard treats as "unknown" rather than guessing a time.
+    Player rows are included so a preseason collect still drives the
+    dashboard's "synced N ago" stamp, when weekly_scores is empty.
     """
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT MAX(collected_at) AS collected_at FROM weekly_scores"
+            """
+            SELECT MAX(collected_at) AS collected_at FROM (
+                SELECT MAX(collected_at) AS collected_at FROM weekly_scores
+                UNION ALL
+                SELECT MAX(collected_at) AS collected_at FROM players
+            )
+            """
         ).fetchone()
-        return row["collected_at"] if row else None
+        return row["collected_at"] if row and row["collected_at"] else None

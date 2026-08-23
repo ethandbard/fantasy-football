@@ -81,6 +81,7 @@ def report(league):
     print(f"  league.draft                 -> draft picks (once draft has happened)")
     print(f"  league.recent_activity()     -> waiver/trade/add-drop feed")
     print(f"  league.free_agents()         -> available free agent players")
+    print(f"  kona_player_info             -> ranks, ADP, bye, projected FPTS + stats")
 
     if league.current_week and league.current_week > 0:
         try:

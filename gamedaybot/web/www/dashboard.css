@@ -312,9 +312,12 @@ button { font-family: inherit; }
   margin-bottom: 22px;
 }
 
-#scope-sort-wrap {
+#scope-sort-wrap,
+#draft-controls-wrap {
   padding: 30px var(--gutter) 0;
 }
+
+#draft-controls-wrap { display: none; }
 
 .controlrow .left {
   display: flex;
@@ -731,6 +734,139 @@ button { font-family: inherit; }
 .points-stack .pvalue.neg { color: var(--loss); }
 
 .board-row .trend { display: flex; justify-content: flex-end; }
+
+/* ---------- draft board ---------- */
+
+.draft-search .shiny-input-container,
+.draft-search .form-group { width: auto; max-width: none; margin: 0; }
+
+.draft-search input[type="text"] {
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 6px 10px;
+  width: 180px;
+}
+
+.draft-search input[type="text"]::placeholder { color: var(--ink-mute); }
+
+.draft-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.draft-table { min-width: 720px; }
+
+.draft-head,
+.draft-row {
+  display: grid;
+  grid-template-columns: var(--draft-cols);
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.draft-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.draft-head .col {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.draft-head .col:nth-child(2) { text-align: left; }
+
+.draft-head .col.active { color: var(--accent); }
+
+.draft-head .col:hover { color: var(--ink-dim); }
+
+.draft-row {
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.draft-row:hover { background: var(--raised); }
+
+.draft-row .dcell {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.draft-row .dcell.player { text-align: left; min-width: 0; }
+
+.draft-row .dcell.rk {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-size: 16px;
+  color: var(--ink-mute);
+}
+
+.draft-row .dcell.fpts {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-cell .pname {
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inj {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(228, 87, 76, 0.13);
+  color: var(--loss);
+  flex: 0 0 auto;
+}
+
+.pos-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.pos-badge.pos-qb { color: #66CCEE; }
+.pos-badge.pos-rb { color: #EE9944; }
+.pos-badge.pos-wr { color: #6699DD; }
+.pos-badge.pos-te { color: #44BB77; }
+.pos-badge.pos-k { color: #DDCC55; }
+.pos-badge.pos-dst { color: #AAAAAA; }
 
 .cutoff-row {
   display: flex;
@@ -1301,7 +1437,8 @@ button { font-family: inherit; }
 .team-pill:focus-visible,
 .ledger-row:focus-visible,
 .nav-item:focus-visible,
-.week-btn:focus-visible {
+.week-btn:focus-visible,
+.draft-head .col:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1317,7 +1454,7 @@ button { font-family: inherit; }
   background: #0E1116;
   border-top: 1px solid var(--line-strong);
   padding-bottom: 10px;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   z-index: 40;
 }
 
@@ -1394,6 +1531,9 @@ button { font-family: inherit; }
 
   .controlrow { margin-bottom: 14px; }
   .control { width: 100%; }
+  .draft-search { width: 100%; }
+  .draft-search input[type="text"] { width: 100%; }
+  .bottombar .bb-label { font-size: 8px; letter-spacing: 0.04em; }
   .control-label { flex: 0 0 auto; }
   .segment { flex: 1 1 auto; }
   .segment .shiny-options-group { width: 100%; }

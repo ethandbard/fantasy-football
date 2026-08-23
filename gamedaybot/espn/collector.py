@@ -5,6 +5,7 @@ ever seeing "right now".
 """
 import logging
 
+import gamedaybot.espn.players as players
 import gamedaybot.storage.db as db
 
 logger = logging.getLogger(__name__)
@@ -16,14 +17,17 @@ def collect_weekly_snapshot(league):
     upserts them into the local database. Safe to call multiple times for
     the same week (idempotent via INSERT OR REPLACE on (year, week, team_id)).
 
-    No-ops (with a log message) if the season hasn't started yet. Standings
-    are gated on scores because league.standings() succeeds before the draft
-    even though box_scores() doesn't -- collecting it unconditionally writes
-    a meaningless 0-0 snapshot of however many teams have joined so far.
+    Always refreshes the player pool first -- that data exists before the
+    draft. Score and standings collection no-ops (with a log message) if
+    the season hasn't started yet. Standings are gated on scores because
+    league.standings() succeeds before the draft even though box_scores()
+    doesn't -- collecting it unconditionally writes a meaningless 0-0
+    snapshot of however many teams have joined so far.
     """
     db.init_db()
     year = league.year
     week = league.current_week
+    collect_player_pool(league)
 
     # Fill any earlier week we're missing, so a container that was down for a
     # Tuesday -- or a mid-season LEAGUE_YEAR change -- repairs itself instead
@@ -63,6 +67,7 @@ def collect_historical_season(league):
     """
     db.init_db()
     year = league.year
+    collect_player_pool(league)
     # The loop bound must be the last *scoring* period, not the number of
     # matchup periods -- a two-week playoff round is one matchup period that
     # spans two scoring periods, so len(matchup_periods) undercounts weeks
@@ -167,6 +172,38 @@ def _weekly_scores(box, weeks_in_round):
     logger.info("No lineup data to split round total, falling back to an even split "
                 "of %s weeks", weeks_in_round)
     return box.home_score / weeks_in_round, box.away_score / weeks_in_round
+
+
+def collect_player_pool(league):
+    """
+    Replace the stored player pool for league.year.
+
+    Independent of box scores, so it still runs before the draft. FPTS uses
+    this league's scoring settings via kona_player_info.
+    """
+    db.init_db()
+    year = league.year
+    try:
+        schedule = league._get_all_pro_schedule()
+    except Exception as e:
+        logger.info("Pro schedule unavailable for bye weeks: %s", e)
+        schedule = {}
+
+    try:
+        entries, rank_type = players.fetch_player_pool(league)
+    except Exception as e:
+        logger.info("Skipping player pool collection for %s: %s", year, e)
+        return False
+
+    bye_by_team = players.bye_weeks_from_schedule(schedule)
+    rows = players.parse_player_pool(entries, year, bye_by_team, rank_type)
+    if not rows:
+        logger.info("Player pool for %s was empty", year)
+        return False
+
+    db.replace_players(year, rows)
+    logger.info("Collected %d players for %s (%s ranks)", len(rows), year, rank_type)
+    return True
 
 
 def collect_teams(league):

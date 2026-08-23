@@ -1,10 +1,10 @@
 # Shiny dashboard for the fantasy league: this week's results, standings,
-# per-team pages, and the record book. Reads the SQLite snapshots written by
-# gamedaybot.espn.collector.
+# per-team pages, the record book, and the pre-draft player board. Reads the
+# SQLite snapshots written by gamedaybot.espn.collector.
 #
 # Layout and reactive wiring only -- the palette lives in web/theme.py, the
-# figures in web/charts.py, the season arithmetic in web/stats.py, and the
-# visual system in web/www/dashboard.css.
+# figures in web/charts.py, the season arithmetic in web/stats.py, the draft
+# board columns in web/draft.py, and the visual system in web/www/dashboard.css.
 #
 # Deliberately comments rather than a module docstring: Shiny Express renders
 # top-level string expressions as page content, so a docstring here shows up
@@ -20,6 +20,7 @@ from shinywidgets import render_widget
 
 import gamedaybot.storage.db as db
 import gamedaybot.web.charts as charts
+import gamedaybot.web.draft as draft
 import gamedaybot.web.stats as stats
 import gamedaybot.web.theme as theme
 
@@ -35,6 +36,7 @@ WWW = Path(__file__).parent / "www"
 
 NAV_ITEMS = [
     ("week", "This week"),
+    ("draft", "Draft"),
     ("league", "League"),
     ("teams", "Teams"),
     ("records", "Records"),
@@ -151,6 +153,10 @@ sort = reactive.value("seed")
 team = reactive.value(None)
 chart = reactive.value("race")
 h2h_scope = reactive.value("season")
+draft_sort = reactive.value("draft_rank")
+draft_dir = reactive.value("asc")
+_nav_touched = reactive.value(False)
+_auto_screened = reactive.value(False)
 
 
 # Everything below reads through these two polls, so a snapshot written by the
@@ -166,6 +172,11 @@ def _all_standings():
     return pd.DataFrame(db.get_all_latest_standings())
 
 
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_players():
+    return pd.DataFrame(db.get_all_players())
+
+
 def _year():
     return int(input.year()) if input.year() else CURRENT_YEAR
 
@@ -173,6 +184,12 @@ def _year():
 def _season_scores():
     """Every collected week of the selected season, unfiltered by scope."""
     df = _all_scores()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_players():
+    """Player pool for the selected season."""
+    df = _all_players()
     return df[df["year"] == _year()] if not df.empty else df
 
 
@@ -336,8 +353,14 @@ def _sync_season_choices():
     tagifies the UI once at startup and serves that same markup to every
     request, so a new season would stay invisible until a container restart.
     """
-    df = _all_scores()
-    years = sorted(df["year"].unique().tolist(), reverse=True) if not df.empty else [CURRENT_YEAR]
+    scores = _all_scores()
+    players = _all_players()
+    years = set()
+    if not scores.empty:
+        years.update(int(y) for y in scores["year"].unique().tolist())
+    if not players.empty:
+        years.update(int(y) for y in players["year"].unique().tolist())
+    years = sorted(years, reverse=True) or [CURRENT_YEAR]
     choices = [str(y) for y in years]
 
     with reactive.isolate():
@@ -355,6 +378,38 @@ def _sync_season_choices():
 @reactive.event(input.nav_pick)
 def _on_nav():
     screen.set(input.nav_pick())
+    _nav_touched.set(True)
+
+
+@reactive.effect
+def _default_to_draft():
+    """
+    Open on Draft when this season has a player pool and no weekly scores,
+    which is the preseason case. Stops deciding once the reader has picked
+    a destination or the first poll has enough to choose.
+    """
+    if _auto_screened.get() or _nav_touched.get():
+        return
+    scores = _season_scores()
+    players = _season_players()
+    if scores.empty and not players.empty:
+        screen.set("draft")
+        _auto_screened.set(True)
+    elif not scores.empty or not players.empty:
+        _auto_screened.set(True)
+
+
+@reactive.effect
+@reactive.event(input.draft_sort)
+def _on_draft_sort():
+    key = input.draft_sort()
+    if not key:
+        return
+    if key == draft_sort.get():
+        draft_dir.set("desc" if draft_dir.get() == "asc" else "asc")
+    else:
+        draft_sort.set(key)
+        draft_dir.set("asc" if key in draft.ASC_KEYS else "desc")
 
 
 @reactive.effect
@@ -828,6 +883,161 @@ def week_rail():
         core_ui.span("WEEK", class_="eyebrow"),
         *buttons,
         class_="weekrail",
+    )
+
+
+# ------------------------------------------------------------- screen: DRAFT
+
+with ui.div(id="draft-controls-wrap", class_="controlrow"):
+    with ui.div(class_="left"):
+        with ui.div(class_="control"):
+            core_ui.span("Position", class_="control-label")
+            with ui.div(class_="segment"):
+                ui.input_radio_buttons(
+                    "draft_pos", None,
+                    {"ALL": "All", "QB": "QB", "RB": "RB", "WR": "WR",
+                     "TE": "TE", "K": "K", "DST": "D/ST"},
+                    selected="ALL", inline=True,
+                )
+        with ui.div(class_="control draft-search"):
+            core_ui.span("Find", class_="control-label")
+            ui.input_text("draft_q", None, placeholder="Name or team")
+
+
+@render.ui
+def draft_controls_visibility_style():
+    display = "flex" if screen() == "draft" else "none"
+    return core_ui.tags.style(f"#draft-controls-wrap {{ display: {display}; }}")
+
+
+def _draft_value(key, row):
+    if key in row.index:
+        value = row[key]
+        if value is not None and not (isinstance(value, float) and pd.isna(value)):
+            return value
+    stats_map = row["projected_stats"] if "projected_stats" in row.index else None
+    if isinstance(stats_map, dict):
+        return stats_map.get(key)
+    return None
+
+
+def _draft_cell(key, row):
+    if key == "name":
+        tag = draft.injury_tag(row["injury_status"] if "injury_status" in row.index else None)
+        chip = core_ui.span(tag, class_="inj") if tag else None
+        return core_ui.div(
+            core_ui.span(str(row["name"] if "name" in row.index else ""), class_="pname"),
+            chip,
+            class_="player-cell",
+        )
+    if key == "position":
+        pos = str(row["position"]) if "position" in row.index and pd.notna(row["position"]) else ""
+        slug = pos.lower().replace("/", "")
+        return core_ui.span(pos, class_=f"pos-badge pos-{slug}")
+    value = _draft_value(key, row)
+    if key == "pro_team":
+        return draft.format_stat(value, "text")
+    if key == "percent_owned":
+        return draft.format_stat(value, "pct")
+    if key in ("draft_rank", "bye_week"):
+        return draft.format_stat(value, "int")
+    return draft.format_stat(value)
+
+
+@render.ui
+def screen_draft():
+    if screen() != "draft":
+        return None
+
+    pool = _season_players()
+    if pool.empty:
+        return core_ui.div(
+            core_ui.h1("DRAFT BOARD", class_="screen-title board"),
+            core_ui.p(
+                "No player pool collected yet. The container pulls it on "
+                "startup, or run python dev/collect_players.py.",
+                class_="empty-note",
+            ),
+            class_="screen",
+        )
+
+    position = input.draft_pos() or "ALL"
+    if position == "DST":
+        position = "D/ST"
+    query = input.draft_q() or ""
+    sort_key = draft_sort.get() or "draft_rank"
+    descending = draft_dir.get() == "desc"
+
+    flat = draft.flatten_stats(pool)
+    filtered = draft.filter_players(flat, position, query)
+    ordered = draft.sort_players(filtered, sort_key, descending)
+    total = len(ordered)
+    cap = None if query or position != "ALL" else 400
+    shown = ordered.head(cap) if cap and total > cap else ordered
+
+    cols = draft.columns_for(position)
+    col_template = "40px minmax(168px, 1.5fr) 44px 48px 40px 52px 44px 64px 52px" + (
+        " 52px" * max(0, len(cols) - 9)
+    )
+
+    def header_cell(key, label):
+        active = key == sort_key
+        arrow = ""
+        if active:
+            arrow = " ↑" if draft_dir.get() == "asc" else " ↓"
+        return _clickable(
+            core_ui.tags.button, "draft_sort", key,
+            label + arrow,
+            class_="col active" if active else "col",
+            type="button",
+        )
+
+    head = core_ui.div(
+        *[header_cell(key, label) for key, label in cols],
+        class_="draft-head",
+    )
+
+    rows = []
+    for _, row in shown.iterrows():
+        cells = []
+        for key, _label in cols:
+            value = _draft_cell(key, row)
+            extra = " fpts" if key == "projected_points" else ""
+            extra += " player" if key == "name" else ""
+            extra += " rk" if key == "draft_rank" else ""
+            if isinstance(value, str):
+                cells.append(core_ui.span(value, class_="dcell" + extra))
+            else:
+                cells.append(core_ui.div(value, class_="dcell" + extra))
+        rows.append(core_ui.div(*cells, class_="draft-row"))
+
+    if cap and total > cap:
+        note = (
+            f"Projected FPTS use this league's scoring. "
+            f"Showing {len(shown)} of {total} — pick a position or search to go deeper."
+        )
+    else:
+        note = (
+            f"Projected FPTS use this league's scoring. "
+            f"{total} player{'s' if total != 1 else ''}."
+        )
+
+    return core_ui.div(
+        core_ui.div(
+            core_ui.h1("DRAFT BOARD", class_="screen-title board"),
+            core_ui.span(_freshness(), class_="stamp"),
+            class_="title-row",
+        ),
+        core_ui.p(note, class_="screen-note"),
+        core_ui.div(
+            core_ui.div(
+                head, *rows,
+                class_="draft-table",
+            ),
+            class_="draft-wrap",
+            style=f"--draft-cols:{col_template}",
+        ),
+        class_="screen",
     )
 
 
@@ -1489,7 +1699,8 @@ def bottom_nav():
 
 ui.markdown(
     "<p class='footnote'>New snapshots are collected every Tuesday during the "
-    "season and appear here on their own — no refresh needed.</p>"
+    "season and appear here on their own — no refresh needed. The draft board "
+    "refreshes daily, including before kickoff.</p>"
     "<p class='footnote footnote-links'>"
     "<a href='https://ethandbard.com' target='_blank' rel='noopener'>ethandbard.com</a>"
     " · "

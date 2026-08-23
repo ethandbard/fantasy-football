@@ -92,3 +92,35 @@ def test_re_collecting_a_stale_week_makes_it_skippable(fresh_db):
     ])
 
     assert fresh_db.get_collected_weeks(2025) == {15}
+
+
+def _player(player_id, **overrides):
+    row = {
+        "year": 2026, "player_id": player_id, "name": f"Player {player_id}",
+        "position": "WR", "pro_team": "CIN", "bye_week": 10,
+        "injury_status": "ACTIVE", "injured": 0, "percent_owned": 50.0,
+        "percent_started": 20.0, "adp": 40.0, "auction_value": 5,
+        "draft_rank": player_id, "pos_rank": player_id,
+        "projected_points": 200.0, "projected_avg": 12.0,
+        "last_year_points": 180.0, "projected_stats": "{}",
+        "last_year_stats": "{}", "on_team_id": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_replace_players_swaps_the_season_pool(fresh_db):
+    fresh_db.replace_players(2026, [_player(1), _player(2)])
+    fresh_db.replace_players(2026, [_player(3, name="Kept")])
+
+    rows = fresh_db.get_all_players()
+    assert [r["player_id"] for r in rows] == [3]
+    assert rows[0]["name"] == "Kept"
+    assert isinstance(rows[0]["projected_stats"], dict)
+
+
+def test_get_years_includes_player_only_seasons(fresh_db):
+    fresh_db.upsert_weekly_scores([_row(1, 1), _row(1, 2)])
+    fresh_db.replace_players(2026, [_player(1)])
+
+    assert fresh_db.get_years() == [2026, 2025]

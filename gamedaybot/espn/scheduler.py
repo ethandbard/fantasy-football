@@ -67,5 +67,11 @@ def scheduler():
                   day_of_week='tue', hour=6, minute=0, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=game_timezone, replace_existing=True)
 
+    # Player pool for the draft board. No start/end date -- projections
+    # move through the offseason and the Tuesday snapshot is gated on
+    # START_DATE, so without this the board would stay empty until kickoff.
+    sched.add_job(espn_bot, 'cron', ['collect_players'], id='collect_players',
+                  hour=6, minute=15, timezone=my_timezone, replace_existing=True)
+
     print("Ready!")
     sched.start()
