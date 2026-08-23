@@ -108,7 +108,7 @@ you edit it.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `DISCORD_WEBHOOK_URL` | Yes | None | Destination for scheduled posts. |
+| `DISCORD_WEBHOOK_URL` | Yes | None | Destination for scheduled posts. Comma-separate two URLs to post to both channels. |
 | `LEAGUE_ID` | Yes | None | ESPN league ID. |
 | `LEAGUE_YEAR` | No | `2026` | Season the bot reads. |
 | `ESPN_S2` | Private leagues | None | ESPN auth cookie. |
@@ -125,10 +125,13 @@ you edit it.
 | `DB_PATH` | No | `/app/data/fantasy.db` | SQLite file backing the dashboard. |
 | `DASHBOARD_URL` | No | `http://localhost:<port>` | Link the `/dashboard` slash command returns. |
 
-Each running copy of the container is one league and one Discord destination.
+Each running copy of the container is one league. Scheduled posts go to every
+URL in `DISCORD_WEBHOOK_URL`. Slash commands follow the bot into every server
+it has been invited to — one `DISCORD_BOT_TOKEN`, not two containers. Two
+containers with the same bot token fight over the Discord gateway.
+
 A friend running their own league needs their own `config.env`, their own
-`DISCORD_BOT_TOKEN`, and their own webhook. Two containers with the same bot
-token fight over the Discord gateway.
+`DISCORD_BOT_TOKEN`, and their own webhook.
 
 Credentials for the live league are kept outside this repository, in
 `~/.fantasy-football-secrets/WEBHOOK_BACKUP.md`.

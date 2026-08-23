@@ -86,7 +86,7 @@ def _send_init(discord_bot, data):
 
 def espn_bot(function):
     """
-    Generate one report and post it to DISCORD_WEBHOOK_URL.
+    Generate one report and post it to every URL in DISCORD_WEBHOOK_URL.
 
     Parameters
     ----------
@@ -108,7 +108,7 @@ def espn_bot(function):
         init                      startup confirmation message
     """
     data = get_env_vars()
-    discord_bot = Discord(data['discord_webhook_url'])
+    discord_bot = Discord(data['discord_webhook_urls'])
     # Built before the init branch on purpose: the startup message claims the
     # league connected, so it has to have actually connected.
     league = _build_league(data)

@@ -11,6 +11,26 @@ NO_SWID = '{1}'
 NO_ESPN_S2 = '1'
 
 
+def parse_webhook_urls(value):
+    """
+    Split DISCORD_WEBHOOK_URL into unique webhook URLs, order preserved.
+
+    Commas and semicolons are separators so a second channel can sit on the
+    same line. Empty pieces are dropped.
+    """
+    if not value:
+        return []
+    urls = []
+    seen = set()
+    for piece in value.replace(";", ",").split(","):
+        url = piece.strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
 def _str_to_bool(value):
     """
     Parses a boolean environment variable.
@@ -38,10 +58,12 @@ def get_env_vars():
 
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
     # Length rather than truthiness, so a blank-but-set variable is caught too.
-    if len(discord_webhook_url) <= 1:
+    urls = parse_webhook_urls(discord_webhook_url)
+    if not urls:
         raise Exception(
             "No DISCORD_WEBHOOK_URL provided. Scheduled reports have nowhere to post.")
-    data['discord_webhook_url'] = discord_webhook_url
+    data['discord_webhook_urls'] = urls
+    data['discord_webhook_url'] = urls[0]
 
     # ESPN's SWID cookie is brace-wrapped; tolerate a value pasted without them.
     swid = os.environ.get("SWID", NO_SWID)
