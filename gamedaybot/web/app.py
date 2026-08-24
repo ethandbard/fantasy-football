@@ -155,6 +155,7 @@ chart = reactive.value("race")
 h2h_scope = reactive.value("season")
 draft_sort = reactive.value("draft_rank")
 draft_dir = reactive.value("asc")
+draft_club = reactive.value("ALL")
 _nav_touched = reactive.value(False)
 _auto_screened = reactive.value(False)
 
@@ -177,6 +178,16 @@ def _all_players():
     return pd.DataFrame(db.get_all_players())
 
 
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_teams():
+    return pd.DataFrame(db.get_all_teams())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_picks():
+    return pd.DataFrame(db.get_all_draft_picks())
+
+
 def _year():
     return int(input.year()) if input.year() else CURRENT_YEAR
 
@@ -190,6 +201,16 @@ def _season_scores():
 def _season_players():
     """Player pool for the selected season."""
     df = _all_players()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_teams():
+    df = _all_teams()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_picks():
+    df = _all_picks()
     return df[df["year"] == _year()] if not df.empty else df
 
 
@@ -355,11 +376,12 @@ def _sync_season_choices():
     """
     scores = _all_scores()
     players = _all_players()
+    teams = _all_teams()
+    picks = _all_picks()
     years = set()
-    if not scores.empty:
-        years.update(int(y) for y in scores["year"].unique().tolist())
-    if not players.empty:
-        years.update(int(y) for y in players["year"].unique().tolist())
+    for frame in (scores, players, teams, picks):
+        if not frame.empty:
+            years.update(int(y) for y in frame["year"].unique().tolist())
     years = sorted(years, reverse=True) or [CURRENT_YEAR]
     choices = [str(y) for y in years]
 
@@ -397,6 +419,13 @@ def _default_to_draft():
         _auto_screened.set(True)
     elif not scores.empty or not players.empty:
         _auto_screened.set(True)
+
+
+@reactive.effect
+@reactive.event(input.draft_club)
+def _on_draft_club():
+    if input.draft_club():
+        draft_club.set(input.draft_club())
 
 
 @reactive.effect
@@ -935,7 +964,7 @@ def _draft_cell(key, row):
         slug = pos.lower().replace("/", "")
         return core_ui.span(pos, class_=f"pos-badge pos-{slug}")
     value = _draft_value(key, row)
-    if key == "pro_team":
+    if key in ("pro_team", "draft_team", "pick_label"):
         return draft.format_stat(value, "text")
     if key == "percent_owned":
         return draft.format_stat(value, "pct")
@@ -965,20 +994,20 @@ def screen_draft():
     if position == "DST":
         position = "D/ST"
     query = input.draft_q() or ""
+    club = draft_club.get() or "ALL"
     sort_key = draft_sort.get() or "draft_rank"
     descending = draft_dir.get() == "desc"
 
-    flat = draft.flatten_stats(pool)
-    filtered = draft.filter_players(flat, position, query)
+    board = draft.attach_picks(pool, _season_picks())
+    flat = draft.flatten_stats(board)
+    filtered = draft.filter_players(flat, position, query, club=club)
     ordered = draft.sort_players(filtered, sort_key, descending)
     total = len(ordered)
-    cap = None if query or position != "ALL" else 400
+    cap = None if query or position != "ALL" or club != "ALL" else 400
     shown = ordered.head(cap) if cap and total > cap else ordered
 
     cols = draft.columns_for(position)
-    col_template = "40px minmax(168px, 1.5fr) 44px 48px 40px 52px 44px 64px 52px" + (
-        " 52px" * max(0, len(cols) - 9)
-    )
+    col_template = draft.column_template(cols)
 
     def header_cell(key, label):
         active = key == sort_key
@@ -1005,22 +1034,50 @@ def screen_draft():
             extra = " fpts" if key == "projected_points" else ""
             extra += " player" if key == "name" else ""
             extra += " rk" if key == "draft_rank" else ""
+            extra += " club" if key == "draft_team" else ""
             if isinstance(value, str):
                 cells.append(core_ui.span(value, class_="dcell" + extra))
             else:
                 cells.append(core_ui.div(value, class_="dcell" + extra))
         rows.append(core_ui.div(*cells, class_="draft-row"))
 
+    picks = _season_picks()
+    n_picks = 0 if picks.empty else len(picks)
     if cap and total > cap:
         note = (
             f"Projected FPTS use this league's scoring. "
-            f"Showing {len(shown)} of {total} — pick a position or search to go deeper."
+            f"Showing {len(shown)} of {total} — pick a position, a club, or search to go deeper."
+        )
+    elif n_picks:
+        note = (
+            f"Projected FPTS use this league's scoring. "
+            f"{n_picks} picks in, {total} player{'s' if total != 1 else ''} shown."
         )
     else:
         note = (
             f"Projected FPTS use this league's scoring. "
             f"{total} player{'s' if total != 1 else ''}."
         )
+
+    clubs = []
+    teams = _season_teams()
+    club_names = []
+    if not picks.empty:
+        club_names = list(picks.drop_duplicates("team_name")["team_name"].dropna())
+    elif not teams.empty:
+        club_names = list(teams["team_name"].dropna())
+    if club_names:
+        clubs.append(_clickable(
+            core_ui.tags.button, "draft_club", "ALL", "All clubs",
+            class_="team-pill active" if club == "ALL" else "team-pill",
+            type="button",
+        ))
+        for name in club_names:
+            clubs.append(_clickable(
+                core_ui.tags.button, "draft_club", name, name,
+                class_="team-pill active" if club == name else "team-pill",
+                type="button",
+            ))
 
     return core_ui.div(
         core_ui.div(
@@ -1029,6 +1086,7 @@ def screen_draft():
             class_="title-row",
         ),
         core_ui.p(note, class_="screen-note"),
+        core_ui.div(*clubs, class_="teamrail draft-clubs") if clubs else None,
         core_ui.div(
             core_ui.div(
                 head, *rows,

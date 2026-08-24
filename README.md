@@ -194,9 +194,10 @@ The dashboard reads `data/fantasy.db` and offers five destinations:
   configure.
 - **Draft**: ESPN's player pool for this league. Rank, ADP, bye, projected
   FPTS (in the league's scoring), last year's FPTS, and position counting
-  stats (PC/PA/PY and the RB/WR/TE equivalents). Filter by position, search
-  by name or team, and sort any column. Opens first when the selected season
-  has a player pool and no weekly scores yet — the preseason case.
+  stats (PC/PA/PY and the RB/WR/TE equivalents). After the draft, each row
+  also shows pick and club. Filter by position or club, search by name or
+  team, and sort any column. Opens first when the selected season has a
+  player pool and no weekly scores yet — the preseason case.
 - **League**: the standings board — record, streak, last-five form, points
   for/against, and a sparkline per row, sortable by seed, points, or recent
   form — plus "the race," rank by week for every team on one chart.
@@ -490,9 +491,9 @@ The Tuesday snapshot also fills in any week it finds missing for the current
 season. A container that was down over a Tuesday repairs its own gap on the
 next run, so `backfill_season.py` is only needed for prior seasons.
 
-Pull ESPN's player pool (ranks, bye weeks, projected FPTS and counting stats)
-into the draft board. The full container does this on startup and every
-morning; run it yourself when the dashboard is up alone:
+Pull ESPN's player pool, team names, and draft picks into the draft board.
+The full container does this on startup and every morning; run it yourself
+when the dashboard is up alone:
 
 ```bash
 docker compose exec fantasy-bot python dev/collect_players.py

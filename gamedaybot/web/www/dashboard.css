@@ -812,6 +812,14 @@ button { font-family: inherit; }
 
 .draft-row .dcell.player { text-align: left; min-width: 0; }
 
+.draft-row .dcell.club {
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .draft-row .dcell.rk {
   font-family: var(--font-body);
   font-weight: 800;
@@ -1594,6 +1602,7 @@ button { font-family: inherit; }
   .chart-wrap .js-plotly-plot { min-width: 780px; }
 
   .teamrail { display: none; }
+  .teamrail.draft-clubs { display: flex; flex-wrap: wrap; }
   .team-select-mobile { display: block !important; min-height: 44px; }
 
   .profile-stats { grid-template-columns: repeat(2, 1fr); }

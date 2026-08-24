@@ -13,6 +13,8 @@ IDENTITY_COLS = [
     ("name", "Player"),
     ("position", "Pos"),
     ("pro_team", "Team"),
+    ("pick_label", "Pick"),
+    ("draft_team", "Club"),
     ("bye_week", "Bye"),
     ("adp", "ADP"),
     ("percent_owned", "%"),
@@ -68,7 +70,24 @@ POS_STAT_COLS = {
 }
 
 # Columns where a lower number is better, so a first click sorts ascending.
-ASC_KEYS = {"draft_rank", "adp", "bye_week", "name", "position", "pro_team"}
+ASC_KEYS = {
+    "draft_rank", "adp", "bye_week", "name", "position", "pro_team",
+    "pick_label", "draft_team", "overall_pick",
+}
+
+COL_WIDTHS = {
+    "draft_rank": "40px",
+    "name": "minmax(168px, 1.6fr)",
+    "position": "44px",
+    "pro_team": "48px",
+    "pick_label": "48px",
+    "draft_team": "minmax(88px, 1fr)",
+    "bye_week": "40px",
+    "adp": "52px",
+    "percent_owned": "44px",
+    "projected_points": "64px",
+    "last_year_points": "52px",
+}
 
 POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "D/ST"]
 
@@ -77,6 +96,33 @@ def columns_for(position):
     """(key, label) pairs for the selected position, identity plus stat cols."""
     extra = POS_STAT_COLS.get(position, [])
     return list(IDENTITY_COLS) + extra
+
+
+def column_template(cols):
+    """CSS grid-template-columns string for a draft-board column set."""
+    return " ".join(COL_WIDTHS.get(key, "52px") for key, _ in cols)
+
+
+def attach_picks(players_df, picks_df):
+    """Join ESPN draft results onto the player pool as draft_team / pick_label."""
+    if players_df is None or players_df.empty:
+        return players_df if players_df is not None else pd.DataFrame()
+    out = players_df.copy()
+    if picks_df is None or picks_df.empty:
+        out["draft_team"] = None
+        out["pick_label"] = None
+        out["overall_pick"] = None
+        return out
+    slim = picks_df[["player_id", "team_name", "round_num", "round_pick", "overall_pick"]].rename(
+        columns={"team_name": "draft_team"}
+    )
+    out = out.merge(slim, on="player_id", how="left")
+    def _label(row):
+        if pd.isna(row.get("round_num")) or pd.isna(row.get("round_pick")):
+            return None
+        return f"{int(row['round_num'])}.{int(row['round_pick'])}"
+    out["pick_label"] = out.apply(_label, axis=1)
+    return out
 
 
 def flatten_stats(df):
@@ -99,22 +145,28 @@ def flatten_stats(df):
     return out
 
 
-def filter_players(df, position="ALL", query=""):
-    """Narrow the pool by position and a case-insensitive name/team search."""
+def filter_players(df, position="ALL", query="", club="ALL"):
+    """Narrow the pool by position, fantasy club, and a name/team search."""
     if df is None or df.empty:
         return df if df is not None else pd.DataFrame()
 
     out = df
     if position and position != "ALL":
         out = out[out["position"] == position]
+    if club and club != "ALL" and "draft_team" in out.columns:
+        out = out[out["draft_team"] == club]
     needle = (query or "").strip().lower()
     if needle:
         name = out["name"].fillna("").str.lower()
         team = out["pro_team"].fillna("").str.lower()
         pos = out["position"].fillna("").str.lower()
-        out = out[name.str.contains(needle, regex=False)
-                  | team.str.contains(needle, regex=False)
-                  | pos.str.contains(needle, regex=False)]
+        club_col = out["draft_team"].fillna("").str.lower() if "draft_team" in out.columns else ""
+        mask = (name.str.contains(needle, regex=False)
+                | team.str.contains(needle, regex=False)
+                | pos.str.contains(needle, regex=False))
+        if isinstance(club_col, pd.Series):
+            mask = mask | club_col.str.contains(needle, regex=False)
+        out = out[mask]
     return out
 
 

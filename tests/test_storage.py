@@ -119,6 +119,24 @@ def test_replace_players_swaps_the_season_pool(fresh_db):
     assert isinstance(rows[0]["projected_stats"], dict)
 
 
+def test_replace_draft_picks_swaps_the_season_board(fresh_db):
+    fresh_db.replace_draft_picks(2026, [
+        {"year": 2026, "overall_pick": 1, "round_num": 1, "round_pick": 1,
+         "team_id": 1, "team_name": "Aces", "player_id": 10,
+         "player_name": "Jahmyr Gibbs", "bid_amount": 0, "keeper": 0},
+        {"year": 2026, "overall_pick": 2, "round_num": 1, "round_pick": 2,
+         "team_id": 2, "team_name": "Bees", "player_id": 20,
+         "player_name": "Bijan Robinson", "bid_amount": 0, "keeper": 0},
+    ])
+    fresh_db.replace_draft_picks(2026, [
+        {"year": 2026, "overall_pick": 1, "round_num": 1, "round_pick": 1,
+         "team_id": 1, "team_name": "Aces", "player_id": 10,
+         "player_name": "Jahmyr Gibbs", "bid_amount": 0, "keeper": 0},
+    ])
+    rows = fresh_db.get_all_draft_picks()
+    assert [r["player_id"] for r in rows] == [10]
+
+
 def test_get_years_includes_player_only_seasons(fresh_db):
     fresh_db.upsert_weekly_scores([_row(1, 1), _row(1, 2)])
     fresh_db.replace_players(2026, [_player(1)])

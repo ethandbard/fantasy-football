@@ -31,16 +31,18 @@ def main():
     swid = os.environ.get("SWID")
 
     league = League(league_id=league_id, year=year, espn_s2=espn_s2, swid=swid)
-    print(f"Collecting player pool for {league.settings.name} ({year})...")
+    print(f"Collecting player pool, teams, and draft for {league.settings.name} ({year})...")
 
-    collected = collector.collect_player_pool(league)
+    collected = collector.collect_league_state(league)
     if not collected:
-        print("No players returned -- check LEAGUE_ID, cookies, and year.")
+        print("No players or draft picks returned -- check LEAGUE_ID, cookies, and year.")
         sys.exit(1)
 
     import gamedaybot.storage.db as db
     rows = [r for r in db.get_all_players() if r["year"] == year]
-    print(f"Stored {len(rows)} players.")
+    picks = [r for r in db.get_all_draft_picks() if r["year"] == year]
+    teams = [r for r in db.get_all_teams() if r["year"] == year]
+    print(f"Stored {len(rows)} players, {len(teams)} teams, {len(picks)} draft picks.")
     for r in rows[:8]:
         rank = r["draft_rank"] if r["draft_rank"] is not None else "—"
         fpts = r["projected_points"] if r["projected_points"] is not None else "—"

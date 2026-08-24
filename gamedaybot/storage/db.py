@@ -85,6 +85,21 @@ CREATE TABLE IF NOT EXISTS players (
     collected_at TEXT,
     PRIMARY KEY (year, player_id)
 );
+
+CREATE TABLE IF NOT EXISTS draft_picks (
+    year INTEGER NOT NULL,
+    overall_pick INTEGER NOT NULL,
+    round_num INTEGER NOT NULL,
+    round_pick INTEGER NOT NULL,
+    team_id INTEGER,
+    team_name TEXT,
+    player_id INTEGER NOT NULL,
+    player_name TEXT,
+    bid_amount REAL,
+    keeper INTEGER,
+    collected_at TEXT,
+    PRIMARY KEY (year, overall_pick)
+);
 """
 
 
@@ -230,14 +245,37 @@ def replace_players(year, rows):
         )
 
 
+def replace_draft_picks(year, rows):
+    """Replace one season's draft board. Empty list clears a stale year."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM draft_picks WHERE year = ?", (year,))
+        if not rows:
+            return
+        conn.executemany(
+            """
+            INSERT INTO draft_picks
+                (year, overall_pick, round_num, round_pick, team_id, team_name,
+                 player_id, player_name, bid_amount, keeper, collected_at)
+            VALUES
+                (:year, :overall_pick, :round_num, :round_pick, :team_id, :team_name,
+                 :player_id, :player_name, :bid_amount, :keeper, datetime('now'))
+            """,
+            rows,
+        )
+
+
 def get_years():
-    """Seasons present in scores or the player pool, newest first."""
+    """Seasons present in scores, the player pool, teams, or the draft."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT year FROM weekly_scores
             UNION
             SELECT year FROM players
+            UNION
+            SELECT year FROM teams
+            UNION
+            SELECT year FROM draft_picks
             ORDER BY year DESC
             """
         ).fetchall()
@@ -262,6 +300,18 @@ def get_all_teams():
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM teams ORDER BY year, team_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_draft_picks():
+    """Every season's draft picks, overall order."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM draft_picks
+            ORDER BY year DESC, overall_pick
+            """
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -370,7 +420,10 @@ def fingerprint():
                    (SELECT COUNT(*) FROM standings_snapshot),
                    (SELECT COALESCE(SUM(wins), 0) FROM standings_snapshot),
                    (SELECT COUNT(*) FROM players),
-                   (SELECT COALESCE(MAX(collected_at), '') FROM players)
+                   (SELECT COALESCE(MAX(collected_at), '') FROM players),
+                   (SELECT COUNT(*) FROM teams),
+                   (SELECT COUNT(*) FROM draft_picks),
+                   (SELECT COALESCE(MAX(collected_at), '') FROM draft_picks)
             """
         ).fetchone())
 
@@ -390,6 +443,8 @@ def last_collected():
                 SELECT MAX(collected_at) AS collected_at FROM weekly_scores
                 UNION ALL
                 SELECT MAX(collected_at) AS collected_at FROM players
+                UNION ALL
+                SELECT MAX(collected_at) AS collected_at FROM draft_picks
             )
             """
         ).fetchone()

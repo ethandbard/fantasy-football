@@ -27,7 +27,7 @@ def collect_weekly_snapshot(league):
     db.init_db()
     year = league.year
     week = league.current_week
-    collect_player_pool(league)
+    collect_league_state(league)
 
     # Fill any earlier week we're missing, so a container that was down for a
     # Tuesday -- or a mid-season LEAGUE_YEAR change -- repairs itself instead
@@ -49,7 +49,6 @@ def collect_weekly_snapshot(league):
                     "(season likely hasn't started)", year, week)
         return
 
-    collect_teams(league)
     collect_schedule(league)
     _collect_standings(league, year, week)
 
@@ -67,7 +66,7 @@ def collect_historical_season(league):
     """
     db.init_db()
     year = league.year
-    collect_player_pool(league)
+    collect_league_state(league)
     # The loop bound must be the last *scoring* period, not the number of
     # matchup periods -- a two-week playoff round is one matchup period that
     # spans two scoring periods, so len(matchup_periods) undercounts weeks
@@ -81,7 +80,6 @@ def collect_historical_season(league):
             collected_any = True
 
     if collected_any:
-        collect_teams(league)
         collect_schedule(league)
         _collect_standings(league, year, last_week)
 
@@ -203,6 +201,51 @@ def collect_player_pool(league):
 
     db.replace_players(year, rows)
     logger.info("Collected %d players for %s (%s ranks)", len(rows), year, rank_type)
+    return True
+
+
+def collect_league_state(league):
+    """
+    Player pool, team names, and draft picks.
+
+    These exist as soon as the draft is in, so they are not gated on box
+    scores the way standings are.
+    """
+    collected = collect_player_pool(league)
+    collect_teams(league)
+    collected = collect_draft_picks(league) or collected
+    return collected
+
+
+def collect_draft_picks(league):
+    """Replace stored draft picks for league.year. No-ops if ESPN has none yet."""
+    db.init_db()
+    picks = getattr(league, "draft", None) or []
+    n_teams = len(league.teams) or 1
+    rows = []
+    for p in picks:
+        team = getattr(p, "team", None)
+        round_num = int(getattr(p, "round_num", 0) or 0)
+        round_pick = int(getattr(p, "round_pick", 0) or 0)
+        overall = (round_num - 1) * n_teams + round_pick if round_num and round_pick else 0
+        rows.append({
+            "year": league.year,
+            "overall_pick": overall,
+            "round_num": round_num,
+            "round_pick": round_pick,
+            "team_id": getattr(team, "team_id", None) if team is not None else None,
+            "team_name": getattr(team, "team_name", None) if team is not None else None,
+            "player_id": getattr(p, "playerId", None),
+            "player_name": getattr(p, "playerName", None),
+            "bid_amount": getattr(p, "bid_amount", None) or 0,
+            "keeper": 1 if getattr(p, "keeper_status", False) else 0,
+        })
+    rows = [r for r in rows if r["player_id"] is not None and r["overall_pick"]]
+    if not rows:
+        logger.info("No draft picks for %s yet", league.year)
+        return False
+    db.replace_draft_picks(league.year, rows)
+    logger.info("Collected %d draft picks for %s", len(rows), league.year)
     return True
 
 

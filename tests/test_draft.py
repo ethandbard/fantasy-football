@@ -76,6 +76,34 @@ def test_format_stat_dashes_missing_and_drops_trailing_zero():
     assert draft.format_stat("DET", "text") == "DET"
 
 
+def test_attach_picks_adds_club_and_pick_label():
+    players = _frame().assign(player_id=[10, 20, 30])
+    picks = pd.DataFrame([
+        {"player_id": 10, "team_name": "John Foot Ball", "round_num": 1,
+         "round_pick": 3, "overall_pick": 3},
+        {"player_id": 20, "team_name": "NOT LAST! 🤓", "round_num": 1,
+         "round_pick": 2, "overall_pick": 2},
+    ])
+    out = draft.attach_picks(players, picks)
+    chase = out[out["name"] == "Ja'Marr Chase"].iloc[0]
+    assert chase["draft_team"] == "John Foot Ball"
+    assert chase["pick_label"] == "1.3"
+    allen = out[out["name"] == "Josh Allen"].iloc[0]
+    assert pd.isna(allen["draft_team"])
+
+
+def test_filter_by_club():
+    players = draft.attach_picks(
+        _frame().assign(player_id=[10, 20, 30]),
+        pd.DataFrame([
+            {"player_id": 10, "team_name": "Aces", "round_num": 1,
+             "round_pick": 1, "overall_pick": 1},
+        ]),
+    )
+    out = draft.filter_players(players, club="Aces")
+    assert list(out["name"]) == ["Ja'Marr Chase"]
+
+
 def test_injury_tag_hides_active():
     assert draft.injury_tag("ACTIVE") is None
     assert draft.injury_tag("QUESTIONABLE") == "Q"

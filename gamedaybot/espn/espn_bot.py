@@ -104,7 +104,7 @@ def espn_bot(function):
         get_final                 last week's final scores and trophies
         get_waiver_report         today's waiver moves (private leagues only)
         collect_snapshot          persist the week to SQLite; posts nothing
-        collect_players           persist the ESPN player pool; posts nothing
+        collect_players           persist player pool, teams, and draft picks; posts nothing
         init                      startup confirmation message
     """
     data = get_env_vars()
@@ -119,13 +119,13 @@ def espn_bot(function):
         # the draft board has data before START_DATE, when no other job fires.
         _send_init(discord_bot, data, league=league)
         try:
-            collector.collect_player_pool(league)
+            collector.collect_league_state(league)
         except Exception as e:
-            logger.warning("Player pool collect on init failed: %s", e)
+            logger.warning("League-state collect on init failed: %s", e)
         return
 
     if function == "collect_players":
-        collector.collect_player_pool(league)
+        collector.collect_league_state(league)
         return
 
     if league.scoringPeriodId > len(league.settings.matchup_periods):
