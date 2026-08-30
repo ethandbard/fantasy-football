@@ -9,13 +9,14 @@
 # Deliberately comments rather than a module docstring: Shiny Express renders
 # top-level string expressions as page content, so a docstring here shows up
 # on the live dashboard.
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import shiny.ui as core_ui  # express ui.value_box is a context manager; @render.ui needs the plain function
 from shiny import reactive
-from shiny.express import input, render, ui
+from shiny.express import app_opts, input, render, ui
 from shinywidgets import render_widget
 
 import gamedaybot.storage.db as db
@@ -34,8 +35,26 @@ DB_POLL_SECONDS = 30
 
 WWW = Path(__file__).parent / "www"
 
+# Team logos are materialised from database blobs into files next to the
+# database itself (the one place the container can always write) and served
+# under /logos. Files rather than data URIs because one uploaded logo can be
+# a quarter megabyte, and a URI that size would be repeated into the DOM once
+# per row and into every chart's JSON; a URL is fetched once and cached.
+LOGO_DIR = Path(db.DB_PATH).parent / "logos"
+LOGO_DIR.mkdir(parents=True, exist_ok=True)
+app_opts(static_assets={"/logos": LOGO_DIR})
+
+_LOGO_EXT = {
+    "image/svg+xml": "svg",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+
 NAV_ITEMS = [
     ("week", "This week"),
+    ("next", "Next up"),
     ("draft", "Draft"),
     ("league", "League"),
     ("teams", "Teams"),
@@ -188,6 +207,32 @@ def _all_picks():
     return pd.DataFrame(db.get_all_draft_picks())
 
 
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_schedule():
+    return pd.DataFrame(db.get_all_schedule())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_logos():
+    """
+    (year, team_id) -> /logos URL for every stored logo, writing any blob
+    that has no file yet. The content hash is in the filename, so a changed
+    logo gets a new URL and no browser cache ever serves the old image; the
+    superseded files are a few orphaned kilobytes.
+    """
+    out = {}
+    for row in db.get_all_team_logos():
+        ext = _LOGO_EXT.get(row["content_type"] or "", "png")
+        content = row["content"]
+        digest = hashlib.md5(content).hexdigest()[:10]
+        name = f"{row['year']}-{row['team_id']}-{digest}.{ext}"
+        path = LOGO_DIR / name
+        if not path.exists():
+            path.write_bytes(content)
+        out[(int(row["year"]), int(row["team_id"]))] = f"/logos/{name}"
+    return out
+
+
 def _year():
     return int(input.year()) if input.year() else CURRENT_YEAR
 
@@ -211,6 +256,11 @@ def _season_teams():
 
 def _season_picks():
     df = _all_picks()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_schedule():
+    df = _all_schedule()
     return df[df["year"] == _year()] if not df.empty else df
 
 
@@ -263,6 +313,71 @@ def _styles():
     if df.empty:
         return {}
     return theme.team_styles(zip(df["team_id"], df["team_name"]))
+
+
+def _logos_by_name():
+    """
+    team_name -> logo data URI, across every season, with a colored-monogram
+    stand-in for any team that has no stored logo. Name-keyed because that is
+    how the charts, scorebugs and head-to-head grid identify teams; when a
+    name persists across seasons the newest season's logo wins.
+
+    Colors for the monograms come from theme.team_styles over each season's
+    own roster -- the same id-ordered rule _styles() applies to scores -- so
+    the stand-in matches the team's line color even before a week is played.
+    """
+    logos = _all_logos()
+    teams_df = _all_teams()
+    if teams_df.empty:
+        return {}
+    out = {}
+    for year, group in teams_df.groupby("year"):  # ascending: newest wins
+        year_styles = theme.team_styles(zip(group["team_id"], group["team_name"]))
+        for _, t in group.iterrows():
+            uri = logos.get((int(year), int(t["team_id"])))
+            if not uri:
+                color = year_styles.get(t["team_name"], {}).get("color")
+                uri = theme.monogram_data_uri(t["team_name"], color)
+            out[t["team_name"]] = uri
+    return out
+
+
+def _season_logo_ids():
+    """team_id -> logo data URI for the selected season, monogram fallback
+    included -- for the id-keyed Next up cards."""
+    logos = _all_logos()
+    teams_df = _season_teams()
+    if teams_df.empty:
+        return {}
+    year = _year()
+    year_styles = theme.team_styles(zip(teams_df["team_id"], teams_df["team_name"]))
+    out = {}
+    for _, t in teams_df.iterrows():
+        uri = logos.get((year, int(t["team_id"])))
+        if not uri:
+            color = year_styles.get(t["team_name"], {}).get("color")
+            uri = theme.monogram_data_uri(t["team_name"], color)
+        out[int(t["team_id"])] = uri
+    return out
+
+
+def _logo_img(uri, cls="team-logo"):
+    """The one img builder every logo spot shares; None-safe so callers can
+    pass a lookup miss straight through."""
+    if not uri:
+        return None
+    return core_ui.tags.img(src=uri, class_=cls, alt="", aria_hidden="true")
+
+
+def _name_with_logo(name, uri, mirrored=False, name_cls="name"):
+    """A team name with its logo beside it, logo toward the score column:
+    `mirrored` for the left (right-aligned) side of a scorebug."""
+    label = core_ui.span(name, class_=name_cls)
+    img = _logo_img(uri)
+    if img is None:
+        return label
+    children = (label, img) if mirrored else (img, label)
+    return core_ui.div(*children, class_="name-row")
 
 
 def _default_team():
@@ -534,7 +649,8 @@ def _week_headline(week_scores):
     return ", and ".join(parts) + "."
 
 
-def _results_rows(week_scores, styles):
+def _results_rows(week_scores, styles, logos=None):
+    logos = logos or {}
     log = stats.game_log(week_scores)
     played = log[(log["result"] != "") & (log["is_home"] == 1)]
     if played.empty:
@@ -573,7 +689,7 @@ def _results_rows(week_scores, styles):
         rows.append(_clickable(
             core_ui.div, "team_pick", win_name,
             core_ui.div(
-                core_ui.span(win_name, class_="name"),
+                _name_with_logo(win_name, logos.get(win_name), mirrored=True),
                 delta_span(win_name, win_delta),
                 class_="side left win",
             ),
@@ -581,7 +697,7 @@ def _results_rows(week_scores, styles):
             core_ui.span("–", class_="dash"),
             core_ui.span(f"{lose_score:.1f}", class_="score"),
             core_ui.div(
-                core_ui.span(lose_name, class_="name"),
+                _name_with_logo(lose_name, logos.get(lose_name)),
                 delta_span(lose_name, lose_delta),
                 class_="side right lose",
             ),
@@ -755,6 +871,7 @@ def _round_rows(round_scores, weeks):
         return core_ui.p("No completed matchups in this round.", class_="empty-note")
 
     per_week = round_scores.set_index(["team_id", "week"])["score"]
+    logos = _logos_by_name()
 
     def side(team_id, name, css):
         splits = [
@@ -762,7 +879,7 @@ def _round_rows(round_scores, weeks):
             for w in weeks if (team_id, w) in per_week.index
         ]
         return core_ui.div(
-            core_ui.span(name, class_="name"),
+            _name_with_logo(name, logos.get(name), mirrored="left" in css),
             core_ui.div(*splits, class_="round-weeks"),
             class_=css,
         )
@@ -853,7 +970,7 @@ def screen_week():
         core_ui.div(
             core_ui.div(
                 core_ui.p("Results", class_="section-label"),
-                _results_rows(week_scores, _styles()),
+                _results_rows(week_scores, _styles(), _logos_by_name()),
                 class_="results",
             ),
             core_ui.div(
@@ -912,6 +1029,177 @@ def week_rail():
         core_ui.span("WEEK", class_="eyebrow"),
         *buttons,
         class_="weekrail",
+    )
+
+
+# ----------------------------------------------------------- screen: NEXT UP
+
+def _nu_side(team_id, names, rec_by_id, scores_by_id, css, logos=None):
+    """One team's half of an upcoming-matchup card: logo, name, record,
+    season average, and last-five pips. Preseason, only the logo and name
+    exist yet."""
+    logos = logos or {}
+    name = names.get(team_id, f"Team {team_id}")
+    children = [_name_with_logo(name, logos.get(team_id),
+                                mirrored="left" in css)]
+
+    r = rec_by_id.get(team_id)
+    scores = scores_by_id.get(team_id, [])
+    if r is not None and scores:
+        avg = sum(scores) / len(scores)
+        children.append(core_ui.span(
+            f"{r.record} · avg {avg:.1f}", class_="nu-sub",
+        ))
+        pips = [core_ui.span(class_=f"pip {c.lower()}") for c in r.form.split()]
+        if pips:
+            children.append(core_ui.div(*pips, class_="form-pips nu-pips"))
+
+    return _clickable(core_ui.div, "team_pick", name, *children,
+                      class_=css, role="button")
+
+
+def _nu_h2h_note(name_a, name_b, h2h_records):
+    """"A leads B 3-1 all-time", "tied 2-2", or "first meeting"."""
+    try:
+        rec = h2h_records.at[name_a, name_b]
+    except KeyError:
+        rec = ""
+    if not rec:
+        return "First meeting."
+    wins, losses = (int(x) for x in rec.split("-"))
+    if wins > losses:
+        return f"{name_a} leads {name_b} {wins}-{losses} all-time."
+    if losses > wins:
+        return f"{name_b} leads {name_a} {losses}-{wins} all-time."
+    return f"All-time series tied {wins}-{losses}."
+
+
+def _nu_prob_bar(name_a, name_b, p):
+    """The rough win-probability read, drawn as a split bar."""
+    if p is None:
+        return None
+    pa = round(p * 100)
+    return core_ui.div(
+        core_ui.div(
+            core_ui.span(f"{pa}%", class_="nu-prob-num left"),
+            core_ui.div(
+                core_ui.div(class_="nu-prob-fill", style=f"width:{pa}%"),
+                class_="nu-prob-track",
+            ),
+            core_ui.span(f"{100 - pa}%", class_="nu-prob-num right"),
+            class_="nu-prob-row",
+        ),
+        class_="nu-prob",
+    )
+
+
+@render.ui
+def screen_next():
+    if screen() != "next":
+        return None
+
+    def empty(text):
+        return core_ui.div(
+            core_ui.h1("NEXT UP", class_="screen-title wk"),
+            core_ui.p(text, class_="empty-note"),
+            class_="screen",
+        )
+
+    sched = _season_schedule()
+    if sched.empty:
+        return empty("No schedule collected yet for this season.")
+
+    season = _season_scores()
+    wk = stats.upcoming_week(sched, season)
+    if wk is None:
+        return empty(f"The {_year()} season has been played out — "
+                     "nothing left on the schedule.")
+
+    teams_df = _season_teams()
+    names = (dict(zip(teams_df["team_id"], teams_df["team_name"]))
+             if not teams_df.empty else {})
+
+    week_sched = sched[sched["week"] == wk]
+    matchups = week_sched[week_sched["is_home"] == 1]
+    proj = week_sched.set_index("team_id")["projected_score"]
+
+    rec_df = stats.derive_records(season)
+    rec_by_id = ({r.team_id: r for r in rec_df.itertuples()}
+                 if not rec_df.empty else {})
+    scores_by_id = ({tid: g["score"].tolist()
+                     for tid, g in season.groupby("team_id")}
+                    if not season.empty else {})
+    h2h_records, _h2h_margins = stats.head_to_head_all_time(_all_scores())
+    logo_ids = _season_logo_ids()
+
+    # A playoff round spans more than one week; say so instead of pretending
+    # the round's first week is a normal game.
+    mp = week_sched["matchup_period"].iloc[0]
+    round_weeks = sorted(sched[sched["matchup_period"] == mp]["week"].unique().tolist())
+    if len(round_weeks) > 1:
+        note = (f"Weeks {round_weeks[0]}–{round_weeks[-1]} count as one "
+                "playoff round — the multi-week total decides it. "
+                "Projections refresh daily until kickoff.")
+    else:
+        note = ("Projections are ESPN's, refreshed daily until kickoff. "
+                "The probability bar is a rough read from each team's scored "
+                "weeks — not a real model, and it knows nothing about "
+                "injuries or byes.")
+
+    cards = []
+    for _, m in matchups.iterrows():
+        home_id, away_id = int(m["team_id"]), int(m["opponent_id"])
+        home_name = names.get(home_id, f"Team {home_id}")
+        away_name = names.get(away_id, f"Team {away_id}")
+
+        def proj_text(tid):
+            value = proj.get(tid)
+            return f"{value:.1f}" if pd.notna(value) and value else "—"
+
+        home_proj, away_proj = proj.get(home_id), proj.get(away_id)
+        if pd.notna(home_proj) and pd.notna(away_proj) and home_proj and away_proj:
+            gap = home_proj - away_proj
+            if abs(gap) < 0.5:
+                tag_text = "even"
+            else:
+                fav = home_name if gap > 0 else away_name
+                tag_text = f"{fav} by {abs(gap):.1f}"
+        else:
+            tag_text = "no projection"
+
+        p = stats.win_probability(scores_by_id.get(home_id, []),
+                                  scores_by_id.get(away_id, []))
+
+        cards.append(core_ui.div(
+            core_ui.div(
+                _nu_side(home_id, names, rec_by_id, scores_by_id, "side left",
+                         logo_ids),
+                core_ui.span(proj_text(home_id), class_="score"),
+                core_ui.span("–", class_="dash"),
+                core_ui.span(proj_text(away_id), class_="score"),
+                _nu_side(away_id, names, rec_by_id, scores_by_id, "side right",
+                         logo_ids),
+                core_ui.span(tag_text, class_="margin", title="Projected margin"),
+                class_="scorebug nu-bug",
+            ),
+            _nu_prob_bar(home_name, away_name, p),
+            core_ui.p(_nu_h2h_note(home_name, away_name, h2h_records),
+                       class_="nu-h2h"),
+            class_="nextup-card",
+        ))
+
+    if not cards:
+        return empty("No matchups scheduled for the coming week.")
+
+    return core_ui.div(
+        core_ui.div(
+            core_ui.h1(f"NEXT UP · WEEK {wk}", class_="screen-title wk"),
+            core_ui.span(_freshness(), class_="stamp"),
+            class_="title-row",
+        ),
+        core_ui.p(note, class_="headline"),
+        core_ui.div(*cards, class_="nextup-list"),
+        class_="screen",
     )
 
 
@@ -1192,7 +1480,7 @@ def _h2h_frame():
     return stats.head_to_head(_scope_scores())
 
 
-def _h2h_matrix(records_tbl, margins_tbl, current=None):
+def _h2h_matrix(records_tbl, margins_tbl, current=None, logos=None):
     """
     The head-to-head grid: row team vs column opponent, cells tinted by
     average margin (green toward the row team's wins, red toward its
@@ -1200,6 +1488,7 @@ def _h2h_matrix(records_tbl, margins_tbl, current=None):
     column are raised and everything else dims -- the team-screen variant.
     """
     teams_list = list(records_tbl.index)
+    logos = logos or {}
     if not teams_list:
         return core_ui.p("No matchups in this range.", class_="empty-note")
 
@@ -1209,7 +1498,11 @@ def _h2h_matrix(records_tbl, margins_tbl, current=None):
     def head(name, base):
         # A long team name is ellipsed to fit its column, so the full one is
         # carried on the title attribute rather than lost.
-        return core_ui.span(name, class_=head_cls(name, base), title=name)
+        return core_ui.span(
+            _logo_img(logos.get(name), "team-logo h2h-logo"),
+            core_ui.span(name, class_="h2h-head-name"),
+            class_=head_cls(name, base), title=name,
+        )
 
     header = [core_ui.span("", class_="h2h-corner")]
     header += [head(opp, "h2h-col-head") for opp in teams_list]
@@ -1282,6 +1575,7 @@ def screen_league():
         note = "Sorted by record, then points for — the same rule the standings use every week."
 
     log = stats.game_log(scoped)
+    logos = _logos_by_name()
 
     rows = []
     for i, r in rec.iterrows():
@@ -1309,6 +1603,7 @@ def screen_league():
             core_ui.span(str(seed) if seed else str(i + 1), class_="seed"),
             core_ui.div(
                 core_ui.div(class_="colorbar", style=f"background:{colors['color']}"),
+                _logo_img(logos.get(team_name)),
                 core_ui.span(team_name, class_="team-name"),
                 streak_chip,
                 class_="team-cell",
@@ -1361,7 +1656,7 @@ def screen_league():
         board,
         core_ui.div(
             core_ui.p("Head to head", class_="section-label"),
-            _h2h_matrix(h2h_records, h2h_margins),
+            _h2h_matrix(h2h_records, h2h_margins, logos=logos),
             class_="h2h-section",
         ),
         class_="screen",
@@ -1416,7 +1711,8 @@ with ui.div(id="race-wrap", class_="race-wrap"):
             if scoped.empty:
                 return charts.as_widget(charts.empty_fig())
             ranked = stats.rank_by_week(scoped)
-            widget = charts.as_widget(charts.rank_curve(ranked, _styles()))
+            widget = charts.as_widget(
+                charts.rank_curve(ranked, _styles(), _logos_by_name()))
             charts.bind_hover_dim(widget)
             return widget
 
@@ -1435,7 +1731,8 @@ with ui.div(id="scores-wrap", class_="race-wrap"):
             scoped = _scope_scores()
             if scoped.empty:
                 return charts.as_widget(charts.empty_fig())
-            widget = charts.as_widget(charts.score_lines(scoped, _styles()))
+            widget = charts.as_widget(
+                charts.score_lines(scoped, _styles(), _logos_by_name()))
             charts.bind_hover_dim(widget)
             return widget
 
@@ -1464,6 +1761,7 @@ def screen_teams():
     log = stats.game_log(scoped)
     games = log[log["team_name"] == current].sort_values("week") if not log.empty else log
     colors = styles.get(current, {"color": theme.INK_MUTE})
+    logos = _logos_by_name()
 
     records = stats.derive_records(scoped)
     mine = records[records["team_name"] == current]
@@ -1523,7 +1821,11 @@ def screen_teams():
             core_ui.div(
                 core_ui.span(f"SEED {seed} · WEEKS {lo}–{hi}" if seed else f"WEEKS {lo}–{hi}",
                             class_="eyebrow"),
-                core_ui.h1(current, class_="team-name"),
+                core_ui.div(
+                    _logo_img(logos.get(current), "team-logo profile-logo"),
+                    core_ui.h1(current, class_="team-name"),
+                    class_="profile-title",
+                ),
             ),
             core_ui.span(f"{record_text} · {streak_text}" if streak_text else record_text,
                         class_="record-streak"),
@@ -1597,7 +1899,7 @@ def screen_teams():
     h2h_records, h2h_margins = _h2h_frame()
 
     return core_ui.div(
-        _team_rail(styles, current),
+        _team_rail(styles, current, logos),
         profile,
         core_ui.div(
             core_ui.div(
@@ -1608,7 +1910,8 @@ def screen_teams():
             core_ui.div(
                 range_block,
                 core_ui.p("Head to head", class_="section-label"),
-                _h2h_matrix(h2h_records, h2h_margins, current=current),
+                _h2h_matrix(h2h_records, h2h_margins, current=current,
+                            logos=logos),
             ),
             class_="team-body",
         ),
@@ -1616,11 +1919,16 @@ def screen_teams():
     )
 
 
-def _team_rail(styles, current):
+def _team_rail(styles, current, logos=None):
+    logos = logos or {}
     pills = [
         _clickable(
             core_ui.tags.button, "team_pick", name,
-            core_ui.span(class_="dot", style=f"background:{style['color']}"),
+            # The logo replaces the color dot when there is one -- the
+            # monogram fallback carries the team color itself, so the dot
+            # only survives for a team with no logo row at all.
+            _logo_img(logos.get(name), "team-logo pill-logo")
+            or core_ui.span(class_="dot", style=f"background:{style['color']}"),
             core_ui.span(name),
             class_="team-pill active" if name == current else "team-pill",
             type="button",

@@ -78,6 +78,44 @@ def team_colors(teams):
     return {name: style["color"] for name, style in team_styles(teams).items()}
 
 
+def monogram_initials(name):
+    """
+    Up to two initials for a team with no logo of its own.
+
+    Words that start with a letter or digit carry the initials; decoration
+    like the emoji bracketing '💯 U MAD Bro? 💯' is skipped rather than
+    rendered as a tofu box. Falls back to the name's first character so even
+    an all-emoji name produces something.
+    """
+    words = [w for w in str(name).split() if w and w[0].isalnum()]
+    initials = "".join(w[0] for w in words[:2]).upper()
+    return initials or str(name)[:1]
+
+
+def monogram_data_uri(name, color=None):
+    """
+    A coloured-circle SVG monogram as a data URI, for teams whose only
+    "logo" is ESPN's default silhouette. Uses the team's chart color so the
+    stand-in still identifies the team the way its line does.
+    """
+    import base64
+    from xml.sax.saxutils import escape
+
+    fill = color or INK_MUTE
+    initials = escape(monogram_initials(name))
+    size = 44 if len(initials) < 2 else 36
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">'
+        f'<circle cx="48" cy="48" r="46" fill="{fill}"/>'
+        f'<text x="48" y="50" text-anchor="middle" dominant-baseline="central" '
+        f'font-family="Archivo, Arial, sans-serif" font-weight="800" '
+        f'font-size="{size}" fill="{GROUND}">{initials}</text>'
+        f"</svg>"
+    )
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
 def sparkline(values, width=116, height=26, color=None):
     """
     A bare inline SVG sparkline for the stat tiles.

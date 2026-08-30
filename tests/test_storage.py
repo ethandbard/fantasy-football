@@ -137,6 +137,48 @@ def test_replace_draft_picks_swaps_the_season_board(fresh_db):
     assert [r["player_id"] for r in rows] == [10]
 
 
+def test_schedule_round_trips_projected_score(fresh_db):
+    fresh_db.upsert_schedule([
+        {"year": 2026, "week": 1, "matchup_period": 1, "team_id": 1,
+         "opponent_id": 2, "is_home": 1, "projected_score": 112.4},
+        {"year": 2026, "week": 1, "matchup_period": 1, "team_id": 2,
+         "opponent_id": 1, "is_home": 0, "projected_score": 98.1},
+    ])
+    rows = fresh_db.get_all_schedule()
+    assert {r["team_id"]: r["projected_score"] for r in rows} == {1: 112.4, 2: 98.1}
+
+
+def test_schedule_rows_without_projection_still_write(fresh_db):
+    """Rows written by code predating the column carry no projected_score key;
+    the upsert must not choke on them."""
+    fresh_db.upsert_schedule([
+        {"year": 2025, "week": 1, "matchup_period": 1, "team_id": 1,
+         "opponent_id": 2, "is_home": 1},
+    ])
+    rows = fresh_db.get_all_schedule()
+    assert rows[0]["projected_score"] is None
+
+
+def test_team_logo_round_trips_bytes(fresh_db):
+    fresh_db.upsert_team_logo(2026, 1, "https://x/logo.png", b"\x89PNG...", "image/png")
+
+    rows = fresh_db.get_all_team_logos()
+    assert len(rows) == 1
+    assert rows[0]["content"] == b"\x89PNG..."
+    assert rows[0]["content_type"] == "image/png"
+    assert fresh_db.get_logo_urls() == {(2026, 1): "https://x/logo.png"}
+
+
+def test_team_logo_replaces_on_the_same_key(fresh_db):
+    fresh_db.upsert_team_logo(2026, 1, "https://x/old.png", b"old", "image/png")
+    fresh_db.upsert_team_logo(2026, 1, "https://x/new.svg", b"new", "image/svg+xml")
+
+    rows = fresh_db.get_all_team_logos()
+    assert len(rows) == 1
+    assert rows[0]["url"] == "https://x/new.svg"
+    assert rows[0]["content"] == b"new"
+
+
 def test_get_years_includes_player_only_seasons(fresh_db):
     fresh_db.upsert_weekly_scores([_row(1, 1), _row(1, 2)])
     fresh_db.replace_players(2026, [_player(1)])

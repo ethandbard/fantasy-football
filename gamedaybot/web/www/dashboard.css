@@ -73,7 +73,7 @@ button { font-family: inherit; }
 .topbar {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 18px;
   height: 60px;
   padding: 0 var(--gutter);
   border-bottom: 1px solid var(--line);
@@ -107,6 +107,9 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Bootstrap's .nav sets flex-wrap: wrap, and a sub-pixel rounding of the
+     flexed width is enough to fold the last item onto a second line. */
+  flex-wrap: nowrap;
 }
 
 .topbar .nav-item {
@@ -117,7 +120,8 @@ button { font-family: inherit; }
   font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
-  padding: 20px 12px;
+  padding: 20px 9px;
+  white-space: nowrap;
   cursor: pointer;
   line-height: 1;
 }
@@ -145,6 +149,10 @@ button { font-family: inherit; }
   padding: 5px 26px 5px 10px;
   display: inline-block;
   width: auto;
+  /* The season-choices sync rebuilds this select mid-session, and the
+     rebuilt one can collapse to its padding under width:auto -- a four-digit
+     year plus the chevron needs at least this much. */
+  min-width: 72px;
 }
 
 .topbar-links {
@@ -481,6 +489,112 @@ button { font-family: inherit; }
 }
 
 .scorebug .margin.nailbiter { color: var(--accent); }
+
+/* ---------- team logos ---------- */
+
+/* One class everywhere a logo appears; the variants only change size.
+   Every team has an image -- a stored logo or the generated monogram -- so
+   rows never mix a logo'd team with a logo-less one at different indents. */
+.team-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  background: var(--raised);
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pill-logo { width: 16px; height: 16px; }
+
+.profile-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.profile-logo { width: 44px; height: 44px; }
+
+.h2h-logo { width: 16px; height: 16px; }
+
+.h2h-head-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---------- next up ---------- */
+
+/* No cards -- each matchup is a block closed by the same hairline the
+   scorebug rows use, with the bug's own rule turned off so the probability
+   bar and series note sit inside the block. */
+.nextup-list { display: flex; flex-direction: column; }
+
+.nextup-card {
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.nextup-card .scorebug { border-bottom: 0; }
+
+/* Neither side has won yet, so both names stay full-ink. */
+.nu-bug .side .name { color: var(--ink); cursor: pointer; }
+.nu-bug .score { color: var(--ink); }
+
+.nu-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.nu-pips { margin-top: 2px; }
+
+.nu-prob { padding: 2px 0 0; }
+
+.nu-prob-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.nu-prob-num {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.nu-prob-num.left { text-align: right; }
+.nu-prob-num.right { text-align: left; }
+
+.nu-prob-track {
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--loss) 35%, transparent);
+  overflow: hidden;
+}
+
+.nu-prob-fill {
+  height: 100%;
+  background: var(--win);
+  border-radius: 3px 0 0 3px;
+}
+
+.nu-h2h {
+  margin: 8px 0 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
 
 /* ---------- against their own average ---------- */
 
@@ -1225,15 +1339,18 @@ button { font-family: inherit; }
   letter-spacing: 0.04em;
   color: var(--ink-mute);
   padding: 8px 6px;
-  white-space: nowrap;
+  /* Flex rather than plain ellipsed text, so the logo keeps its size and
+     only the name span truncates. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
-  text-overflow: ellipsis;
   border-bottom: 1px solid var(--line);
 }
 
 /* Centred over the cells they head. Left-aligned labels above centred
    records read as a grid that has slipped a column, which it has not. */
-.h2h-col-head { text-align: center; }
+.h2h-col-head { justify-content: center; }
 
 .h2h-row-head {
   position: sticky;
@@ -1462,7 +1579,7 @@ button { font-family: inherit; }
   background: #0E1116;
   border-top: 1px solid var(--line-strong);
   padding-bottom: 10px;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   z-index: 40;
 }
 
@@ -1506,6 +1623,12 @@ button { font-family: inherit; }
  * others, and collapsing it was how the standings and the record book both
  * ended up rendering rows with no idea who they were about.
  */
+/* Six nav items no longer share a 60px bar with the outbound links on a
+   middle-width window; the links live in the footnote too, so they go first. */
+@media (max-width: 1080px) {
+  .topbar-links { display: none; }
+}
+
 @media (max-width: 640px) {
   :root { --gutter: 16px; }
 

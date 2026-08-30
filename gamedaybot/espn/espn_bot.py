@@ -104,7 +104,7 @@ def espn_bot(function):
         get_final                 last week's final scores and trophies
         get_waiver_report         today's waiver moves (private leagues only)
         collect_snapshot          persist the week to SQLite; posts nothing
-        collect_players           persist player pool, teams, and draft picks; posts nothing
+        collect_players           persist player pool, teams, schedule, and draft picks; posts nothing
         init                      startup confirmation message
     """
     data = get_env_vars()

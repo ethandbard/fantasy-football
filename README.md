@@ -186,12 +186,18 @@ season may not have started yet.
 
 ## Dashboard
 
-The dashboard reads `data/fantasy.db` and offers five destinations:
+The dashboard reads `data/fantasy.db` and offers six destinations:
 
 - **This week**: the front page. Results ordered closest-first, who moved in
   the standings since the prior week, the week's bests, and every team
   against its own average. Opens on the latest collected week; nothing to
   configure.
+- **Next up**: the coming week's matchups, before they are played. Each card
+  shows both teams' records, season averages, and last-five form, ESPN's
+  projected scores, the pair's all-time head-to-head record, and a win
+  probability derived from each team's scored weeks — labelled as the rough
+  read it is. Projections refresh with the daily player-pool job. Once a
+  season is played out the page says so instead of inventing a matchup.
 - **Draft**: ESPN's player pool for this league. Rank, ADP, bye, projected
   FPTS (in the league's scoring), last year's FPTS, and position counting
   stats (PC/PA/PY and the RB/WR/TE equivalents). After the draft, each row
@@ -206,6 +212,14 @@ The dashboard reads `data/fantasy.db` and offers five destinations:
   next to the league's), and every head-to-head matchup for that team.
 - **Records**: the record book. Twelve season awards, each a row with its
   scoreline and week, linking straight to the team it belongs to.
+
+Team logos appear throughout — result rows, standings, the team pages, the
+head-to-head grid, the Next up cards, and at each line's endpoint on the
+charts. A team that never uploaded a logo to ESPN gets a colored monogram in
+its chart color instead of ESPN's grey default silhouette. Logos are
+downloaded once per URL by the daily collection job and stored in the
+database; the dashboard serves them from `data/logos/`, which it creates
+itself.
 
 League and Records carry a scope segment — Regular, Playoffs, or Full — that
 sets which weeks are in play. The regular-season boundary is derived from the
@@ -491,9 +505,10 @@ The Tuesday snapshot also fills in any week it finds missing for the current
 season. A container that was down over a Tuesday repairs its own gap on the
 next run, so `backfill_season.py` is only needed for prior seasons.
 
-Pull ESPN's player pool, team names, and draft picks into the draft board.
-The full container does this on startup and every morning; run it yourself
-when the dashboard is up alone:
+Pull ESPN's player pool, team names, team logos, draft picks, and the season
+schedule (with projected scores) into the dashboard database. The full
+container does this on startup and every morning; run it yourself when the
+dashboard is up alone:
 
 ```bash
 docker compose exec fantasy-bot python dev/collect_players.py

@@ -44,7 +44,18 @@ CREATE TABLE IF NOT EXISTS schedule (
     team_id INTEGER NOT NULL,
     opponent_id INTEGER,
     is_home INTEGER NOT NULL,
+    projected_score REAL,
     PRIMARY KEY (year, week, team_id)
+);
+
+CREATE TABLE IF NOT EXISTS team_logos (
+    year INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    content BLOB NOT NULL,
+    content_type TEXT,
+    collected_at TEXT,
+    PRIMARY KEY (year, team_id)
 );
 
 CREATE TABLE IF NOT EXISTS standings_snapshot (
@@ -135,6 +146,9 @@ _ADDED_COLUMNS = {
         "matchup_period": "INTEGER",
         "matchup_score": "REAL",
     },
+    "schedule": {
+        "projected_score": "REAL",
+    },
 }
 
 
@@ -182,6 +196,40 @@ def upsert_teams(rows):
         )
 
 
+def upsert_team_logo(year, team_id, url, content, content_type=None):
+    """One team's logo bytes, keyed like the teams row it decorates."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO team_logos
+                (year, team_id, url, content, content_type, collected_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (year, team_id, url, content, content_type),
+        )
+
+
+def get_logo_urls():
+    """
+    (year, team_id) -> source URL for every stored logo. The collector reads
+    this before downloading anything, so an unchanged logo costs one row scan
+    instead of a re-fetch of every image every morning.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("SELECT year, team_id, url FROM team_logos").fetchall()
+        return {(r["year"], r["team_id"]): r["url"] for r in rows}
+
+
+def get_all_team_logos():
+    """Every stored logo, bytes included. A handful of small images per
+    season, so loading the lot mirrors how every other table is read."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT year, team_id, url, content, content_type FROM team_logos"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def upsert_schedule(rows):
     """
     rows: iterable of dicts with keys matching the schedule columns.
@@ -190,11 +238,13 @@ def upsert_schedule(rows):
         conn.executemany(
             """
             INSERT OR REPLACE INTO schedule
-                (year, week, matchup_period, team_id, opponent_id, is_home)
+                (year, week, matchup_period, team_id, opponent_id, is_home,
+                 projected_score)
             VALUES
-                (:year, :week, :matchup_period, :team_id, :opponent_id, :is_home)
+                (:year, :week, :matchup_period, :team_id, :opponent_id, :is_home,
+                 :projected_score)
             """,
-            rows,
+            [{"projected_score": None, **r} for r in rows],
         )
 
 
@@ -423,7 +473,11 @@ def fingerprint():
                    (SELECT COALESCE(MAX(collected_at), '') FROM players),
                    (SELECT COUNT(*) FROM teams),
                    (SELECT COUNT(*) FROM draft_picks),
-                   (SELECT COALESCE(MAX(collected_at), '') FROM draft_picks)
+                   (SELECT COALESCE(MAX(collected_at), '') FROM draft_picks),
+                   (SELECT COUNT(*) FROM schedule),
+                   (SELECT COALESCE(SUM(projected_score), 0) FROM schedule),
+                   (SELECT COUNT(*) FROM team_logos),
+                   (SELECT COALESCE(MAX(collected_at), '') FROM team_logos)
             """
         ).fetchone())
 

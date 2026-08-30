@@ -132,7 +132,30 @@ def spread_labels(points, min_gap):
     return dict(placed)
 
 
-def rank_curve(ranked, styles):
+def _endpoint_logo(fig, uri, x, y, x_range, sizey):
+    """
+    A team's logo just right of its line's endpoint, level with the line.
+
+    Sized as a fraction of the x-axis span so the box scales with the plot
+    the same way the data does, keeping it visually constant whether the
+    scope is four playoff weeks or a full season. sizing="contain" keeps the
+    source image's aspect inside the box whatever shape it arrives in.
+    """
+    span = x_range[1] - x_range[0]
+    fig.add_layout_image(
+        source=uri, xref="x", yref="y",
+        x=x + span * 0.012, y=y, xanchor="left", yanchor="middle",
+        sizex=span * 0.034, sizey=sizey, sizing="contain", layer="above",
+    )
+
+
+# xshift for the right-edge name annotations: past the logo when one is
+# drawn, snug against the line when not.
+_LABEL_SHIFT_PLAIN = 14
+_LABEL_SHIFT_LOGO = 48
+
+
+def rank_curve(ranked, styles, logos=None):
     """
     "The race": standing after every week, first place at the top.
 
@@ -140,15 +163,19 @@ def rank_curve(ranked, styles):
     visible, a name at both the starting order (left) and the current order
     (right) so a line never has to be traced back to find out who it is, and
     markers only where a team's rank actually moved -- a marker every week
-    just adds noise once the line itself carries the shape.
+    just adds noise once the line itself carries the shape. `logos` (name ->
+    image data URI) adds each team's logo at its line's right endpoint.
 
     The y-axis is reversed because a rank of 1 is the good end, and a chart
     where the leader sits at the bottom reads backwards no matter how it is
     labelled.
     """
+    logos = logos or {}
     fig = go.Figure()
     teams = int(ranked["rank"].max()) if not ranked.empty else 1
     weeks = sorted(ranked["week"].unique()) if not ranked.empty else []
+    x_pad = 0.6
+    x_range = [weeks[0] - x_pad, weeks[-1] + x_pad] if weeks else [0.5, 1.5]
 
     for name in sorted(ranked["team_name"].unique()):
         rows = ranked[ranked["team_name"] == name].sort_values("week")
@@ -174,8 +201,13 @@ def rank_curve(ranked, styles):
             showarrow=False, xanchor="right", align="right",
             font=dict(family=_FONT, size=11, color=theme.INK_MUTE),
         )
+        logo = logos.get(name)
+        if logo:
+            _endpoint_logo(fig, logo, last["week"], last["rank"], x_range,
+                           sizey=0.62)
         fig.add_annotation(
-            x=last["week"], y=last["rank"], text=name, xshift=14,
+            x=last["week"], y=last["rank"], text=name,
+            xshift=_LABEL_SHIFT_LOGO if logo else _LABEL_SHIFT_PLAIN,
             showarrow=False, xanchor="left", align="left",
             font=dict(family=_FONT, size=11.5, color=style["color"]),
         )
@@ -184,27 +216,30 @@ def rank_curve(ranked, styles):
     # a 64px left margin clipped every one of them against the paper edge.
     style_fig(fig, hovermode="closest", showlegend=False, height=460,
              margin=dict(t=8, b=8, l=190, r=190))
-    x_pad = 0.6
-    x_range = [weeks[0] - x_pad, weeks[-1] + x_pad] if weeks else [0.5, 1.5]
     fig.update_xaxes(title_text="WEEK", dtick=1, range=x_range)
     fig.update_yaxes(title_text="RANK", autorange="reversed",
                      dtick=1, range=[teams + 0.6, 0.4])
     return fig
 
 
-def score_lines(scores_df, styles):
+def score_lines(scores_df, styles, logos=None):
     """
     Points per week per team, with the league average as a dashed reference.
 
     The race chart answers "who's ahead"; this answers "by how much" -- the
     two are complementary rather than one replacing the other, hence the
-    toggle rather than a redesign of rank_curve.
+    toggle rather than a redesign of rank_curve. `logos` works as it does on
+    rank_curve, drawn at each label's spread position so logo and name stay
+    together even when the label was nudged off its line's true endpoint.
     """
     if scores_df.empty:
         return empty_fig()
 
+    logos = logos or {}
     fig = go.Figure()
     weeks = sorted(scores_df["week"].unique())
+    x_pad = 0.6
+    x_range = [weeks[0] - x_pad, weeks[-1] + x_pad]
     league_avg = scores_df.groupby("week")["score"].mean().reindex(weeks)
     names = sorted(scores_df["team_name"].unique())
 
@@ -234,8 +269,14 @@ def score_lines(scores_df, styles):
             hovertemplate=f"<b>{name}</b><br>Week %{{x}} · %{{y:.1f}} pts<extra></extra>",
         ))
         last = rows.iloc[-1]
+        label_pos = label_y.get(name, last["score"])
+        logo = logos.get(name)
+        if logo:
+            _endpoint_logo(fig, logo, last["week"], label_pos, x_range,
+                           sizey=span * 30 / 360)
         fig.add_annotation(
-            x=last["week"], y=label_y.get(name, last["score"]), text=name, xshift=14,
+            x=last["week"], y=label_pos, text=name,
+            xshift=_LABEL_SHIFT_LOGO if logo else _LABEL_SHIFT_PLAIN,
             showarrow=False, xanchor="left", align="left",
             font=dict(family=_FONT, size=11.5, color=style["color"]),
         )
@@ -249,9 +290,7 @@ def score_lines(scores_df, styles):
 
     style_fig(fig, hovermode="closest", showlegend=False, height=460,
              margin=dict(t=8, b=8, l=8, r=190))
-    x_pad = 0.6
-    fig.update_xaxes(title_text="WEEK", dtick=1,
-                     range=[weeks[0] - x_pad, weeks[-1] + x_pad])
+    fig.update_xaxes(title_text="WEEK", dtick=1, range=x_range)
     fig.update_yaxes(title_text="POINTS")
     return fig
 

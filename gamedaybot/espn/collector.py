@@ -4,6 +4,9 @@ them to SQLite, so the dashboard has historical data to chart instead of only
 ever seeing "right now".
 """
 import logging
+from urllib.parse import urlparse
+
+import requests
 
 import gamedaybot.espn.players as players
 import gamedaybot.storage.db as db
@@ -49,7 +52,6 @@ def collect_weekly_snapshot(league):
                     "(season likely hasn't started)", year, week)
         return
 
-    collect_schedule(league)
     _collect_standings(league, year, week)
 
 
@@ -80,7 +82,6 @@ def collect_historical_season(league):
             collected_any = True
 
     if collected_any:
-        collect_schedule(league)
         _collect_standings(league, year, last_week)
 
     return collected_any
@@ -206,13 +207,18 @@ def collect_player_pool(league):
 
 def collect_league_state(league):
     """
-    Player pool, team names, and draft picks.
+    Player pool, team names, draft picks, and the season schedule.
 
     These exist as soon as the draft is in, so they are not gated on box
-    scores the way standings are.
+    scores the way standings are. The schedule lives here rather than behind
+    the score gate so the Next up page has matchups and projections before
+    week 1 is ever played, and so its projections refresh with the daily
+    player-pool job instead of only on Tuesdays.
     """
     collected = collect_player_pool(league)
     collect_teams(league)
+    collect_logos(league)
+    collect_schedule(league)
     collected = collect_draft_picks(league) or collected
     return collected
 
@@ -266,6 +272,88 @@ def collect_teams(league):
         logger.info("Collected %d team rows for %s", len(rows), league.year)
 
 
+# ESPN's default_logos are the grey silhouette every un-customised team gets.
+# Storing those would put the same non-logo on half the league, so they are
+# treated as "no logo" and the dashboard draws its coloured monogram instead.
+_DEFAULT_LOGO_MARKER = "/default_logos/"
+
+# Guessed from the URL when the server doesn't say. ESPN's logo-pack picks
+# are SVG; user uploads are usually PNG or JPEG.
+_LOGO_TYPES = {
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def wants_logo_fetch(url, stored_url):
+    """Whether a team's logo needs downloading: it has a real (non-default)
+    URL that differs from whatever is already stored."""
+    if not url or _DEFAULT_LOGO_MARKER in url:
+        return False
+    return url != stored_url
+
+
+def logo_request_cookies(league, url):
+    """
+    The league's ESPN auth cookies, but only for ESPN's own hosts.
+
+    User-uploaded logos live on mystique-api.fantasy.espn.com and return 401
+    without the league cookies. A team can also point its logo anywhere on
+    the internet, and those hosts must never see the ESPN session.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if host != "espn.com" and not host.endswith(".espn.com") \
+            and not host.endswith(".espncdn.com"):
+        return {}
+    return getattr(getattr(league, "espn_request", None), "cookies", None) or {}
+
+
+def _logo_content_type(url, response):
+    declared = (response.headers.get("Content-Type") or "").split(";")[0].strip()
+    if declared.startswith("image/"):
+        return declared
+    lowered = url.lower().split("?")[0]
+    for ext, ctype in _LOGO_TYPES.items():
+        if lowered.endswith(ext):
+            return ctype
+    return "image/png"
+
+
+def collect_logos(league):
+    """
+    Downloads each team's logo into the database, once per URL.
+
+    Runs with the daily league-state job, but the URL check in
+    wants_logo_fetch means a normal morning downloads nothing -- only a new
+    team, a changed logo, or a fresh database costs a fetch. Failures are
+    logged and skipped: a missing logo falls back to the monogram, which is
+    strictly better than a crashed collect.
+    """
+    db.init_db()
+    stored = db.get_logo_urls()
+    for t in league.teams:
+        url = getattr(t, "logo_url", None)
+        if not wants_logo_fetch(url, stored.get((league.year, t.team_id))):
+            continue
+        try:
+            response = requests.get(url, timeout=10,
+                                    cookies=logo_request_cookies(league, url))
+            response.raise_for_status()
+        except Exception as e:
+            logger.info("Skipping logo for %s (%s): %s", t.team_name, url, e)
+            continue
+        db.upsert_team_logo(
+            league.year, t.team_id, url,
+            response.content, _logo_content_type(url, response),
+        )
+        logger.info("Collected logo for %s (%d bytes)", t.team_name,
+                    len(response.content))
+
+
 def collect_schedule(league):
     """
     Upserts the full season schedule, keyed off each week's box scores so
@@ -290,12 +378,12 @@ def collect_schedule(league):
             rows.append({
                 "year": league.year, "week": week, "matchup_period": matchup_period,
                 "team_id": b.home_team.team_id, "opponent_id": b.away_team.team_id,
-                "is_home": 1,
+                "is_home": 1, "projected_score": getattr(b, "home_projected", None),
             })
             rows.append({
                 "year": league.year, "week": week, "matchup_period": matchup_period,
                 "team_id": b.away_team.team_id, "opponent_id": b.home_team.team_id,
-                "is_home": 0,
+                "is_home": 0, "projected_score": getattr(b, "away_projected", None),
             })
 
     if rows:

@@ -9,6 +9,8 @@ projected_score even though none of the three reached the old UI.
 Every function expects a frame already narrowed to a single season, since
 week numbers only identify a matchup within one year.
 """
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -694,3 +696,39 @@ def all_time_trophies(scores_df):
         })
 
     return awards
+
+
+def upcoming_week(schedule_df, scores_df):
+    """
+    The next scheduled week that has no collected scores: the first schedule
+    week past the latest collected one, or the schedule's first week when
+    nothing has been collected (the preseason case). None when the schedule
+    is empty or the season has been played out.
+
+    Both frames must already be narrowed to one season.
+    """
+    if schedule_df is None or schedule_df.empty:
+        return None
+    latest = 0 if scores_df is None or scores_df.empty else int(scores_df["week"].max())
+    remaining = schedule_df[schedule_df["week"] > latest]
+    return int(remaining["week"].min()) if not remaining.empty else None
+
+
+def win_probability(scores_a, scores_b):
+    """
+    P(team A outscores team B), from each side's scored weeks treated as a
+    normal distribution -- a deliberately rough model, and labelled as such
+    where it renders. The difference of two normals is normal, so the answer
+    is one CDF evaluation. None until both teams have at least three scored
+    weeks, since a standard deviation from fewer is noise.
+    """
+    a = pd.Series(scores_a).dropna()
+    b = pd.Series(scores_b).dropna()
+    if len(a) < 3 or len(b) < 3:
+        return None
+    mean = a.mean() - b.mean()
+    spread = float(np.sqrt(a.var() + b.var()))
+    if spread == 0:
+        return 1.0 if mean > 0 else (0.0 if mean < 0 else 0.5)
+    z = mean / spread
+    return float(0.5 * (1 + math.erf(z / math.sqrt(2))))

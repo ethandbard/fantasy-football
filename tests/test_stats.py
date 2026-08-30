@@ -530,3 +530,63 @@ def test_split_detail_leaves_a_self_describing_value_bare():
 
 def test_split_detail_survives_an_empty_detail():
     assert stats.split_detail("") == ("", "")
+
+
+# ---------------------------------------------------------------- next up
+
+
+def _schedule_frame(rows):
+    return pd.DataFrame(rows, columns=[
+        "year", "week", "matchup_period", "team_id", "opponent_id",
+        "is_home", "projected_score",
+    ])
+
+
+def test_upcoming_week_is_the_first_uncollected_one(scores):
+    sched = _schedule_frame([
+        (2025, w, w, tid, opp, is_home, 100.0)
+        for w in (4, 5)
+        for tid, opp, is_home in ((1, 2, 1), (2, 1, 0), (3, 4, 1), (4, 3, 0))
+    ])
+    # Weeks 1-4 are collected, so the next one is 5.
+    assert stats.upcoming_week(sched, scores) == 5
+
+
+def test_upcoming_week_is_week_one_before_any_scores(scores):
+    sched = _schedule_frame([(2026, 1, 1, 1, 2, 1, 100.0),
+                             (2026, 1, 1, 2, 1, 0, 90.0)])
+    assert stats.upcoming_week(sched, scores.iloc[0:0]) == 1
+    assert stats.upcoming_week(sched, None) == 1
+
+
+def test_upcoming_week_is_none_when_the_season_is_played_out(scores):
+    sched = _schedule_frame([
+        (2025, w, w, tid, opp, is_home, 100.0)
+        for w in (1, 2, 3, 4)
+        for tid, opp, is_home in ((1, 2, 1), (2, 1, 0))
+    ])
+    assert stats.upcoming_week(sched, scores) is None
+
+
+def test_upcoming_week_is_none_without_a_schedule(scores):
+    assert stats.upcoming_week(_schedule_frame([]), scores) is None
+    assert stats.upcoming_week(None, scores) is None
+
+
+def test_win_probability_favours_the_stronger_side():
+    strong = [120.0, 125.0, 130.0, 118.0]
+    weak = [90.0, 95.0, 88.0, 102.0]
+    p = stats.win_probability(strong, weak)
+    assert p is not None and p > 0.9
+    # And the mirror-image read agrees.
+    assert stats.win_probability(weak, strong) == pytest.approx(1 - p)
+
+
+def test_win_probability_is_even_for_identical_teams():
+    same = [100.0, 110.0, 90.0]
+    assert stats.win_probability(same, same) == pytest.approx(0.5)
+
+
+def test_win_probability_needs_three_weeks_a_side():
+    assert stats.win_probability([100.0, 110.0], [90.0, 95.0, 88.0]) is None
+    assert stats.win_probability([], []) is None
