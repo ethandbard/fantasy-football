@@ -1314,6 +1314,81 @@ button { font-family: inherit; }
 
 /* ---------- head-to-head matrix (league + team screens) ---------- */
 
+/* ---------- League: trade ledger ---------- */
+
+.trades-section { margin-top: 34px; }
+
+.trade-row {
+  display: flex;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.trade-date {
+  flex: 0 0 64px;
+  padding-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.trade-sides {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px 28px;
+  min-width: 0;
+}
+
+.trade-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.trade-team:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.trade-team-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trade-recv {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.trade-player {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.trade-pos {
+  flex: 0 0 28px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-mute);
+}
+
+.trade-player-name { color: var(--ink-dim); }
+
 .h2h-section { margin-top: 34px; }
 
 .h2h-matrix {

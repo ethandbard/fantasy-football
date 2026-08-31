@@ -21,6 +21,7 @@ EMBED_COLORS = {
     "trophies": 0xE67E22,        # orange
     "monitor": 0xE74C3C,         # red
     "waiver_report": 0x1ABC9C,   # teal
+    "trade": 0xE91E63,           # magenta
     "final": 0x2ECC71,           # green
     "init": 0x3498DB,            # blue
     "dashboard": 0x3498DB,       # blue
@@ -35,6 +36,7 @@ TITLES = {
     "trophies": "🏆 Trophies",
     "monitor": "🏥 Player Monitor",
     "waiver_report": "🔁 Waiver Report",
+    "trade": "🔄 Trade Alert",
     "final": "🏈 Final Scores",
 }
 
@@ -91,6 +93,45 @@ def trophies_embed(text, league=None):
         payload["fields"] = fields
     else:
         payload["description"] = "No trophies yet -- check back after week 1."
+    footer = _footer_for(league)
+    if footer:
+        payload["footer"] = footer
+    return payload
+
+
+def trade_embed(rows, league=None):
+    """
+    One completed trade as an embed: a field per receiving team listing the
+    players it got. `rows` is one trade's player rows from the trades table
+    (they share a trade_date); teams appear in first-seen order.
+    """
+    sides = {}
+    for r in rows:
+        team = r.get("to_team_name") or "Unknown team"
+        sides.setdefault(team, []).append(r)
+
+    fields = []
+    for team, players in sides.items():
+        lines = []
+        for p in players:
+            pos = p.get("position")
+            name = p.get("player_name") or "Unknown player"
+            lines.append(f"{pos} {name}" if pos else name)
+        fields.append({
+            "name": f"📥 {team} receives",
+            "value": "\n".join(lines),
+            "inline": True,
+        })
+
+    payload = {
+        "title": TITLES["trade"],
+        "description": " ⇄ ".join(sides) if len(sides) > 1 else None,
+        "color": EMBED_COLORS["trade"],
+        "fields": fields,
+        "timestamp": _now_iso(),
+    }
+    if payload["description"] is None:
+        del payload["description"]
     footer = _footer_for(league)
     if footer:
         payload["footer"] = footer

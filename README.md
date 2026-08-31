@@ -137,7 +137,8 @@ Credentials for the live league are kept outside this repository, in
 `~/.fantasy-football-secrets/WEBHOOK_BACKUP.md`.
 
 `ESPN_S2` and `SWID` come from your browser cookies on espn.com. Both are
-required for waiver reports, because ESPN treats transaction data as private.
+required for waiver reports and trade alerts, because ESPN treats transaction
+data as private.
 
 ## Scheduled posts
 
@@ -158,9 +159,18 @@ times follow `TIMEZONE`.
 | Friday | 9:00 AM | Score update |
 | Sunday | 9:00 AM | Player monitor report |
 | Sunday | 4:00 PM and 8:00 PM Eastern | Score updates |
+| Every day | 7 minutes past each hour | Trade check |
 
 When `DAILY_WAIVER` is `True`, the waiver report runs at 9:01 AM every day
 instead of only on Wednesday.
+
+The hourly trade check stores every trade it sees in `data/fantasy.db` and
+posts a Trade Alert embed for each one it has never stored before, so a trade
+is announced once, within the hour it clears. Trades older than three days are
+stored without a post — that only matters on a first deploy mid-season, where
+announcing the backlog would read as spam. Like the waiver report, it needs
+`ESPN_S2` and `SWID`; ESPN also only serves transaction activity for the
+active season, so past seasons' trades cannot be backfilled.
 
 The Tuesday 6:00 AM snapshot writes the finished week's scores and standings to
 `data/fantasy.db`. It runs after Monday night football so the week is final.
@@ -206,7 +216,9 @@ The dashboard reads `data/fantasy.db` and offers six destinations:
   player pool and no weekly scores yet — the preseason case.
 - **League**: the standings board — record, streak, last-five form, points
   for/against, and a sparkline per row, sortable by seed, points, or recent
-  form — plus "the race," rank by week for every team on one chart.
+  form — plus the head-to-head grid, the season's trade ledger (each trade
+  as a date and a "receives" column per team, fed by the hourly trade
+  check), and "the race," rank by week for every team on one chart.
 - **Teams**: one page per team, absorbing what used to be Spread and Head to
   head. A game log, a range-vs-the-league bar (floor, ceiling, and median
   next to the league's), and every head-to-head matchup for that team.

@@ -45,6 +45,14 @@ def scheduler():
                   day_of_week=waiver_days, hour=9, minute=1, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=my_timezone, replace_existing=True)
 
+    # Trades clear at any hour of any day, so this polls rather than reports:
+    # each run stores what it sees and announces only what it has never
+    # stored before (see espn_bot.check_trades). minute=7 keeps it clear of
+    # the 9:00/9:01 report jobs.
+    sched.add_job(espn_bot, 'cron', ['check_trades'], id='check_trades',
+                  hour='*', minute=7, start_date=ff_start_date, end_date=ff_end_date,
+                  timezone=my_timezone, replace_existing=True)
+
     sched.add_job(espn_bot, 'cron', ['get_matchups'], id='matchups',
                   day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=game_timezone, replace_existing=True)

@@ -84,6 +84,11 @@ def collect_historical_season(league):
     if collected_any:
         _collect_standings(league, year, last_week)
 
+    # The whole season's trades in one pull. Backfill inserts them silently;
+    # the hourly in-season job only announces rows *it* was first to insert,
+    # so nothing here can trigger a Discord post.
+    collect_trades(league, size=200)
+
     return collected_any
 
 
@@ -253,6 +258,65 @@ def collect_draft_picks(league):
     db.replace_draft_picks(league.year, rows)
     logger.info("Collected %d draft picks for %s", len(rows), league.year)
     return True
+
+
+def _trade_rows_from_activity(activity, year):
+    """
+    One trade Activity flattened to a row per player moved.
+
+    espn_api emits a TRADE_SENT action (from the sending team) and a
+    TRADE_RECEIVED action (to the receiving team) for each player in the
+    trade; this pairs them up by player id. The player slot can be a bare id
+    when ESPN no longer knows the player, so every attribute read has a
+    fallback.
+    """
+    by_player = {}
+    for team, action, player, _bid in activity.actions:
+        if action not in ("TRADE_SENT", "TRADE_RECEIVED"):
+            continue
+        player_id = getattr(player, "playerId", None)
+        if player_id is None:
+            player_id = player if isinstance(player, int) else hash(str(player))
+        row = by_player.setdefault(player_id, {
+            "year": year, "trade_date": activity.date, "player_id": player_id,
+            "player_name": getattr(player, "name", str(player)),
+            "position": getattr(player, "position", None),
+            "from_team_id": None, "from_team_name": None,
+            "to_team_id": None, "to_team_name": None,
+        })
+        side = "from" if action == "TRADE_SENT" else "to"
+        row[f"{side}_team_id"] = getattr(team, "team_id", None)
+        row[f"{side}_team_name"] = getattr(team, "team_name", None)
+    return list(by_player.values())
+
+
+def collect_trades(league, size=50):
+    """
+    Pulls trade activity into the trades table and returns only the rows
+    that were new this call -- the hourly check announces exactly those.
+
+    Requires the league cookies (ESPN treats transactions as private); a
+    public-league or failed fetch logs and returns nothing rather than
+    crashing the job.
+    """
+    db.init_db()
+    try:
+        activities = league.recent_activity(size, msg_type="TRADED")
+    except Exception as e:
+        logger.info("Skipping trade collection for %s: %s", league.year, e)
+        return []
+
+    rows = []
+    for activity in activities:
+        rows.extend(_trade_rows_from_activity(activity, league.year))
+
+    if not rows:
+        return []
+
+    new_rows = db.insert_new_trades(rows)
+    if new_rows:
+        logger.info("Collected %d new trade rows for %s", len(new_rows), league.year)
+    return new_rows
 
 
 def collect_teams(league):

@@ -97,6 +97,20 @@ CREATE TABLE IF NOT EXISTS players (
     PRIMARY KEY (year, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS trades (
+    year INTEGER NOT NULL,
+    trade_date INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT,
+    position TEXT,
+    from_team_id INTEGER,
+    from_team_name TEXT,
+    to_team_id INTEGER,
+    to_team_name TEXT,
+    collected_at TEXT,
+    PRIMARY KEY (year, trade_date, player_id)
+);
+
 CREATE TABLE IF NOT EXISTS draft_picks (
     year INTEGER NOT NULL,
     overall_pick INTEGER NOT NULL,
@@ -314,6 +328,47 @@ def replace_draft_picks(year, rows):
         )
 
 
+def insert_new_trades(rows):
+    """
+    Insert trade rows, returning only the ones that were actually new.
+
+    INSERT OR IGNORE row-by-row rather than executemany because the caller
+    (the hourly trade check) needs to know which rows it has never seen --
+    those are the ones worth announcing to Discord. ESPN's recent-activity
+    feed re-serves the same trades every poll, so almost every call inserts
+    nothing.
+    """
+    new = []
+    with get_connection() as conn:
+        for r in rows:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO trades
+                    (year, trade_date, player_id, player_name, position,
+                     from_team_id, from_team_name, to_team_id, to_team_name,
+                     collected_at)
+                VALUES
+                    (:year, :trade_date, :player_id, :player_name, :position,
+                     :from_team_id, :from_team_name, :to_team_id, :to_team_name,
+                     datetime('now'))
+                """,
+                r,
+            )
+            if cur.rowcount:
+                new.append(r)
+    return new
+
+
+def get_all_trades():
+    """Every season's trade rows, one row per player moved, newest trade
+    first. Rows sharing (year, trade_date) are one trade."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM trades ORDER BY year DESC, trade_date DESC, player_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_years():
     """Seasons present in scores, the player pool, teams, or the draft."""
     with get_connection() as conn:
@@ -477,7 +532,8 @@ def fingerprint():
                    (SELECT COUNT(*) FROM schedule),
                    (SELECT COALESCE(SUM(projected_score), 0) FROM schedule),
                    (SELECT COUNT(*) FROM team_logos),
-                   (SELECT COALESCE(MAX(collected_at), '') FROM team_logos)
+                   (SELECT COALESCE(MAX(collected_at), '') FROM team_logos),
+                   (SELECT COUNT(*) FROM trades)
             """
         ).fetchone())
 

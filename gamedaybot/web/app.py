@@ -213,6 +213,11 @@ def _all_schedule():
 
 
 @reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_trades():
+    return pd.DataFrame(db.get_all_trades())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
 def _all_logos():
     """
     (year, team_id) -> /logos URL for every stored logo, writing any blob
@@ -261,6 +266,11 @@ def _season_picks():
 
 def _season_schedule():
     df = _all_schedule()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_trades():
+    df = _all_trades()
     return df[df["year"] == _year()] if not df.empty else df
 
 
@@ -1541,6 +1551,49 @@ def _h2h_matrix(records_tbl, margins_tbl, current=None, logos=None):
                        style=f"--h2h-cols:{len(teams_list)}")
 
 
+def _trade_list(trades_df, logos):
+    """
+    The season's trade ledger, newest first. Rows sharing a trade_date are
+    one trade; each is drawn as the date beside a side-by-side "receives"
+    column per team, so the whole swap reads at a glance.
+    """
+    if trades_df.empty:
+        return core_ui.p("No trades yet this season.", class_="empty-note")
+
+    rows = []
+    for trade_date, g in sorted(trades_df.groupby("trade_date"),
+                                key=lambda kv: kv[0], reverse=True):
+        when = datetime.fromtimestamp(trade_date / 1000)
+        sides = []
+        for team_name, players in g.groupby("to_team_name", sort=False):
+            player_rows = [
+                core_ui.div(
+                    core_ui.span(p["position"] or "", class_="trade-pos"),
+                    core_ui.span(p["player_name"] or "Unknown player",
+                                 class_="trade-player-name"),
+                    class_="trade-player",
+                )
+                for _, p in players.iterrows()
+            ]
+            sides.append(core_ui.div(
+                _clickable(
+                    core_ui.div, "team_pick", team_name,
+                    _logo_img(logos.get(team_name)),
+                    core_ui.span(team_name, class_="trade-team-name"),
+                    core_ui.span("receives", class_="trade-recv"),
+                    class_="trade-team", role="button",
+                ),
+                *player_rows,
+                class_="trade-side",
+            ))
+        rows.append(core_ui.div(
+            core_ui.span(f"{when:%b} {when.day}", class_="trade-date"),
+            core_ui.div(*sides, class_="trade-sides"),
+            class_="trade-row",
+        ))
+    return core_ui.div(*rows, class_="trade-list")
+
+
 @render.ui
 def screen_league():
     if screen() != "league":
@@ -1549,8 +1602,16 @@ def screen_league():
     scoped = _scope_scores()
 
     if scoped.empty:
+        # Trades still render: post-draft trades exist before a single week
+        # has been played, and hiding them behind the score gate would blank
+        # the ledger exactly when the league is talking about it.
         return core_ui.div(
             core_ui.p("No weeks in this range.", class_="empty-note"),
+            core_ui.div(
+                core_ui.p("Trades", class_="section-label"),
+                _trade_list(_season_trades(), _logos_by_name()),
+                class_="trades-section",
+            ),
             class_="screen",
         )
 
@@ -1658,6 +1719,11 @@ def screen_league():
             core_ui.p("Head to head", class_="section-label"),
             _h2h_matrix(h2h_records, h2h_margins, logos=logos),
             class_="h2h-section",
+        ),
+        core_ui.div(
+            core_ui.p("Trades", class_="section-label"),
+            _trade_list(_season_trades(), logos),
+            class_="trades-section",
         ),
         class_="screen",
     )

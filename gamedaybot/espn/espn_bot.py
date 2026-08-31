@@ -6,6 +6,7 @@ serves the same reports over its gateway connection, calling the same
 functionality.py helpers and the same embed builders so the two stay identical.
 """
 import logging
+import time
 
 from espn_api.football import League
 
@@ -16,6 +17,12 @@ from gamedaybot.discord_bot.webhook import Discord
 from gamedaybot.espn.env_vars import NO_ESPN_S2, NO_SWID, get_env_vars
 
 logger = logging.getLogger(__name__)
+
+# A newly stored trade older than this is seeded silently instead of
+# announced. The hourly check makes this moot in normal operation; it only
+# bites on a first deploy mid-season (or after long downtime), where posting
+# a backlog of week-old "Trade Alert" messages would read as spam.
+TRADE_ANNOUNCE_WINDOW_SECONDS = 3 * 24 * 3600
 
 # Maps a report name to its embed formatting key in
 # gamedaybot.discord_bot.formatting. get_trophies is absent deliberately -- it
@@ -75,6 +82,25 @@ def _report_text(function, league, data):
     return None
 
 
+def check_trades(discord_bot, league):
+    """Collect trade activity and announce each trade never seen before."""
+    new_rows = collector.collect_trades(league)
+    if not new_rows:
+        return
+
+    cutoff_ms = (time.time() - TRADE_ANNOUNCE_WINDOW_SECONDS) * 1000
+    trades = {}
+    for row in new_rows:
+        trades.setdefault(row["trade_date"], []).append(row)
+
+    for trade_date in sorted(trades):
+        if trade_date < cutoff_ms:
+            logger.info("Seeding old trade from %s without announcing", trade_date)
+            continue
+        discord_bot.send_message(
+            embed=discord_fmt.trade_embed(trades[trade_date], league=league))
+
+
 def _send_init(discord_bot, data, league=None):
     init_msg = data.get('init_msg')
     if init_msg:
@@ -103,6 +129,7 @@ def espn_bot(function):
         get_trophies              this week's trophies
         get_final                 last week's final scores and trophies
         get_waiver_report         today's waiver moves (private leagues only)
+        check_trades              announce trades not seen before (private leagues only)
         collect_snapshot          persist the week to SQLite; posts nothing
         collect_players           persist player pool, teams, schedule, and draft picks; posts nothing
         init                      startup confirmation message
@@ -136,6 +163,14 @@ def espn_bot(function):
 
     if function == "collect_snapshot":
         collector.collect_weekly_snapshot(league)
+        return
+
+    if function == "check_trades":
+        if data['swid'] == NO_SWID or data['espn_s2'] == NO_ESPN_S2:
+            logger.warning("Trade check needs ESPN_S2/SWID (ESPN treats "
+                           "transactions as private) -- skipping")
+            return
+        check_trades(discord_bot, league)
         return
 
     text = _report_text(function, league, data)

@@ -197,7 +197,7 @@ Score updates
 ::::
 
 ::: {.note}
-Set `DAILY_WAIVER` to `True` to post the waiver report every day at 9:01 AM, not only Wednesday. The Tuesday snapshot waits until Monday night football is final.
+Set `DAILY_WAIVER` to `True` to post the waiver report every day at 9:01 AM, not only Wednesday. The Tuesday snapshot waits until Monday night football is final. A trade check also runs every hour, every day: each trade is announced once, within the hour it clears.
 :::
 
 ## Slash commands
@@ -230,7 +230,7 @@ Results ordered closest-first, who moved in the standings, the week's bests, and
 ::: {.tab}
 ### League
 
-The standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it, "the race": rank by week for every team on one chart.
+The standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it, the head-to-head grid, the season's trade ledger, and "the race": rank by week for every team on one chart.
 :::
 
 ::: {.tab}
