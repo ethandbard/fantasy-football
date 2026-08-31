@@ -295,6 +295,75 @@ def score_lines(scores_df, styles, logos=None):
     return fig
 
 
+def total_lines(cum_df, styles, logos=None):
+    """
+    Running season totals: cumulative points for (solid) and against (dashed).
+
+    Both of a team's lines carry the same trace name, so bind_hover_dim and
+    set_highlight treat the pair as one unit -- hovering either line keeps
+    both bright, which is what makes 2N lines readable at all. The name and
+    logo sit at the PF endpoint only; the dashed PA line is identified by its
+    color and the hover text.
+    """
+    if cum_df.empty:
+        return empty_fig()
+
+    logos = logos or {}
+    fig = go.Figure()
+    weeks = sorted(cum_df["week"].unique())
+    x_pad = 0.6
+    x_range = [weeks[0] - x_pad, weeks[-1] + x_pad]
+    names = sorted(cum_df["team_name"].unique())
+
+    finals = {}
+    for name in names:
+        rows = cum_df[cum_df["team_name"] == name].sort_values("week")
+        if not rows.empty:
+            finals[name] = rows.iloc[-1]["cum_pf"]
+    # Label spacing works off the full y-extent, PA lines included, because
+    # they share the axis even though only PF endpoints get a name.
+    y_min = min(cum_df["cum_pf"].min(), cum_df["cum_pa"].min())
+    y_max = max(cum_df["cum_pf"].max(), cum_df["cum_pa"].max())
+    span = (y_max - y_min) or 1.0
+    label_y = spread_labels(list(finals.items()), min_gap=span * 17 / 360)
+
+    for name in names:
+        rows = cum_df[cum_df["team_name"] == name].sort_values("week")
+        style = styles.get(name, {"color": theme.INK_DIM, "dash": "solid"})
+        fig.add_trace(go.Scatter(
+            x=rows["week"], y=rows["cum_pf"], name=name, mode="lines",
+            line=dict(color=style["color"], width=3.2, dash=style["dash"]),
+            showlegend=False,
+            hovertemplate=(f"<b>{name}</b><br>Week %{{x}} · "
+                           "%{y:.1f} PF<extra></extra>"),
+        ))
+        fig.add_trace(go.Scatter(
+            x=rows["week"], y=rows["cum_pa"], name=name, mode="lines",
+            line=dict(color=style["color"], width=1.6, dash="dash"),
+            showlegend=False,
+            hovertemplate=(f"<b>{name}</b><br>Week %{{x}} · "
+                           "%{y:.1f} PA<extra></extra>"),
+        ))
+        last = rows.iloc[-1]
+        label_pos = label_y.get(name, last["cum_pf"])
+        logo = logos.get(name)
+        if logo:
+            _endpoint_logo(fig, logo, last["week"], label_pos, x_range,
+                           sizey=span * 30 / 360)
+        fig.add_annotation(
+            x=last["week"], y=label_pos, text=name,
+            xshift=_LABEL_SHIFT_LOGO if logo else _LABEL_SHIFT_PLAIN,
+            showarrow=False, xanchor="left", align="left",
+            font=dict(family=_FONT, size=11.5, color=style["color"]),
+        )
+
+    style_fig(fig, hovermode="closest", showlegend=False, height=460,
+             margin=dict(t=8, b=8, l=8, r=190))
+    fig.update_xaxes(title_text="WEEK", dtick=1, range=x_range)
+    fig.update_yaxes(title_text="TOTAL POINTS")
+    return fig
+
+
 def bind_hover_dim(widget):
     """
     Hovering a line dims every other line to ~20% opacity.

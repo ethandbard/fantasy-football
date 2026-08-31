@@ -503,6 +503,23 @@ def rank_by_week(scores_df):
     return ordered
 
 
+def cumulative_points(scores_df):
+    """
+    Running points-for and points-against totals after each week.
+
+    Built on the game log so points against comes out of the same self-join
+    every other derivation uses. An opponent row that was never collected
+    counts as zero, matching how derive_records sums the season.
+    """
+    log = game_log(scores_df)
+    if log.empty:
+        return log.assign(cum_pf=None, cum_pa=None)
+    log = log.sort_values(["team_name", "week"]).copy()
+    log["cum_pf"] = log.groupby("team_name")["score"].cumsum()
+    log["cum_pa"] = log["opponent_score"].fillna(0.0).groupby(log["team_name"]).cumsum()
+    return log
+
+
 def vs_projection(scores_df):
     """
     Average points over or under ESPN's projection, per team.

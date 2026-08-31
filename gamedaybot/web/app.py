@@ -1226,6 +1226,14 @@ with ui.div(id="draft-controls-wrap", class_="controlrow"):
                      "TE": "TE", "K": "K", "DST": "D/ST"},
                     selected="ALL", inline=True,
                 )
+        with ui.div(class_="control"):
+            core_ui.span("View", class_="control-label")
+            with ui.div(class_="segment"):
+                ui.input_radio_buttons(
+                    "draft_view", None,
+                    {"list": "List", "board": "Board"},
+                    selected="list", inline=True,
+                )
         with ui.div(class_="control draft-search"):
             core_ui.span("Find", class_="control-label")
             ui.input_text("draft_q", None, placeholder="Name or team")
@@ -1262,6 +1270,15 @@ def _draft_cell(key, row):
         slug = pos.lower().replace("/", "")
         return core_ui.span(pos, class_=f"pos-badge pos-{slug}")
     value = _draft_value(key, row)
+    if key == "adp_delta":
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "—"
+        rounded = int(round(value))
+        if rounded > 0:
+            return core_ui.span(draft.format_stat(value, "signed"), class_="delta-pos")
+        if rounded < 0:
+            return core_ui.span(draft.format_stat(value, "signed"), class_="delta-neg")
+        return "0"
     if key in ("pro_team", "draft_team", "pick_label"):
         return draft.format_stat(value, "text")
     if key == "percent_owned":
@@ -1269,6 +1286,85 @@ def _draft_cell(key, row):
     if key in ("draft_rank", "bye_week"):
         return draft.format_stat(value, "int")
     return draft.format_stat(value)
+
+
+def _pick_tagline(kind, row):
+    """One steal/reach line: tag, player, then pick and ADP delta."""
+    delta = draft.format_stat(row["adp_delta"], "signed")
+    return (
+        core_ui.span(kind, class_="tag steal" if kind == "STEAL" else "tag reach"),
+        core_ui.span(row["name"], class_="pick-name"),
+        core_ui.span(f"{row['pick_label']} · {delta} vs ADP", class_="pick-meta"),
+    )
+
+
+def _steal_reach_chips(steals, reaches):
+    chips = [core_ui.div(*_pick_tagline("STEAL", row), class_="draft-chip")
+             for _, row in steals.iterrows()]
+    chips += [core_ui.div(*_pick_tagline("REACH", row), class_="draft-chip")
+              for _, row in reaches.iterrows()]
+    if not chips:
+        return None
+    return core_ui.div(*chips, class_="draft-chips")
+
+
+def _club_card(card, rank=None):
+    picks = []
+    if card["best_value"] is not None:
+        picks.append(core_ui.div(*_pick_tagline("STEAL", card["best_value"]),
+                                 class_="card-pick"))
+    if card["biggest_reach"] is not None:
+        picks.append(core_ui.div(*_pick_tagline("REACH", card["biggest_reach"]),
+                                 class_="card-pick"))
+    return core_ui.div(
+        core_ui.div(
+            core_ui.span(str(rank), class_="card-rank") if rank else None,
+            core_ui.span(card["club"], class_="card-club"),
+            class_="card-head",
+        ),
+        core_ui.div(
+            core_ui.span(f"{card['projected']:,.0f}", class_="card-proj"),
+            core_ui.span("PROJ PTS DRAFTED", class_="card-proj-label"),
+            class_="card-projrow",
+        ),
+        core_ui.p(card["shape"], class_="card-shape"),
+        *picks,
+        class_="club-card",
+    )
+
+
+def _draft_grid_ui(clubs, rows, logos):
+    cells = [core_ui.div("RD", class_="gcell ghead gr-label")]
+    for club in clubs:
+        logo = logos.get(club)
+        cells.append(core_ui.div(
+            core_ui.tags.img(src=logo, class_="glogo") if logo else None,
+            core_ui.span(club, class_="gclub"),
+            class_="gcell ghead",
+        ))
+    for round_num, row_cells in rows:
+        cells.append(core_ui.div(str(round_num), class_="gcell gr-label"))
+        for cell in row_cells:
+            if cell is None:
+                cells.append(core_ui.div(class_="gcell gempty"))
+                continue
+            pos = str(cell["position"]) if pd.notna(cell["position"]) else ""
+            slug = pos.lower().replace("/", "")
+            cells.append(core_ui.div(
+                core_ui.div(
+                    core_ui.span(pos, class_=f"pos-badge pos-{slug}"),
+                    core_ui.span(str(int(cell["overall_pick"])), class_="gpick"),
+                    class_="gtop",
+                ),
+                core_ui.span(cell["name"], class_="gname"),
+                class_=f"gcell gplayer gpos-{slug}",
+            ))
+    template = f"36px repeat({len(clubs)}, minmax(118px, 1fr))"
+    return core_ui.div(
+        core_ui.div(*cells, class_="draft-grid",
+                    style=f"--grid-cols: {template}"),
+        class_="draft-grid-wrap",
+    )
 
 
 @render.ui
@@ -1295,6 +1391,7 @@ def screen_draft():
     club = draft_club.get() or "ALL"
     sort_key = draft_sort.get() or "draft_rank"
     descending = draft_dir.get() == "desc"
+    view = input.draft_view() or "list"
 
     board = draft.attach_picks(pool, _season_picks())
     flat = draft.flatten_stats(board)
@@ -1376,6 +1473,43 @@ def screen_draft():
                 class_="team-pill active" if club == name else "team-pill",
                 type="button",
             ))
+        if n_picks:
+            clubs.append(_clickable(
+                core_ui.tags.button, "draft_club", draft.UNDRAFTED, "Undrafted",
+                class_="team-pill active" if club == draft.UNDRAFTED else "team-pill",
+                type="button",
+            ))
+
+    steals, reaches = draft.steals_and_reaches(board)
+    chips = _steal_reach_chips(steals, reaches)
+
+    if view == "board" and n_picks:
+        cards = draft.club_summaries(board)
+        grid_clubs, grid_rows = draft.grid_data(board)
+        logos = _logos_by_name()
+        content = [
+            _draft_grid_ui(grid_clubs, grid_rows, logos),
+            core_ui.p("Projected draft standings", class_="section-label"),
+            core_ui.div(
+                *[_club_card(card, rank=i + 1) for i, card in enumerate(cards)],
+                class_="club-cards",
+            ),
+        ]
+        note = (f"{n_picks} picks over {len(grid_rows)} rounds. Cards are "
+                "ordered by total projected points drafted.")
+    else:
+        content = []
+        if club not in ("ALL", draft.UNDRAFTED):
+            card = next((c for c in draft.club_summaries(board)
+                         if c["club"] == club), None)
+            if card is not None:
+                content.append(core_ui.div(_club_card(card),
+                                           class_="club-cards single"))
+        content.append(core_ui.div(
+            core_ui.div(head, *rows, class_="draft-table"),
+            class_="draft-wrap",
+            style=f"--draft-cols:{col_template}",
+        ))
 
     return core_ui.div(
         core_ui.div(
@@ -1384,15 +1518,9 @@ def screen_draft():
             class_="title-row",
         ),
         core_ui.p(note, class_="screen-note"),
+        chips,
         core_ui.div(*clubs, class_="teamrail draft-clubs") if clubs else None,
-        core_ui.div(
-            core_ui.div(
-                head, *rows,
-                class_="draft-table",
-            ),
-            class_="draft-wrap",
-            style=f"--draft-cols:{col_template}",
-        ),
+        *content,
         class_="screen",
     )
 
@@ -1741,9 +1869,11 @@ def race_visibility_style():
     on_league = screen() == "league"
     race_display = "block" if on_league and chart() == "race" else "none"
     scores_display = "block" if on_league and chart() == "scores" else "none"
+    totals_display = "block" if on_league and chart() == "totals" else "none"
     return core_ui.tags.style(
         f"#race-wrap {{ display: {race_display}; }} "
-        f"#scores-wrap {{ display: {scores_display}; }}"
+        f"#scores-wrap {{ display: {scores_display}; }} "
+        f"#totals-wrap {{ display: {totals_display}; }}"
     )
 
 
@@ -1756,7 +1886,7 @@ with ui.div(id="chart-toggle-wrap", class_="controlrow"):
         with ui.div(class_="segment"):
             ui.input_radio_buttons(
                 "chart_pick", None,
-                {"race": "Race", "scores": "Scores"},
+                {"race": "Race", "scores": "Scores", "totals": "Totals"},
                 selected=initial_chart, inline=True,
             )
 
@@ -1806,6 +1936,27 @@ with ui.div(id="scores-wrap", class_="race-wrap"):
 @reactive.effect
 def _scores_highlight():
     charts.set_highlight(scores_plot_widget.widget, team.get())
+
+
+with ui.div(id="totals-wrap", class_="race-wrap"):
+    core_ui.p("Running points for / against", class_="section-label")
+
+    with ui.div(class_="chart-wrap"):
+        @render_widget
+        def totals_plot_widget():
+            scoped = _scope_scores()
+            if scoped.empty:
+                return charts.as_widget(charts.empty_fig())
+            widget = charts.as_widget(
+                charts.total_lines(stats.cumulative_points(scoped),
+                                   _styles(), _logos_by_name()))
+            charts.bind_hover_dim(widget)
+            return widget
+
+
+@reactive.effect
+def _totals_highlight():
+    charts.set_highlight(totals_plot_widget.widget, team.get())
 
 
 # -------------------------------------------------------------- screen: TEAMS

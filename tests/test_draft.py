@@ -1,5 +1,6 @@
 """Tests for draft-board filtering, sorting, and stat formatting."""
 import pandas as pd
+import pytest
 
 import gamedaybot.web.draft as draft
 
@@ -92,6 +93,24 @@ def test_attach_picks_adds_club_and_pick_label():
     assert pd.isna(allen["draft_team"])
 
 
+def test_sort_by_pick_uses_overall_pick_not_label_string():
+    players = draft.attach_picks(
+        _frame().assign(player_id=[10, 20, 30]),
+        pd.DataFrame([
+            {"player_id": 10, "team_name": "Aces", "round_num": 10,
+             "round_pick": 1, "overall_pick": 111},
+            {"player_id": 20, "team_name": "Aces", "round_num": 2,
+             "round_pick": 5, "overall_pick": 17},
+            {"player_id": 30, "team_name": "Aces", "round_num": 1,
+             "round_pick": 3, "overall_pick": 3},
+        ]),
+    )
+    out = draft.sort_players(players, "pick_label")
+    assert list(out["pick_label"]) == ["1.3", "2.5", "10.1"]
+    out = draft.sort_players(players, "pick_label", descending=True)
+    assert list(out["pick_label"]) == ["10.1", "2.5", "1.3"]
+
+
 def test_filter_by_club():
     players = draft.attach_picks(
         _frame().assign(player_id=[10, 20, 30]),
@@ -102,6 +121,85 @@ def test_filter_by_club():
     )
     out = draft.filter_players(players, club="Aces")
     assert list(out["name"]) == ["Ja'Marr Chase"]
+
+
+def _drafted_board():
+    """Three players drafted by two clubs, plus one left on the board."""
+    players = _frame().assign(player_id=[10, 20, 30])
+    extra = pd.DataFrame([{
+        "name": "Rome Odunze", "position": "WR", "pro_team": "CHI",
+        "draft_rank": 40, "adp": 44.0, "projected_points": 200.0,
+        "bye_week": 5, "percent_owned": 80.0, "projected_stats": {},
+        "player_id": 40,
+    }])
+    players = pd.concat([players, extra], ignore_index=True)
+    picks = pd.DataFrame([
+        {"player_id": 10, "team_name": "Aces", "round_num": 1,
+         "round_pick": 1, "overall_pick": 1},     # Chase, adp 1.2 -> -0.2
+        {"player_id": 30, "team_name": "Aces", "round_num": 2,
+         "round_pick": 2, "overall_pick": 4},     # Allen, adp 32.4 -> -28.4 reach
+        {"player_id": 20, "team_name": "Bees", "round_num": 1,
+         "round_pick": 2, "overall_pick": 2},     # Bijan, adp 2.1 -> -0.1
+    ])
+    return draft.attach_picks(players, picks)
+
+
+def test_attach_picks_computes_adp_delta():
+    board = _drafted_board()
+    allen = board[board["name"] == "Josh Allen"].iloc[0]
+    assert allen["adp_delta"] == pytest.approx(4 - 32.4)
+    odunze = board[board["name"] == "Rome Odunze"].iloc[0]
+    assert pd.isna(odunze["adp_delta"])
+
+
+def test_filter_undrafted_pill():
+    board = _drafted_board()
+    out = draft.filter_players(board, club=draft.UNDRAFTED)
+    assert list(out["name"]) == ["Rome Odunze"]
+
+
+def test_steals_and_reaches_split_by_sign():
+    board = _drafted_board()
+    # Turn Bijan into a fallen player so the steal side has an entry.
+    board.loc[board["name"] == "Bijan Robinson", "adp_delta"] = 22.9
+    steals, reaches = draft.steals_and_reaches(board, n=3)
+    assert list(steals["name"]) == ["Bijan Robinson"]
+    # Allen (-28.4) is the worst reach; Chase (-0.2) trails him.
+    assert list(reaches["name"]) == ["Josh Allen", "Ja'Marr Chase"]
+
+
+def test_club_summaries_order_by_projected_total():
+    cards = draft.club_summaries(_drafted_board())
+    assert [c["club"] for c in cards] == ["Aces", "Bees"]  # 667.5 vs 298.0
+    aces = cards[0]
+    assert aces["projected"] == pytest.approx(312.4 + 355.1)
+    assert aces["shape"] == "1 QB · 1 WR"
+    assert aces["biggest_reach"]["name"] == "Josh Allen"
+    assert aces["best_value"] is None  # no positive deltas on this club
+
+
+def test_grid_data_orders_clubs_by_first_round_slot():
+    clubs, rows = draft.grid_data(_drafted_board())
+    assert clubs == ["Aces", "Bees"]
+    assert [r for r, _cells in rows] == [1, 2]
+    round1 = rows[0][1]
+    assert round1[0]["name"] == "Ja'Marr Chase"
+    assert round1[1]["name"] == "Bijan Robinson"
+    round2 = rows[1][1]
+    assert round2[0]["name"] == "Josh Allen"
+    assert round2[1] is None  # Bees made no round-2 pick in the fixture
+
+
+def test_grid_data_empty_without_picks():
+    clubs, rows = draft.grid_data(draft.attach_picks(
+        _frame().assign(player_id=[10, 20, 30]), pd.DataFrame()))
+    assert clubs == [] and rows == []
+
+
+def test_format_stat_signed():
+    assert draft.format_stat(22.9, "signed") == "+23"
+    assert draft.format_stat(-28.4, "signed") == "-28"
+    assert draft.format_stat(-0.4, "signed") == "0"
 
 
 def test_injury_tag_hides_active():

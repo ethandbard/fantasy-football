@@ -17,6 +17,7 @@ IDENTITY_COLS = [
     ("draft_team", "Club"),
     ("bye_week", "Bye"),
     ("adp", "ADP"),
+    ("adp_delta", "+/-"),
     ("percent_owned", "%"),
     ("projected_points", "FPTS"),
     ("last_year_points", "LY"),
@@ -84,12 +85,17 @@ COL_WIDTHS = {
     "draft_team": "minmax(88px, 1fr)",
     "bye_week": "40px",
     "adp": "52px",
+    "adp_delta": "44px",
     "percent_owned": "44px",
     "projected_points": "64px",
     "last_year_points": "52px",
 }
 
 POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "D/ST"]
+
+# Sentinel club value for "players nobody drafted" -- kept out of the team
+# namespace so a club actually named Undrafted could still be filtered.
+UNDRAFTED = "__UNDRAFTED__"
 
 
 def columns_for(position):
@@ -112,6 +118,7 @@ def attach_picks(players_df, picks_df):
         out["draft_team"] = None
         out["pick_label"] = None
         out["overall_pick"] = None
+        out["adp_delta"] = None
         return out
     slim = picks_df[["player_id", "team_name", "round_num", "round_pick", "overall_pick"]].rename(
         columns={"team_name": "draft_team"}
@@ -122,6 +129,12 @@ def attach_picks(players_df, picks_df):
             return None
         return f"{int(row['round_num'])}.{int(row['round_pick'])}"
     out["pick_label"] = out.apply(_label, axis=1)
+    # Positive means the pick beat the market: the player fell, taken later
+    # than ADP said he'd go. Negative is a reach. Undrafted stays blank.
+    if "adp" in out.columns:
+        out["adp_delta"] = out["overall_pick"] - out["adp"]
+    else:
+        out["adp_delta"] = None
     return out
 
 
@@ -154,7 +167,10 @@ def filter_players(df, position="ALL", query="", club="ALL"):
     if position and position != "ALL":
         out = out[out["position"] == position]
     if club and club != "ALL" and "draft_team" in out.columns:
-        out = out[out["draft_team"] == club]
+        if club == UNDRAFTED:
+            out = out[out["draft_team"].isna()]
+        else:
+            out = out[out["draft_team"] == club]
     needle = (query or "").strip().lower()
     if needle:
         name = out["name"].fillna("").str.lower()
@@ -177,6 +193,9 @@ def sort_players(df, key="draft_rank", descending=None):
     """
     if df is None or df.empty:
         return df if df is not None else pd.DataFrame()
+    if key == "pick_label" and "overall_pick" in df.columns:
+        # pick_label is a "round.pick" string, which sorts "10.1" before "2.1".
+        key = "overall_pick"
     if key not in df.columns:
         key = "draft_rank"
     if descending is None:
@@ -184,6 +203,100 @@ def sort_players(df, key="draft_rank", descending=None):
     return df.sort_values(
         by=key, ascending=not descending, na_position="last", kind="mergesort"
     ).reset_index(drop=True)
+
+
+def steals_and_reaches(board_df, n=3):
+    """
+    The league's best and worst picks against the market, as two frames.
+
+    A steal went `adp_delta` picks later than ADP said; a reach went earlier.
+    Only genuine ones qualify -- a delta of zero is neither -- so either
+    frame can come back shorter than n, or empty.
+    """
+    cols = ["name", "position", "pick_label", "draft_team", "adp_delta"]
+    empty = pd.DataFrame(columns=cols)
+    if board_df is None or board_df.empty or "adp_delta" not in board_df.columns:
+        return empty, empty
+    drafted = board_df[board_df["adp_delta"].notna()]
+    steals = drafted[drafted["adp_delta"] > 0].nlargest(n, "adp_delta")
+    reaches = drafted[drafted["adp_delta"] < 0].nsmallest(n, "adp_delta")
+    return steals[cols].reset_index(drop=True), reaches[cols].reset_index(drop=True)
+
+
+# Roster-shape ordering for the club report cards.
+_SHAPE_ORDER = ["QB", "RB", "WR", "TE", "K", "D/ST"]
+
+
+def club_summaries(board_df):
+    """
+    One report card per club, ordered by total projected points -- which
+    makes the card order itself a projected draft standings.
+
+    Each dict carries the club name, projected total, a roster-shape string
+    ("1 QB · 5 RB · ..."), and the club's best value / biggest reach rows
+    (None when no pick qualifies).
+    """
+    if board_df is None or board_df.empty or "draft_team" not in board_df.columns:
+        return []
+    drafted = board_df[board_df["draft_team"].notna()]
+    if drafted.empty:
+        return []
+
+    cards = []
+    for club, picks in drafted.groupby("draft_team"):
+        counts = picks["position"].value_counts()
+        shape = " · ".join(
+            f"{int(counts[pos])} {pos}" for pos in _SHAPE_ORDER if pos in counts
+        )
+        valued = picks[picks["adp_delta"].notna()]
+        steals = valued[valued["adp_delta"] > 0]
+        reaches = valued[valued["adp_delta"] < 0]
+        cards.append({
+            "club": club,
+            "projected": picks["projected_points"].sum(),
+            "shape": shape,
+            "best_value": (steals.loc[steals["adp_delta"].idxmax()]
+                           if not steals.empty else None),
+            "biggest_reach": (reaches.loc[reaches["adp_delta"].idxmin()]
+                              if not reaches.empty else None),
+        })
+    cards.sort(key=lambda c: c["projected"], reverse=True)
+    return cards
+
+
+def grid_data(board_df):
+    """
+    The draft board as drawn on draft day: rounds down, clubs across.
+
+    Clubs are ordered by their round-1 slot, so the columns read in draft
+    order and the snake shows up as each even round filling right-to-left.
+    Returns (clubs, rows) where rows is [(round_num, [cell-or-None per
+    club])] and a cell is the player's row from board_df.
+    """
+    if (board_df is None or board_df.empty
+            or "round_num" not in board_df.columns):
+        return [], []
+    drafted = board_df[board_df["draft_team"].notna() & board_df["round_num"].notna()]
+    if drafted.empty:
+        return [], []
+
+    first_round = drafted[drafted["round_num"] == drafted["round_num"].min()]
+    clubs = list(first_round.sort_values("round_pick")["draft_team"])
+    # A club that traded out of round 1 still needs a column.
+    for club in drafted["draft_team"].unique():
+        if club not in clubs:
+            clubs.append(club)
+
+    rows = []
+    for round_num in sorted(drafted["round_num"].unique()):
+        in_round = drafted[drafted["round_num"] == round_num].sort_values("round_pick")
+        # One cell per club per round; a traded second pick keeps the earlier
+        # slot rather than silently replacing it.
+        by_club = {}
+        for _, row in in_round.iterrows():
+            by_club.setdefault(row["draft_team"], row)
+        rows.append((int(round_num), [by_club.get(club) for club in clubs]))
+    return clubs, rows
 
 
 def format_stat(value, kind="num"):
@@ -194,6 +307,9 @@ def format_stat(value, kind="num"):
         return value or "—"
     if kind == "int":
         return str(int(round(value)))
+    if kind == "signed":
+        rounded = int(round(value))
+        return f"{rounded:+d}" if rounded else "0"
     if kind == "pct":
         return f"{value:.1f}"
     number = float(value)

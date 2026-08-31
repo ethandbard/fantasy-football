@@ -182,6 +182,23 @@ def test_rank_by_week_tracks_the_table_over_time(scores):
     assert sorted(final.tolist()) == [1, 2, 3, 4]
 
 
+def test_cumulative_points_runs_pf_and_pa_totals(scores):
+    cum = stats.cumulative_points(scores)
+    ravens = cum[cum["team_name"] == "Ravens"].set_index("week")
+
+    # Scores 120, 130, 105, 60; opponents 100, 95, 115, 61.
+    assert ravens["cum_pf"].tolist() == [120.0, 250.0, 355.0, 415.0]
+    assert ravens["cum_pa"].tolist() == [100.0, 195.0, 310.0, 371.0]
+
+
+def test_cumulative_points_empty_frame():
+    cum = stats.cumulative_points(pd.DataFrame(columns=[
+        "week", "team_id", "team_name", "score", "opponent_id",
+    ]))
+    assert cum.empty
+    assert "cum_pf" in cum.columns and "cum_pa" in cum.columns
+
+
 def test_head_to_head_reads_row_against_column(scores):
     records, margins = stats.head_to_head(scores)
 
