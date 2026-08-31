@@ -1,0 +1,177 @@
+[
+  {
+    "objectID": "slides.html#what-this-is",
+    "href": "slides.html#what-this-is",
+    "title": "Fantasy football, week by week",
+    "section": "What this is",
+    "text": "What this is\nA bot that watches your ESPN fantasy league.\nIt talks in Discord. It also keeps a website of the season.\nYou do not start it on game day. It is already running.\n\nThe container stays up all season. League members only need Discord and a browser. No one has to remember a schedule or log into ESPN to see the same numbers."
+  },
+  {
+    "objectID": "slides.html#three-things-you-get",
+    "href": "slides.html#three-things-you-get",
+    "title": "Fantasy football, week by week",
+    "section": "Three things you get",
+    "text": "Three things you get\n\n\n\nChannel\n\n\nScheduled posts\n\nScoreboards, matchups, standings, and trophies land in Discord on their own.\n\n\n\nAnytime\n\n\nSlash commands\n\nType a command in the server when you want the current week, not the last post.\n\n\n\nThe season\n\n\nWeb dashboard\n\nCharts, records, and season awards from every week the bot has saved.\n\n\n\nThese are the only three surfaces. Scheduled posts use a webhook. Slash commands need the bot invited to the server. The dashboard is a web page, local or on a public URL."
+  },
+  {
+    "objectID": "slides.html#what-shows-up-in-discord",
+    "href": "slides.html#what-shows-up-in-discord",
+    "title": "Fantasy football, week by week",
+    "section": "What shows up in Discord",
+    "text": "What shows up in Discord\nEach post is one report. Typical reports:\n\nCurrent scores and projections\nClose games\nFinal scores and weekly trophies\nPower rankings and standings\nThursday matchups\nWaiver moves\nSunday injury watch\n\n\nThe tone matches ESPN’s own reports: names, scores, ranks. Private leagues need ESPN cookies before waiver moves appear. Public leagues skip that report."
+  },
+  {
+    "objectID": "slides.html#a-week-in-the-league-channel",
+    "href": "slides.html#a-week-in-the-league-channel",
+    "title": "Fantasy football, week by week",
+    "section": "A week in the league channel",
+    "text": "A week in the league channel\n\n\n\nMon\n\n\n\nmorning\n\n\nScores\n\n\n\n\nevening\n\n\nClose games\n\n\n\n\n\nTue\n\n\n\nmorning\n\n\nFinals, trophies\n\n\n\n\nevening\n\n\nPower rankings\n\n\n\n\n\nWed\n\n\n\nmorning\n\n\nStandings\n\n\n\n\nmorning\n\n\nWaivers\n\n\n\n\n\nThu\n\n\n\nevening\n\n\nThis week’s matchups\n\n\n\n\n\nFri\n\n\n\nmorning\n\n\nScores\n\n\n\n\n\nSun\n\n\n\nmorning\n\n\nInjuries\n\n\n\n\nafternoon / night\n\n\nLive scores\n\n\n\n\n\nTuesday morning also saves the finished week to the dashboard database. That is why the website trails live Discord by a day: it waits until Monday night football is over."
+  },
+  {
+    "objectID": "slides.html#ask-the-bot-yourself",
+    "href": "slides.html#ask-the-bot-yourself",
+    "title": "Fantasy football, week by week",
+    "section": "Ask the bot yourself",
+    "text": "Ask the bot yourself\nType / in Discord. Pick a command:\n\n\n/matchups this week’s games\n/scoreboard live scores\n/standings the table\n/power-rankings who is hot\n/monitor injuries\n/trophies this week’s awards\n/waiver-report adds and drops\n/dashboard link to the site\n\n\n\nCommands read ESPN live. The dashboard reads the saved season. If they disagree on year, the dashboard is behind until the next Tuesday snapshot, or until someone backfills a prior season."
+  },
+  {
+    "objectID": "slides.html#the-dashboard",
+    "href": "slides.html#the-dashboard",
+    "title": "Fantasy football, week by week",
+    "section": "The dashboard",
+    "text": "The dashboard\nA dark page of the whole season, opening on what just happened.\n\nLands on This week: results, movers, and everyone against their own average\nScope League and Records: regular season, playoffs, or the full season\nPick a season if more than one is saved\nClick a team anywhere. You land on its own page, every chart scoped to it\n\nThe page refreshes itself about every 30 seconds.\n\nEmpty dashboard means no snapshot has run yet. A completed past season can be loaded with the backfill script. League members never need that command; it is a maintainer step."
+  },
+  {
+    "objectID": "slides.html#four-destinations",
+    "href": "slides.html#four-destinations",
+    "title": "Fantasy football, week by week",
+    "section": "Four destinations",
+    "text": "Four destinations\n\n\n\nThis week\n\nScores, movers, and week bests. The front page, no configuring required.\n\n\n\nLeague\n\nA readable standings board, plus the one chart with ten lines: the race.\n\n\n\nTeams\n\nOne page per team: game log, range vs the league, and every head-to-head.\n\n\n\nRecords\n\nThe record book. Every row is a click into the team it belongs to.\n\n\n\nFive tabs became four. Trend’s rank view moved into League as “the race.” Spread and head to head moved into Teams, scoped to one team instead of ten at once. Trophies became Records, a ledger instead of a card grid."
+  },
+  {
+    "objectID": "slides.html#the-record-book",
+    "href": "slides.html#the-record-book",
+    "title": "Fantasy football, week by week",
+    "section": "The record book",
+    "text": "The record book\nTwelve awards, not a single champion graphic.\nHighest score. Closest game. Biggest blowout. Luckiest win.\nClick a row. You land on that team’s page, ready to dig further.\n\nThis is the feature people remember. The old version showed the award and stopped. Now every row is a way into a team’s own page."
+  },
+  {
+    "objectID": "slides.html#before-and-after-the-trend-chart",
+    "href": "slides.html#before-and-after-the-trend-chart",
+    "title": "Fantasy football, week by week",
+    "section": "Before and after: the trend chart",
+    "text": "Before and after: the trend chart\n\n\n\nBefore\n\n\n\nAfter\n\n\n\nTen lines fighting for the same axis versus a page that opens on the one thing everyone actually wants Sunday night: what just happened."
+  },
+  {
+    "objectID": "slides.html#before-and-after-every-pairing-at-once",
+    "href": "slides.html#before-and-after-every-pairing-at-once",
+    "title": "Fantasy football, week by week",
+    "section": "Before and after: every pairing at once",
+    "text": "Before and after: every pairing at once\n\n\n\nBefore\n\n\n\nAfter\n\n\n\nThe 10x10 heatmap asked the reader to hold two axes of team names in their head, and broke under about 900px. One team’s page carries the same information as a nine-row strip."
+  },
+  {
+    "objectID": "slides.html#before-and-after-standings-and-trophies",
+    "href": "slides.html#before-and-after-standings-and-trophies",
+    "title": "Fantasy football, week by week",
+    "section": "Before and after: standings and trophies",
+    "text": "Before and after: standings and trophies\n\n\n\nBefore\n\n\n\nAfter\n\n\n\nStandings becomes a board with a sparkline per row and a real playoff cutoff, plus “the race” underneath – the one chart out of five that survived, because it’s the one where ten lines earn their keep."
+  },
+  {
+    "objectID": "slides.html#before-and-after-the-card-grid",
+    "href": "slides.html#before-and-after-the-card-grid",
+    "title": "Fantasy football, week by week",
+    "section": "Before and after: the card grid",
+    "text": "Before and after: the card grid\n\n\n\nBefore\n\n\n\nAfter\n\n\n\nA card grid said “here are twelve facts.” A ledger with the value large and right-aligned lets the column of numbers be scanned, and the arrow promises the click."
+  },
+  {
+    "objectID": "slides.html#where-it-started",
+    "href": "slides.html#where-it-started",
+    "title": "Fantasy football, week by week",
+    "section": "Where it started",
+    "text": "Where it started\n\n\n\n\nThe first working version of this dashboard: light theme, a sidebar, four stat boxes, four tabs. Same underlying data as every version since. Worth keeping around as a reminder of how far a Shiny Express app can travel without ever touching the numbers underneath it."
+  },
+  {
+    "objectID": "slides.html#what-you-do",
+    "href": "slides.html#what-you-do",
+    "title": "Fantasy football, week by week",
+    "section": "What you do",
+    "text": "What you do\nNothing on Sunday morning.\nOpen Discord for the latest post, or type a slash command.\nOpen the dashboard when you want the season, not the week.\n\nIf someone asks how to log in: they don’t. Discord is the league server they already belong to. The dashboard is https://fantasy.ethandbard.com/, or localhost:8000 on the host machine."
+  },
+  {
+    "objectID": "slides.html#where-to-read-more",
+    "href": "slides.html#where-to-read-more",
+    "title": "Fantasy football, week by week",
+    "section": "Where to read more",
+    "text": "Where to read more\nThe longer write-up is the same site at two URLs:\n\nhttps://fantasy-docs.ethandbard.com/ — the URL to share\nhttps://ethandbard.github.io/fantasy-football/ — GitHub Pages\n\nThe dashboard is separate. That lives at https://fantasy.ethandbard.com/.\n\nThe custom hostname is the one to send people. GitHub Pages is the origin copy. The live league dashboard is a different host: the Shiny app behind Cloudflare Tunnel, not these static files."
+  },
+  {
+    "objectID": "slides.html#how-that-write-up-updates",
+    "href": "slides.html#how-that-write-up-updates",
+    "title": "Fantasy football, week by week",
+    "section": "How that write-up updates",
+    "text": "How that write-up updates\nPush to main. A GitHub Action renders docs/ onto the gh-pages branch.\nGitHub Pages serves one URL from that branch.\nA Cloudflare Worker fetches that copy for the custom hostname.\nA content change needs a push. Redeploy the Worker only if proxy-worker.js changes.\n\nThe Action is .github/workflows/quarto-publish.yml. Wrangler deploy from docs/ is only for the Worker script. The two docs URLs stay in sync because the Worker does not store its own HTML."
+  },
+  {
+    "objectID": "slides.html#credits",
+    "href": "slides.html#credits",
+    "title": "Fantasy football, week by week",
+    "section": "Credits",
+    "text": "Credits\nBuilt on gamedaybot by Dean Carlson.\nSource: ethandbard/fantasy-football\nOverview: fantasy-docs.ethandbard.com"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "",
+    "text": "ESPN fantasy football\n\n\n\n\nOne Docker container posts ESPN reports on a schedule, answers slash commands, and serves a web dashboard of league history."
+  },
+  {
+    "objectID": "index.html#a-typical-week",
+    "href": "index.html#a-typical-week",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "A typical week",
+    "text": "A typical week\nThe scheduler follows the NFL game clock for some jobs. Those times stay on Eastern. All other times follow TIMEZONE.\n\n\n\nMon\n\n\n\n9:00 AM\n\n\nScore update\n\n\n\n\n6:30 PM ET\n\n\nClose scores\n\n\n\n\n\nTue\n\n\n\n6:00 AM ET\n\n\nDashboard snapshot\n\n\n\n\n9:00 AM\n\n\nFinals and trophies\n\n\n\n\n6:30 PM\n\n\nPower rankings\n\n\n\n\n\nWed\n\n\n\n9:00 AM\n\n\nStandings\n\n\n\n\n9:01 AM\n\n\nWaiver report\n\n\n\n\n\nThu\n\n\n\n7:30 PM ET\n\n\nMatchups\n\n\n\n\n\nFri\n\n\n\n9:00 AM\n\n\nScore update\n\n\n\n\n\nSun\n\n\n\n9:00 AM\n\n\nInjury monitor\n\n\n\n\n4:00 / 8:00 PM ET\n\n\nScore updates\n\n\n\n\n\nSet DAILY_WAIVER to True to post the waiver report every day at 9:01 AM, not only Wednesday. The Tuesday snapshot waits until Monday night football is final. A trade check also runs every hour, every day: each trade is announced once, within the hour it clears."
+  },
+  {
+    "objectID": "index.html#slash-commands-1",
+    "href": "index.html#slash-commands-1",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "Slash commands",
+    "text": "Slash commands\nSlash commands need DISCORD_BOT_TOKEN. If ESPN returns an error, the bot explains that the season may not have started yet.\n\n\n\nCommand\nReturns\n\n\n\n\n/matchups\nThe current week’s matchups.\n\n\n/scoreboard\nThe current scoreboard.\n\n\n/standings\nThe current standings.\n\n\n/power-rankings\nThe current power rankings.\n\n\n/monitor\nThe injury and player monitor report.\n\n\n/trophies\nThis week’s trophies.\n\n\n/waiver-report\nRecent waiver moves. Private leagues only.\n\n\n/dashboard\nA link to the web dashboard."
+  },
+  {
+    "objectID": "index.html#dashboard",
+    "href": "index.html#dashboard",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "Dashboard",
+    "text": "Dashboard\nThe dashboard reads data/fantasy.db. It does not call ESPN on its own. It opens on This week, the latest collected week for the season. League and Records carry a scope segment — Regular, Playoffs, or Full — that sets which weeks are in play. The regular-season boundary comes from the data. A team’s wins plus losses plus ties is how many games it has played.\n\n\nThis week\nResults ordered closest-first, who moved in the standings, the week’s bests, and every team against its own average. Nothing to configure.\n\n\nLeague\nThe standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it, the head-to-head grid, the season’s trade ledger, and “the race”: rank by week for every team on one chart.\n\n\nTeams\nOne page per team: a game log, range vs the league (floor, ceiling, and median next to the league’s), and every head-to-head matchup for that team, sorted by average margin.\n\n\nRecords\nThe record book. Twelve season awards, each a row with its scoreline and week, that links straight to the team it belongs to.\n\n\nSelecting a team — a standings row, a matchup, a record-book row, or the team picker itself — takes you to that team’s own page rather than filtering a shared chart. The dashboard has no reset button because there is nothing left to un-filter: each destination shows the whole league, or one team, never a muted version of either.\nA dropdown in the masthead selects the season. Only seasons in the database appear there. The page polls the database every 30 seconds, so a new snapshot reaches an open tab on its own, advancing This week’s default view along with it.\nReach the dashboard at http://localhost:8000 locally, or at https://fantasy.ethandbard.com/."
+  },
+  {
+    "objectID": "index.html#before-and-after",
+    "href": "index.html#before-and-after",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "Before and after",
+    "text": "Before and after\nThe dashboard has gone through three shapes. The first version proved the idea — one SQLite file, four stat boxes, four tabs, Bootstrap defaults. It grew into a five-tab dark build with a shared week-range slider. The redesign below restructures that build into four destinations, without changing a single number underneath it.\n\n\n\n\n\nThe old Trend tab: ten teams’ weekly scores on one line chart.\n\n\nBefore — Trend\n\n\n\n\n\nThis week: results, movers, and the week’s bests, open by default.\n\n\nAfter — This week\n\n\n\n\n\n\n\nThe 10×10 head-to-head heatmap, unreadable under about 900px.\n\n\nBefore — Head to head\n\n\n\n\n\nA team’s own page: game log, range vs the league, and a nine-row head-to-head strip.\n\n\nAfter — Teams\n\n\n\n\n\n\n\nThe old Standings table.\n\n\nBefore — Standings\n\n\n\n\n\nThe new standings board, with a sparkline per row and “the race” below it.\n\n\nAfter — League\n\n\n\n\n\n\n\nThe Trophies tab as a twelve-card grid.\n\n\nBefore — Trophies\n\n\n\n\n\nThe record book: every award a row, every row a link to its team.\n\n\nAfter — Records\n\n\nThe very first version, for scale:\n\n\n\n\nThe first working build — light theme, a sidebar, four stat boxes, four tabs. Same underlying data as every version since."
+  },
+  {
+    "objectID": "index.html#how-it-runs",
+    "href": "index.html#how-it-runs",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "How it runs",
+    "text": "How it runs\nThe entrypoint gamedaybot/run.py starts three parts in one process:\n\n\n\n\n\nflowchart LR\n  ESPN[\"ESPN API\"] --&gt; Bot[\"fantasy-bot container\"]\n  Bot --&gt; Hook[\"Discord webhook\"]\n  Bot --&gt; Slash[\"Slash-command bot\"]\n  Bot --&gt; DB[\"SQLite in data/\"]\n  DB --&gt; Dash[\"Shiny dashboard :8000\"]\n  Dash --&gt; Tunnel[\"Cloudflare Tunnel\"]\n\n\n\n\n\n\n\nA scheduler posts recurring reports to a Discord webhook.\nA Discord gateway bot answers slash commands, if DISCORD_BOT_TOKEN is set.\nA Shiny dashboard on port 8000, backed by SQLite in data/.\n\nA Cloudflare tunnel publishes the dashboard. On the VPS that is the shared connector on the edge network. Off the VPS it is an optional cloudflared sidecar with its own tunnel credentials. DASHBOARD_URL in config.env is the link /dashboard returns.\nSecrets stay in config.env. Docker Compose loads them through env_file, so no secret is baked into the image."
+  },
+  {
+    "objectID": "index.html#where-the-code-lives",
+    "href": "index.html#where-the-code-lives",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "Where the code lives",
+    "text": "Where the code lives\n\n\n\n\n\n\n\nPath\nRole\n\n\n\n\ngamedaybot/run.py\nContainer entrypoint.\n\n\ngamedaybot/espn/\nESPN access, report text, and the scheduler.\n\n\ngamedaybot/discord_bot/\nSlash commands, webhook client, and embeds.\n\n\ngamedaybot/storage/db.py\nSQLite schema and queries.\n\n\ngamedaybot/web/\nDashboard layout, season math, and charts.\n\n\ndev/\nAPI health check and season backfill.\n\n\ntests/\nTests for web/stats.py.\n\n\ndocs/\nThis overview, the slide deck, and the docs Worker.\n\n\n\nThe README covers configuration, Docker setup, tunnel setup, and troubleshooting. This page is the public overview. The slide deck is a shorter walkthrough of the same three parts."
+  },
+  {
+    "objectID": "index.html#preview-and-publish-this-site",
+    "href": "index.html#preview-and-publish-this-site",
+    "title": "League updates in Discord. The season on a dashboard.",
+    "section": "Preview and publish this site",
+    "text": "Preview and publish this site\nThe overview and slides are a Quarto website in docs/.\nPreview:\nquarto preview docs\nRender:\nquarto render docs\nOutput lands in docs/_site. Two public URLs serve that folder:\n\n\n\n\n\n\n\nURL\nHow it is served\n\n\n\n\nhttps://ethandbard.github.io/fantasy-football/\nGitHub Pages, from the gh-pages branch\n\n\nhttps://fantasy-docs.ethandbard.com/\nA Cloudflare Worker that fetches the GitHub Pages copy\n\n\n\nPush to main to publish content. The workflow in .github/workflows/quarto-publish.yml renders docs/ and deploys docs/_site to gh-pages. GitHub Pages serves that branch. The Worker at the custom hostname fetches the same GitHub Pages site. Both URLs then show the new render.\nThe Worker script is proxy-worker.js in this directory. Redeploy it only when that file changes:\ncd docs\nnpx wrangler deploy\nA change to the Quarto pages does not need wrangler deploy. Push to main is enough.\nDo not run a second copy of the bot stack on another host at the same time. Two schedulers post every report twice. The docs site has no such limit: it is static files only."
+  }
+]
