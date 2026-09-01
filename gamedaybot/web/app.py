@@ -1480,7 +1480,12 @@ def screen_draft():
                 type="button",
             ))
 
-    steals, reaches = draft.steals_and_reaches(board)
+    # Chips follow the position tab so QB shows QB steals, not the same
+    # league-wide three on every view. Club and search stay out of it: the
+    # club card already covers the former, and chips flickering while
+    # typing a name helps nobody.
+    chip_pool = board if position == "ALL" else board[board["position"] == position]
+    steals, reaches = draft.steals_and_reaches(chip_pool)
     chips = _steal_reach_chips(steals, reaches)
 
     if view == "board" and n_picks:
@@ -1939,7 +1944,8 @@ def _scores_highlight():
 
 
 with ui.div(id="totals-wrap", class_="race-wrap"):
-    core_ui.p("Running points for / against", class_="section-label")
+    core_ui.p("Running total points — hover a team to compare its points against",
+              class_="section-label")
 
     with ui.div(class_="chart-wrap"):
         @render_widget

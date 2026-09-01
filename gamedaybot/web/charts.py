@@ -299,11 +299,12 @@ def total_lines(cum_df, styles, logos=None):
     """
     Running season totals: cumulative points for (solid) and against (dashed).
 
-    Both of a team's lines carry the same trace name, so bind_hover_dim and
-    set_highlight treat the pair as one unit -- hovering either line keeps
-    both bright, which is what makes 2N lines readable at all. The name and
-    logo sit at the PF endpoint only; the dashed PA line is identified by its
-    color and the hover text.
+    The PA lines start hidden -- 2N always-on lines drowned the chart -- and
+    are tagged meta="pa" so bind_hover_dim / set_highlight can reveal a
+    team's PA line only while that team is hovered or highlighted. Both of a
+    team's lines carry the same trace name, so the pair moves as one unit.
+    The name and logo sit at the PF endpoint only; a revealed PA line is
+    identified by its color and the hover text.
     """
     if cum_df.empty:
         return empty_fig()
@@ -340,7 +341,7 @@ def total_lines(cum_df, styles, logos=None):
         fig.add_trace(go.Scatter(
             x=rows["week"], y=rows["cum_pa"], name=name, mode="lines",
             line=dict(color=style["color"], width=1.6, dash="dash"),
-            showlegend=False,
+            showlegend=False, visible=False, meta="pa",
             hovertemplate=(f"<b>{name}</b><br>Week %{{x}} · "
                            "%{y:.1f} PA<extra></extra>"),
         ))
@@ -375,11 +376,15 @@ def bind_hover_dim(widget):
     def _dim(target_name):
         with widget.batch_update():
             for trace in widget.data:
+                if trace.meta == "pa":
+                    trace.visible = trace.name == target_name
                 trace.opacity = 1.0 if trace.name == target_name else 0.2
 
     def _reset():
         with widget.batch_update():
             for trace in widget.data:
+                if trace.meta == "pa":
+                    trace.visible = False
                 trace.opacity = 1.0
 
     for trace in widget.data:
@@ -395,4 +400,6 @@ def set_highlight(widget, team_name):
         return
     with widget.batch_update():
         for trace in widget.data:
+            if trace.meta == "pa":
+                trace.visible = team_name == trace.name
             trace.opacity = 1.0 if team_name in (None, trace.name) else 0.2

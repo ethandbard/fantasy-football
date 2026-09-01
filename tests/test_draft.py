@@ -168,6 +168,31 @@ def test_steals_and_reaches_split_by_sign():
     assert list(reaches["name"]) == ["Josh Allen", "Ja'Marr Chase"]
 
 
+def test_steals_and_reaches_survive_seasons_without_picks():
+    # 2025 has a player pool but no draft_picks rows; the all-None adp_delta
+    # column came out dtype object, which nlargest refuses (crashed the page).
+    board = draft.attach_picks(_frame().assign(player_id=[10, 20, 30]),
+                               pd.DataFrame())
+    steals, reaches = draft.steals_and_reaches(board)
+    assert steals.empty and reaches.empty
+
+
+def test_steals_and_reaches_survive_object_adp_column():
+    players = _frame().assign(player_id=[10, 20, 30])
+    players["adp"] = pd.Series([1.2, None, 32.4], dtype=object)
+    picks = pd.DataFrame([
+        {"player_id": 10, "team_name": "Aces", "round_num": 1,
+         "round_pick": 1, "overall_pick": 1},
+        {"player_id": 20, "team_name": "Bees", "round_num": 1,
+         "round_pick": 2, "overall_pick": 2},
+    ])
+    board = draft.attach_picks(players, picks)
+    steals, reaches = draft.steals_and_reaches(board)
+    # Chase went 1 overall against a 1.2 ADP: the only pick with a delta.
+    assert list(reaches["name"]) == ["Ja'Marr Chase"]
+    assert steals.empty
+
+
 def test_club_summaries_order_by_projected_total():
     cards = draft.club_summaries(_drafted_board())
     assert [c["club"] for c in cards] == ["Aces", "Bees"]  # 667.5 vs 298.0

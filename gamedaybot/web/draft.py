@@ -117,8 +117,10 @@ def attach_picks(players_df, picks_df):
     if picks_df is None or picks_df.empty:
         out["draft_team"] = None
         out["pick_label"] = None
-        out["overall_pick"] = None
-        out["adp_delta"] = None
+        # Float NaN, not None: an all-None column comes out dtype object,
+        # which sort_values tolerates but nlargest/nsmallest refuse.
+        out["overall_pick"] = float("nan")
+        out["adp_delta"] = float("nan")
         return out
     slim = picks_df[["player_id", "team_name", "round_num", "round_pick", "overall_pick"]].rename(
         columns={"team_name": "draft_team"}
@@ -132,9 +134,13 @@ def attach_picks(players_df, picks_df):
     # Positive means the pick beat the market: the player fell, taken later
     # than ADP said he'd go. Negative is a reach. Undrafted stays blank.
     if "adp" in out.columns:
-        out["adp_delta"] = out["overall_pick"] - out["adp"]
+        # Coerce both sides: adp arrives object-dtype when the snapshot has
+        # missing values, and object minus object either throws or infects
+        # adp_delta with the same dtype.
+        out["adp_delta"] = (pd.to_numeric(out["overall_pick"], errors="coerce")
+                            - pd.to_numeric(out["adp"], errors="coerce"))
     else:
-        out["adp_delta"] = None
+        out["adp_delta"] = float("nan")
     return out
 
 
@@ -217,7 +223,9 @@ def steals_and_reaches(board_df, n=3):
     empty = pd.DataFrame(columns=cols)
     if board_df is None or board_df.empty or "adp_delta" not in board_df.columns:
         return empty, empty
-    drafted = board_df[board_df["adp_delta"].notna()]
+    drafted = board_df.assign(
+        adp_delta=pd.to_numeric(board_df["adp_delta"], errors="coerce"))
+    drafted = drafted[drafted["adp_delta"].notna()]
     steals = drafted[drafted["adp_delta"] > 0].nlargest(n, "adp_delta")
     reaches = drafted[drafted["adp_delta"] < 0].nsmallest(n, "adp_delta")
     return steals[cols].reset_index(drop=True), reaches[cols].reset_index(drop=True)
