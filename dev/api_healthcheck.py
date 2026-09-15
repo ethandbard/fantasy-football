@@ -14,6 +14,9 @@ import sys
 
 from espn_api.football import League
 
+sys.path.insert(1, os.path.abspath('.'))
+import gamedaybot.espn.collector as collector  # noqa: E402
+
 
 def load_env():
     required = ["LEAGUE_ID", "LEAGUE_YEAR"]
@@ -62,7 +65,7 @@ def report(league):
     print(f"Scoring period:   {league.scoringPeriodId}")
     print(f"Matchup periods:  {len(league.settings.matchup_periods)}")
 
-    season_active = league.scoringPeriodId <= len(league.settings.matchup_periods)
+    season_active = league.scoringPeriodId <= collector.last_scoring_period(league)
     print(f"Season active:    {season_active}")
     if not season_active:
         print("  (this is expected before the draft / season kickoff -- most")

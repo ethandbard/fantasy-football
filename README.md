@@ -174,6 +174,10 @@ active season, so past seasons' trades cannot be backfilled.
 
 The Tuesday 6:00 AM snapshot writes the finished week's scores and standings to
 `data/fantasy.db`. It runs after Monday night football so the week is final.
+ESPN has already moved its current week on by then, so the job fetches every
+week up to it and stores only the ones with points on the board. A week nobody
+has played yet is never stored, and a stale pre-kickoff snapshot of one is
+removed once the run sees it is unplayed.
 
 ## Slash commands
 

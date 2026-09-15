@@ -155,7 +155,14 @@ def espn_bot(function):
         collector.collect_league_state(league)
         return
 
-    if league.scoringPeriodId > len(league.settings.matchup_periods):
+    # Against the last scoring period, not the number of matchup periods:
+    # the two-week playoff rounds make 18 weeks out of 16 matchups, and the
+    # shorter bound would silently skip the final three Tuesday snapshots.
+    # One period of grace, because ESPN has moved on to the next scoring
+    # period by the time the Tuesday jobs fire -- the final week's snapshot
+    # and its Discord report happen after the season's last period.
+    # END_DATE keeps the scheduler from running anything past that.
+    if league.scoringPeriodId > collector.last_scoring_period(league) + 1:
         logger.info("Not in active season")
         return
 

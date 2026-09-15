@@ -184,3 +184,27 @@ def test_get_years_includes_player_only_seasons(fresh_db):
     fresh_db.replace_players(2026, [_player(1)])
 
     assert fresh_db.get_years() == [2026, 2025]
+
+
+def test_a_week_with_no_points_is_offered_for_recollection(fresh_db):
+    """A snapshot taken before kickoff: every column present, every score
+    zero. It has to be fetched again once the games are played."""
+    fresh_db.upsert_weekly_scores([
+        _row(1, 1, score=0.0, matchup_score=0.0),
+        _row(1, 2, score=0.0, matchup_score=0.0),
+    ])
+
+    assert fresh_db.get_collected_weeks(2025) == set()
+
+
+def test_delete_week_removes_scores_and_standings_and_reports_it(fresh_db):
+    fresh_db.upsert_weekly_scores([_row(1, 1), _row(1, 2), _row(2, 1), _row(2, 2)])
+    fresh_db.upsert_standings([{
+        "year": 2025, "week": 2, "team_id": 1, "team_name": "Team 1", "wins": 1,
+        "losses": 0, "ties": 0, "points_for": 1.0, "points_against": 0.0, "rank": 1,
+    }])
+
+    assert fresh_db.delete_week(2025, 2) == 3
+    assert fresh_db.delete_week(2025, 2) == 0
+    assert fresh_db.get_collected_weeks(2025) == {1}
+    assert fresh_db.get_all_latest_standings() == []

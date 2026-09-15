@@ -26,6 +26,15 @@ def collect_weekly_snapshot(league):
     league.standings() succeeds before the draft even though box_scores()
     doesn't -- collecting it unconditionally writes a meaningless 0-0
     snapshot of however many teams have joined so far.
+
+    league.current_week is ESPN's *upcoming* week, not the one just played.
+    ESPN advances it in its nightly update early Tuesday, before this job
+    fires, so on the Tuesday after week 1 it already says 2 -- and on the
+    Tuesday before kickoff it says 1 with nothing played. Every week up to
+    it is fetched and each is stored only if it has been played; an
+    unplayed week is not a snapshot of anything, and storing its zeros is
+    what put a 0-0 week 1 and an all-zero "latest" week on the 2026
+    dashboard.
     """
     db.init_db()
     year = league.year
@@ -37,22 +46,25 @@ def collect_weekly_snapshot(league):
     # of leaving a permanent hole. "Missing" also covers a week whose rows
     # predate a column the dashboard now needs, so a schema addition repairs
     # the season behind it rather than leaving the weeks either side of the
-    # change reading differently. The current week is always re-collected,
-    # since its scores may have been corrected since the last run.
+    # change reading differently -- and a week stored with no points at all,
+    # which is the unplayed-week case above. The newest stored week is always
+    # re-collected, since its scores may have been corrected since the last
+    # run.
     already_have = db.get_collected_weeks(year)
-    collected = False
+    newest_have = max(already_have) if already_have else 0
+    last_played = None
     for w in range(1, week + 1):
-        if w in already_have and w != week:
+        if w in already_have and w != newest_have:
             continue
         if _collect_scores(league, year, w):
-            collected = True
+            last_played = w
 
-    if not collected:
-        logger.info("No box scores for %s through week %s -- skipping standings "
-                    "(season likely hasn't started)", year, week)
+    if last_played is None:
+        logger.info("No played weeks for %s through week %s -- skipping "
+                    "standings (season likely hasn't started)", year, week)
         return
 
-    _collect_standings(league, year, week)
+    _collect_standings(league, year, last_played)
 
 
 def collect_historical_season(league):
@@ -69,12 +81,7 @@ def collect_historical_season(league):
     db.init_db()
     year = league.year
     collect_league_state(league)
-    # The loop bound must be the last *scoring* period, not the number of
-    # matchup periods -- a two-week playoff round is one matchup period that
-    # spans two scoring periods, so len(matchup_periods) undercounts weeks
-    # once the playoffs start (16 matchup periods but 18 scoring periods).
-    periods = league.settings.matchup_periods
-    last_week = max(sp for sps in periods.values() for sp in sps)
+    last_week = last_scoring_period(league)
 
     collected_any = False
     for week in range(1, last_week + 1):
@@ -90,6 +97,31 @@ def collect_historical_season(league):
     collect_trades(league, size=200)
 
     return collected_any
+
+
+def last_scoring_period(league):
+    """
+    The season's final week number.
+
+    This is the last *scoring* period, not the number of matchup periods -- a
+    two-week playoff round is one matchup period that spans two scoring
+    periods, so len(matchup_periods) undercounts weeks once the playoffs
+    start (16 matchup periods but 18 scoring periods).
+    """
+    periods = league.settings.matchup_periods
+    return max(sp for sps in periods.values() for sp in sps)
+
+
+def week_is_unplayed(rows):
+    """
+    Whether a week's score rows describe games nobody has played yet.
+
+    ESPN serves the schedule for a future week with every score at zero, so
+    a week where no team on either side of any matchup has a point is one
+    that has not started. A played week cannot look like this: one team can
+    post a zero, but not all of them.
+    """
+    return not any(r["score"] or r["matchup_score"] for r in rows)
 
 
 def _scoring_to_matchup_period(league):
@@ -109,7 +141,15 @@ def _lineup_score(lineup):
 
 
 def _collect_scores(league, year, week):
-    """Returns True if any score rows were written for the given week."""
+    """
+    Returns True if any score rows were written for the given week.
+
+    A week ESPN has on the schedule but nobody has played yet is not stored.
+    Any rows already sitting in the database for it are removed instead --
+    they can only be a snapshot taken before kickoff, and leaving them would
+    make the week look collected to the next run and finished to the
+    dashboard.
+    """
     try:
         box_scores = league.box_scores(week=week)
     except Exception as e:
@@ -143,6 +183,12 @@ def _collect_scores(league, year, week):
         })
 
     if not rows:
+        return False
+
+    if week_is_unplayed(rows):
+        if db.delete_week(year, week):
+            logger.info("Removed stale pre-kickoff rows for %s week %s", year, week)
+        logger.info("Week %s of %s has not been played yet -- not stored", week, year)
         return False
 
     db.upsert_weekly_scores(rows)
@@ -424,7 +470,7 @@ def collect_schedule(league):
     is_home comes from ESPN directly rather than being guessed.
     """
     scoring_to_matchup = _scoring_to_matchup_period(league)
-    last_week = max(sp for sps in league.settings.matchup_periods.values() for sp in sps)
+    last_week = last_scoring_period(league)
 
     rows = []
     for week in range(1, last_week + 1):

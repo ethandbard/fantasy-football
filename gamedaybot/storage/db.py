@@ -486,6 +486,10 @@ def get_collected_weeks(year):
     missing costs one extra ESPN call per stale week, once, and lets the
     normal Tuesday run repair a database that would otherwise stay wrong
     forever.
+
+    A week whose rows carry no points at all is not collected either: it is
+    a snapshot taken before the week's games were played, and the real
+    scores still have to be fetched.
     """
     with get_connection() as conn:
         rows = conn.execute(
@@ -494,10 +498,29 @@ def get_collected_weeks(year):
             GROUP BY week
             HAVING COUNT(*) = COUNT(matchup_period)
                AND COUNT(*) = COUNT(matchup_score)
+               AND COALESCE(SUM(score), 0) + COALESCE(SUM(matchup_score), 0) > 0
             """,
             (year,),
         ).fetchall()
         return {r["week"] for r in rows}
+
+
+def delete_week(year, week):
+    """
+    Drops one week's scores and standings snapshot. Returns the number of
+    rows removed, so the caller can tell a real purge from a no-op.
+
+    Used when the collector finds a stored week that ESPN says has not been
+    played -- rows that can only have come from a pre-kickoff snapshot.
+    """
+    with get_connection() as conn:
+        scores = conn.execute(
+            "DELETE FROM weekly_scores WHERE year = ? AND week = ?", (year, week)
+        ).rowcount
+        standings = conn.execute(
+            "DELETE FROM standings_snapshot WHERE year = ? AND week = ?", (year, week)
+        ).rowcount
+        return scores + standings
 
 
 def fingerprint():

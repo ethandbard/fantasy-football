@@ -47,6 +47,9 @@ a 🏆 all-time card can name champions.
 
 ### Deploy
 
-Everything above Remaining exists only locally. The VPS is still on the
-pre-Next-up build, and its database may lack the 2026 schedule projections
-until the code lands and the daily job runs.
+Deployed 2026-09-15, along with the unplayed-week fix: the Tuesday snapshot
+had been storing ESPN's *upcoming* week as zeros (a 0-0 week 1 on Sept 8, an
+all-zero week 2 on Sept 15) because ESPN advances its current week before
+the 6:00 AM job. The collector now stores only played weeks and purges a
+stale pre-kickoff snapshot; the season gate counts scoring periods, not
+matchup periods, so weeks 16–18 get collected this year.
