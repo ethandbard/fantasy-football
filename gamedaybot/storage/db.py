@@ -125,7 +125,25 @@ CREATE TABLE IF NOT EXISTS draft_picks (
     collected_at TEXT,
     PRIMARY KEY (year, overall_pick)
 );
+
+-- Prose written by the agents for the dashboard: one row per (kind, year,
+-- week), replaced when a job runs again. In the database rather than a file
+-- so a new piece changes the fingerprint and reaches open tabs on its own.
+CREATE TABLE IF NOT EXISTS site_content (
+    kind TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    title TEXT,
+    body TEXT NOT NULL,
+    run_id TEXT,
+    written_at TEXT,
+    PRIMARY KEY (kind, year, week)
+);
 """
+
+# The kinds of prose the dashboard knows where to show. The agent's write
+# tool refuses anything else, so a mistyped kind cannot land as an orphan row.
+SITE_CONTENT_KINDS = ("recap",)
 
 
 @contextmanager
@@ -369,6 +387,34 @@ def get_all_trades():
         return [dict(r) for r in rows]
 
 
+def upsert_site_content(kind, year, week, body, title=None, run_id=None):
+    """
+    Write one piece of dashboard prose, replacing the same (kind, year,
+    week) if it exists. Raises ValueError for a kind the dashboard has no
+    place for.
+    """
+    if kind not in SITE_CONTENT_KINDS:
+        raise ValueError(f"unknown site content kind {kind!r}; known: {', '.join(SITE_CONTENT_KINDS)}")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO site_content
+                (kind, year, week, title, body, run_id, written_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (kind, int(year), int(week), title, body, run_id),
+        )
+
+
+def get_all_site_content():
+    """Every piece of dashboard prose, newest first."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM site_content ORDER BY year DESC, week DESC, kind"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_years():
     """Seasons present in scores, the player pool, teams, or the draft."""
     with get_connection() as conn:
@@ -556,7 +602,9 @@ def fingerprint():
                    (SELECT COALESCE(SUM(projected_score), 0) FROM schedule),
                    (SELECT COUNT(*) FROM team_logos),
                    (SELECT COALESCE(MAX(collected_at), '') FROM team_logos),
-                   (SELECT COUNT(*) FROM trades)
+                   (SELECT COUNT(*) FROM trades),
+                   (SELECT COUNT(*) FROM site_content),
+                   (SELECT COALESCE(MAX(written_at), '') FROM site_content)
             """
         ).fetchone())
 

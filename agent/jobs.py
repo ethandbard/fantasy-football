@@ -66,6 +66,12 @@ JOBS = {
         "ask", "League analyst", "answer", "light",
         ["analyst"], web=True, writes=False, max_turns_key="light", search_cap_key="light",
         prompt_file="analyst.md", owner_job=False, post_brief=False),
+    # League-facing prose for the dashboard. Public tools only, no web, no
+    # Discord brief: the site_content row is the output.
+    "recap": JobSpec(
+        "recap", "League recap", "brief", "light",
+        ["analyst", "site"], web=False, writes=False, max_turns_key="light", search_cap_key="light",
+        prompt_file="recap.md", owner_job=False, post_brief=False),
 }
 
 
@@ -104,6 +110,9 @@ def user_prompt(spec, ctx, params):
     cfg = ctx.cfg
     values = {
         "week": ctx.week, "scoring_period": ctx.scoring_period,
+        # ESPN rolls its current week on Tuesday morning, so "the week just
+        # played" is one behind unless the caller says which.
+        "played_week": int((params or {}).get("week") or max(1, ctx.week - 1)),
         "now": now.strftime("%A %B %d, %Y %I:%M %p ET"),
         "team": ctx.team_name(cfg.team_id), "team_id": cfg.team_id, "owner_team_id": cfg.team_id,
         "search_cap": cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap,

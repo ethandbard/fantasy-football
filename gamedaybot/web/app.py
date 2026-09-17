@@ -10,6 +10,7 @@
 # top-level string expressions as page content, so a docstring here shows up
 # on the live dashboard.
 import hashlib
+import html
 from datetime import datetime
 from pathlib import Path
 
@@ -218,6 +219,21 @@ def _all_trades():
 
 
 @reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_content():
+    """Prose the agents wrote for the dashboard, every season, newest first."""
+    return db.get_all_site_content()
+
+
+def _content(kind, weeks):
+    """One kind of dashboard prose for the selected season, limited to the
+    given weeks, newest week first."""
+    year = _year()
+    wanted = set(int(w) for w in weeks)
+    return [r for r in _all_content()
+            if r["kind"] == kind and int(r["year"]) == year and int(r["week"]) in wanted]
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
 def _all_logos():
     """
     (year, team_id) -> /logos URL for every stored logo, writing any blob
@@ -414,21 +430,27 @@ def _freshness():
     in, so this is both shorter and the only version that cannot be wrong.
     """
     _all_scores()  # re-read whenever the collector writes
-    stamp = db.last_collected()
+    ago = _ago(db.last_collected())
+    return f"synced {ago}" if ago else "live"
+
+
+def _ago(stamp):
+    """A UTC "YYYY-MM-DD HH:MM:SS" stamp as "just now", "12m ago", "3h ago",
+    or "2d ago"; None when the stamp is missing or unreadable."""
     if not stamp:
-        return "live"
+        return None
     try:
         written = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
     except ValueError:
-        return "live"
+        return None
     minutes = max(int((datetime.utcnow() - written).total_seconds() // 60), 0)
     if minutes < 2:
-        return "synced just now"
+        return "just now"
     if minutes < 60:
-        return f"synced {minutes}m ago"
+        return f"{minutes}m ago"
     if minutes < 48 * 60:
-        return f"synced {minutes // 60}h ago"
-    return f"synced {minutes // 1440}d ago"
+        return f"{minutes // 60}h ago"
+    return f"{minutes // 1440}d ago"
 
 
 def _clickable(tag, set_input, value, *children, **attrs):
@@ -965,6 +987,7 @@ def screen_week():
                 ),
                 class_="week-body",
             ),
+            _recap_block(_content("recap", weeks)),
             class_="screen",
         )
 
@@ -994,7 +1017,33 @@ def screen_week():
             ),
             class_="week-body",
         ),
+        _recap_block(_content("recap", [wk])),
         class_="screen",
+    )
+
+
+def _recap_block(rows):
+    """
+    The week's recap, written by the league recap agent on Tuesday morning,
+    or None when nothing has been written for these weeks yet.
+
+    The body is markdown from a model that only ever saw league data, but
+    it is still escaped before rendering so a stray angle bracket in a team
+    name (or anything a future job pulls from the web) is text, never
+    markup. Markdown emphasis, headings, and lists survive the escape.
+    """
+    if not rows:
+        return None
+    row = rows[0]
+    ago = _ago(row.get("written_at"))
+    label = f"Week {int(row['week'])} recap"
+    if ago:
+        label += f" · written {ago}"
+    return core_ui.div(
+        core_ui.p(label, class_="section-label"),
+        core_ui.h2(row["title"], class_="recap-title") if row.get("title") else None,
+        core_ui.div(ui.markdown(html.escape(row["body"], quote=False)), class_="recap-body"),
+        class_="recap-section",
     )
 
 
@@ -2036,6 +2085,18 @@ def screen_teams():
             core_ui.span("per week", class_="sub"),
             class_="cell",
         ),
+        core_ui.div(
+            core_ui.span("Points for", class_="k"),
+            core_ui.span(f"{mine.iloc[0]['points_for']:,}" if not mine.empty else "—", class_="v"),
+            core_ui.span(_ordinal_rank(records, "points_for", current, high_is_good=True), class_="sub"),
+            class_="cell",
+        ),
+        core_ui.div(
+            core_ui.span("Points against", class_="k"),
+            core_ui.span(f"{mine.iloc[0]['points_against']:,}" if not mine.empty else "—", class_="v"),
+            core_ui.span(_ordinal_rank(records, "points_against", current, high_is_good=False), class_="sub"),
+            class_="cell",
+        ),
         class_="profile-stats",
     )
 
@@ -2120,10 +2181,15 @@ def screen_teams():
         )
 
     h2h_records, h2h_margins = _h2h_frame()
+    h2h_scope_note = "all seasons" if h2h_scope.get() == "all" else f"weeks {lo}–{hi}"
 
     return core_ui.div(
         _team_rail(styles, current, logos),
         profile,
+        core_ui.div(
+            _week_bars(games, scoped),
+            class_="team-strip",
+        ),
         core_ui.div(
             core_ui.div(
                 core_ui.p("Game log", class_="section-label"),
@@ -2132,13 +2198,128 @@ def screen_teams():
             ),
             core_ui.div(
                 range_block,
-                core_ui.p("Head to head", class_="section-label"),
-                _h2h_matrix(h2h_records, h2h_margins, current=current,
-                            logos=logos),
+                core_ui.p(f"Head to head · {h2h_scope_note}", class_="section-label"),
+                _h2h_list(h2h_records, h2h_margins, current, logos),
             ),
             class_="team-body",
         ),
         class_="screen",
+    )
+
+
+def _ordinal_rank(records, column, team_name, high_is_good):
+    """"3rd of 8" for a team's place on one derive_records column; blank when
+    the team has no row."""
+    if records.empty or team_name not in set(records["team_name"]):
+        return ""
+    ordered = records.sort_values(column, ascending=not high_is_good).reset_index(drop=True)
+    place = int(ordered.index[ordered["team_name"] == team_name][0]) + 1
+    suffix = "th" if 11 <= place % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
+    return f"{place}{suffix} of {len(ordered)}"
+
+
+def _week_bars(games, scoped):
+    """
+    One bar per played week for the team on screen, win or loss colored,
+    against a line at the league average for the scoped weeks. Bars are
+    scaled to the league's best single-week score so the same height means
+    the same score on every team's page.
+    """
+    if games.empty:
+        return None
+    top = float(scoped["score"].max()) or 1.0
+    league_avg = float(scoped["score"].mean())
+    avg_pct = league_avg / top * 100
+
+    bars, labels = [], []
+    for _, g in games.iterrows():
+        pct = float(g["score"]) / top * 100
+        res = g["result"] or ""
+        cls = {"W": "win", "L": "loss"}.get(res, "mute")
+        opp_score = f"{g['opponent_score']:.1f}" if pd.notna(g["opponent_score"]) else "—"
+        bars.append(core_ui.div(
+            core_ui.span(f"{g['score']:.1f}", class_="bar-val", style=f"bottom:calc({pct:.1f}% + 4px)"),
+            core_ui.div(class_=f"bar {cls}", style=f"height:{pct:.1f}%"),
+            class_="weekbar",
+            title=f"Week {int(g['week'])}: {res or '—'} {g['score']:.1f} vs {g['opponent_name']} {opp_score}",
+        ))
+        labels.append(core_ui.span(f"{int(g['week'])}", class_=f"bar-wk {cls}"))
+
+    return core_ui.div(
+        # The average is named here rather than floated on the line itself,
+        # where it collided with the last bar's value label.
+        core_ui.p(f"Week by week · dashed line is the league average, {league_avg:.1f}",
+                  class_="section-label"),
+        core_ui.div(
+            core_ui.div(*bars, class_="weekbars"),
+            core_ui.div(class_="weekbars-avg", style=f"bottom:{avg_pct:.1f}%",
+                        title=f"league average {league_avg:.1f}"),
+            class_="weekbars-wrap",
+        ),
+        core_ui.div(*labels, class_="weekbars-weeks"),
+        class_="weekbars-block", style=f"--n:{len(bars)}",
+    )
+
+
+def _h2h_list(records_tbl, margins_tbl, current, logos=None):
+    """
+    The team-page head-to-head: one row per opponent played, sorted by
+    average margin, with the record, a bar to either side of zero, and the
+    margin itself. Clicking an opponent opens their page. Opponents not yet
+    played are named in one muted line so the list is never silently short.
+
+    The League page keeps the full grid; a 400px column is too narrow for
+    an 8x8 matrix, and a team page only needs its own row of it anyway.
+    """
+    logos = logos or {}
+    if current not in records_tbl.index:
+        return core_ui.p("No matchups in this range.", class_="empty-note")
+
+    played, unplayed = [], []
+    for opp in records_tbl.columns:
+        if opp == current:
+            continue
+        rec = records_tbl.at[current, opp]
+        if not rec:
+            unplayed.append(opp)
+            continue
+        margin = margins_tbl.at[current, opp]
+        played.append((opp, rec, float(margin) if pd.notna(margin) else 0.0))
+    played.sort(key=lambda r: (-r[2], r[0]))
+
+    rows = []
+    for opp, rec, margin in played:
+        width = min(abs(margin) / 40, 1.0) * 50
+        rows.append(_clickable(
+            core_ui.div, "team_pick", opp,
+            core_ui.span(
+                _logo_img(logos.get(opp), "team-logo h2h-logo"),
+                core_ui.span(opp, class_="opp-name"),
+                class_="opp", title=opp,
+            ),
+            core_ui.span(rec, class_="record"),
+            core_ui.div(
+                core_ui.div(class_=f"bar {'pos' if margin >= 0 else 'neg'}", style=f"width:{width:.1f}%"),
+                class_="bar-track",
+            ),
+            core_ui.span(f"{margin:+.1f}", class_=f"margin {'pos' if margin >= 0 else 'neg'}"),
+            class_="h2h-row", role="button",
+        ))
+
+    if not rows:
+        return core_ui.p("No games played yet in this range.", class_="empty-note")
+
+    note = None
+    if unplayed:
+        note = core_ui.p("Not yet played: " + ", ".join(unplayed), class_="h2h-unplayed")
+    return core_ui.div(
+        core_ui.div(
+            core_ui.span("Opponent", class_="col"), core_ui.span("Rec", class_="col"),
+            core_ui.span("Avg margin", class_="col"), core_ui.span("", class_="col"),
+            class_="h2h-list-head",
+        ),
+        *rows, note,
+        class_="h2h-list",
     )
 
 

@@ -1305,7 +1305,7 @@ button { font-family: inherit; }
 
 .profile-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
 }
 
 .profile-stats .cell {
@@ -1472,7 +1472,7 @@ button { font-family: inherit; }
 
 .h2h-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px 96px;
+  grid-template-columns: minmax(0, 1fr) 40px 96px 48px;
   align-items: center;
   gap: 10px;
   padding: 9px 0;
@@ -2046,3 +2046,177 @@ button { font-family: inherit; }
 }
 
 .team-select-mobile { display: none; }
+
+/* ---------- This week: recap ---------- */
+
+/* Prose from the Tuesday recap job. Measured for reading, not for the
+   1600px grid the results sit on. */
+.recap-section { margin-top: 44px; max-width: 760px; }
+
+.recap-title {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.03em;
+  font-size: 30px;
+  line-height: 1.15;
+  color: var(--ink);
+  text-wrap: balance;
+  margin: 0 0 16px;
+}
+
+.recap-body {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+
+.recap-body p { margin: 0 0 14px; }
+
+/* The lead paragraph carries the week; it reads at headline weight. */
+.recap-body > p:first-child { font-size: 18.5px; line-height: 1.5; color: var(--ink); }
+
+.recap-body h2 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 28px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.recap-body h3 { font-size: 15px; font-weight: 700; color: var(--ink); margin: 18px 0 6px; }
+.recap-body strong { color: var(--ink); font-weight: 600; }
+.recap-body ul, .recap-body ol { padding-left: 20px; margin: 0 0 14px; }
+.recap-body li { margin-bottom: 6px; }
+.recap-body a { color: var(--accent); }
+
+/* ---------- Teams: week by week ---------- */
+
+.team-strip { padding: 0 var(--gutter); margin-bottom: 34px; }
+
+/* --n is the number of played weeks, set inline, so three early-season
+   bars do not each stretch to a third of the screen. */
+.weekbars-block { --n: 14; max-width: calc(var(--n) * 80px); }
+
+.weekbars-wrap { position: relative; height: 150px; margin-top: 18px; }
+
+.weekbars { display: flex; align-items: flex-end; gap: 8px; height: 100%; }
+
+.weekbar { position: relative; flex: 1 1 0; height: 100%; min-width: 0; }
+
+.weekbar .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--line-strong);
+}
+
+/* A tint with a solid top edge, like the head-to-head cells: fourteen
+   fully saturated bars in a row shouted over the rest of the page. */
+.weekbar .bar.win { background: color-mix(in srgb, var(--win) 34%, transparent); border-top: 2px solid var(--win); }
+.weekbar .bar.loss { background: color-mix(in srgb, var(--loss) 34%, transparent); border-top: 2px solid var(--loss); }
+
+.weekbar .bar-val {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-dim);
+}
+
+.weekbars-avg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--ink-mute);
+  pointer-events: none;
+}
+
+
+.weekbars-weeks { display: flex; gap: 8px; margin-top: 6px; }
+
+.weekbars-weeks .bar-wk {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+}
+
+.weekbars-weeks .bar-wk.win { color: var(--win); }
+.weekbars-weeks .bar-wk.loss { color: var(--loss); }
+
+/* ---------- Teams: head to head list ---------- */
+
+.h2h-list-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px 96px 48px;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.h2h-list-head .col {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.h2h-list-head .col:nth-child(2) { text-align: center; }
+
+.h2h-row { cursor: pointer; }
+.h2h-row:hover { background: var(--raised); }
+.h2h-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.h2h-row .opp { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.h2h-row .opp-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.h2h-row .margin {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink-mute);
+}
+
+.h2h-row .margin.pos { color: var(--win); }
+.h2h-row .margin.neg { color: var(--loss); }
+
+.h2h-unplayed {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  margin: 10px 0 0;
+}
+
+@media (max-width: 640px) {
+  .recap-title { font-size: 24px; }
+  .recap-body > p:first-child { font-size: 17px; }
+
+  .weekbars-block { max-width: none; }
+  .weekbars-wrap { height: 110px; }
+  .weekbars, .weekbars-weeks { gap: 3px; }
+  .weekbar .bar-val { display: none; }
+
+  .h2h-list-head,
+  .h2h-row { grid-template-columns: minmax(0, 1fr) 36px 64px 44px; gap: 6px; }
+}

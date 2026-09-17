@@ -235,6 +235,7 @@ Times are in `TIMEZONE`.
 
 | When | Job | Model | Does |
 | --- | --- | --- | --- |
+| Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only, no web, no Discord post. |
 | Tuesday 7:00 AM | Research | heavy | Reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` and `state/week-NN.json`. |
 | Tuesday 8:00 AM | Roster plan | heavy | Queues waiver claims with fallbacks, sets the lineup, proposes at most one trade, schedules the pre-game checks. |
 | Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
@@ -253,6 +254,7 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 | --- | --- | --- |
 | `/agent status` | owner | Next wakeups, recent runs with cost, pending approvals, canary. |
 | `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
+| `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |

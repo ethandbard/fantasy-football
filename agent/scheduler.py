@@ -33,6 +33,9 @@ class Clock:
         add = self.sched.add_job
         tz = cfg.timezone
         if cfg.enabled_schedule:
+            # After ESPN rolls the week (before 6:00) and before the research
+            # run, so the dashboard's recap is up first thing Tuesday.
+            add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=30, timezone=tz), args=["recap"], id="recap")
             add(self._submit, CronTrigger(day_of_week="tue", hour=7, minute=0, timezone=tz), args=["research"], id="research")
             add(self._submit, CronTrigger(day_of_week="tue", hour=8, minute=0, timezone=tz), args=["plan"], id="plan")
             add(self.ensure_wakeups, CronTrigger(day_of_week="tue", hour=9, minute=15, timezone=tz), id="ensure_wakeups")

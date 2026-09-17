@@ -208,3 +208,26 @@ def test_delete_week_removes_scores_and_standings_and_reports_it(fresh_db):
     assert fresh_db.delete_week(2025, 2) == 0
     assert fresh_db.get_collected_weeks(2025) == {1}
     assert fresh_db.get_all_latest_standings() == []
+
+
+def test_site_content_round_trips_and_replaces_on_the_same_key(fresh_db):
+    before = fresh_db.fingerprint()
+    fresh_db.upsert_site_content("recap", 2025, 3, "# Week 3\n\nA close one.", title="Photo finish", run_id="r1")
+    rows = fresh_db.get_all_site_content()
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Photo finish" and rows[0]["body"].startswith("# Week 3")
+    assert rows[0]["run_id"] == "r1" and rows[0]["written_at"]
+    assert fresh_db.fingerprint() != before
+
+    fresh_db.upsert_site_content("recap", 2025, 3, "Rewritten.", title="Second pass")
+    rows = fresh_db.get_all_site_content()
+    assert len(rows) == 1 and rows[0]["body"] == "Rewritten." and rows[0]["title"] == "Second pass"
+
+
+def test_site_content_is_newest_first_and_refuses_unknown_kinds(fresh_db):
+    fresh_db.upsert_site_content("recap", 2025, 2, "two")
+    fresh_db.upsert_site_content("recap", 2025, 5, "five")
+    fresh_db.upsert_site_content("recap", 2024, 9, "old")
+    assert [(r["year"], r["week"]) for r in fresh_db.get_all_site_content()] == [(2025, 5), (2025, 2), (2024, 9)]
+    with pytest.raises(ValueError):
+        fresh_db.upsert_site_content("manifesto", 2025, 1, "no")

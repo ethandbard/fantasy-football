@@ -224,7 +224,7 @@ The dashboard reads `data/fantasy.db`. It does not call ESPN on its own. It open
 ::: {.tab}
 ### This week
 
-Results ordered closest-first, who moved in the standings, the week's bests, and every team against its own average. Nothing to configure.
+Results ordered closest-first, who moved in the standings, the week's bests, and every team against its own average. Below them, the week's recap: a few hundred words written by the league recap agent on Tuesday morning, game by game, with a note on the standings and the week's moves. It appears on its own once the agent has written it. Nothing to configure.
 :::
 
 ::: {.tab}
@@ -236,7 +236,7 @@ The standings board — record, streak, last-five form, points for/against, and 
 ::: {.tab}
 ### Teams
 
-One page per team: a game log, range vs the league (floor, ceiling, and median next to the league's), and every head-to-head matchup for that team, sorted by average margin.
+One page per team: average, ceiling, floor, projection delta, and points for and against with their league rank; a week-by-week bar chart against the league average; a game log; range vs the league (floor, ceiling, and median next to the league's); and every head-to-head matchup for that team, sorted by average margin, with the opponents not yet played named underneath. The full head-to-head grid stays on the League page.
 :::
 
 ::: {.tab}

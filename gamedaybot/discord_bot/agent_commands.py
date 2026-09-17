@@ -105,6 +105,11 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
     async def agent_lineup(interaction: discord.Interaction):
         await _run_job(interaction, "lineup", {})
 
+    @agent.command(name="recap", description="Write the week's league recap for the dashboard now")
+    @app_commands.describe(week="Week to recap; defaults to the week just played")
+    async def agent_recap(interaction: discord.Interaction, week: int = None):
+        await _run_job(interaction, "recap", {"week": week} if week else {})
+
     @agent.command(name="trade", description="Ask the trade reviewer about an offer, in your own words")
     @app_commands.describe(offer="Describe the trade, e.g. 'my Rice for Chris's Bucky Irving'")
     async def agent_trade(interaction: discord.Interaction, offer: str):

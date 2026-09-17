@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "dashboard",
-      "runtimeExecutable": "C:/Users/ethan/OneDrive/Desktop/Code/fantasy-football/run_dashboard_local.cmd",
+      "runtimeExecutable": "C:/Users/ethan/Code/fantasy-football/run_dashboard_local.cmd",
       "runtimeArgs": [],
       "port": 8001
     },

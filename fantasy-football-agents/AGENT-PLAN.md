@@ -326,6 +326,18 @@ team's owner. The agent therefore takes its own pair, `AGENT_ESPN_S2` and
 `AGENT_SWID`, from Ethan's browser, and its daily canary now checks that the
 configured account owns `TEAM_ID` and says so in Discord if not.
 
+### Dashboard content (added 2026-09-17)
+
+The first agent output on the public site. A `site_content` table in
+`data/fantasy.db` holds prose keyed by (kind, year, week); the dashboard's
+fingerprint covers it, so a new row reaches open tabs within 30 seconds
+with no deploy. The `recap` job (Sonnet, analyst tools plus
+`write_site_content`, no web, no Discord post) runs Tuesday 6:30 AM ET,
+before the research run, and writes last week's league recap; the This
+week page shows it under the results. `/agent recap [week]` runs it on
+demand. Research, state, and the plan stay off the site: they are the
+owner's edge, and the analyst persona is denied them for the same reason.
+
 ### Deploy checklist
 
 0. Done 2026-09-17: Ethan's `espn_s2` and `SWID` were read from his Chrome

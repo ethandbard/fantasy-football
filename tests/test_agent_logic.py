@@ -67,3 +67,28 @@ def test_agent_webhook_accepts_a_list_like_the_bot():
     assert discord_out.webhook_urls(one) == ["https://discord.com/api/webhooks/1/a"]
     assert discord_out.webhook_urls(two) == ["https://discord.com/api/webhooks/1/a", "https://discord.com/api/webhooks/2/b"]
     assert discord_out.webhook_urls(none) == []
+
+
+def test_recap_job_is_league_facing():
+    spec = jobs.get("recap")
+    assert not spec.owner_job and not spec.writes and not spec.web and not spec.post_brief
+    names = [n for g in spec.tool_groups for n in tool_names(g)]
+    assert "mcp__espn__write_site_content" in names
+    assert "mcp__espn__get_week_results" in names
+    for private in ("read_research", "read_state", "read_season_log", "get_rules"):
+        assert f"mcp__espn__{private}" not in names
+    assert not any("execute" in n or "preview" in n for n in names)
+    # The analyst that answers friends must not be able to publish.
+    assert "mcp__espn__write_site_content" not in tool_names("analyst")
+
+
+def test_recap_prompt_targets_the_week_just_played():
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=8)
+    ctx = SimpleNamespace(cfg=cfg, week=4, scoring_period=4, team_name=lambda _id: "Mine")
+    spec = jobs.get("recap")
+    assert "week to recap is week 3" in jobs.user_prompt(spec, ctx, {})
+    assert "week to recap is week 2" in jobs.user_prompt(spec, ctx, {"week": 2})
+    # Week 1 cannot recap week 0.
+    ctx.week = 1
+    assert "week to recap is week 1" in jobs.user_prompt(spec, ctx, {})
