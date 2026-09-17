@@ -201,6 +201,11 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         thread = message.channel
         if not await is_analyst_thread(thread):
             return
+        # Bystanders who never claimed a team are ignored in threads, so
+        # chatter does not trigger a "claim your team" reply every time.
+        status, _ = await call(client.get, f"/users/{message.author.id}")
+        if status != 200:
+            return
         history = await thread_history(thread, message)
         async with thread.typing():
             ok, result = await start_ask(message.author, message.content, history)
