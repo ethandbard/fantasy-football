@@ -255,7 +255,7 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |
-| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Read-only tools, no access to the owner's research. Rate-limited. |
+| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message. Read-only tools, no access to the owner's research. Limits are configurable. |
 
 ### Running it
 

@@ -47,6 +47,10 @@ def _friendly_error_message():
 
 def build_bot(dashboard_url):
     intents = discord.Intents.default()
+    # Needed to read follow-up messages in the threads /ask creates. It is a
+    # privileged intent; the application has it enabled in the developer
+    # portal (the "limited" grant for bots under 100 servers).
+    intents.message_content = True
     bot = discord.Client(intents=intents)
     tree = app_commands.CommandTree(bot)
 

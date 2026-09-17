@@ -158,3 +158,23 @@ def test_zero_limit_means_unlimited(tmp_path, monkeypatch):
                 assert r.status == 200
     _run(go())
     importlib.reload(db)
+
+
+def test_history_is_rendered_into_the_ask_params(app_env):
+    app, queue, store = app_env
+    from agent import server
+    assert server.render_history(None) == ""
+    assert server.render_history([{"role": "user", "text": ""}]) == ""
+    text = server.render_history([{"role": "user", "text": "flex?"}, {"role": "analyst", "text": "Start Achane."}])
+    assert text.startswith("Earlier in this thread") and "Them: flex?" in text and "You: Start Achane." in text
+
+    async def go():
+        async with TestClient(TestServer(app)) as client:
+            await client.post("/users/u3", json={"team_id": 4})
+            r = await client.post("/ask", json={"question": "why?", "discord_user_id": "u3",
+                                                "history": [{"role": "user", "text": "flex?"}, {"role": "analyst", "text": "Start Achane."}]})
+            assert r.status == 200
+            assert "Start Achane." in queue.submitted[-1][1]["history"]
+            r = await client.post("/ask", json={"question": "fresh", "discord_user_id": "u3"})
+            assert r.status == 200 and queue.submitted[-1][1]["history"] == ""
+    _run(go())

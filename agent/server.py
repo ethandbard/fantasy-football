@@ -121,7 +121,8 @@ def build_app(cfg, queue, clock):
             return web.json_response({"error": "the league's daily question budget is used up"}, status=429)
         params = {"question": question[:1500], "asker_team_id": user["team_id"],
                   "team_name": body.get("team_name") or f"team {user['team_id']}",
-                  "asker": body.get("display_name") or user.get("display_name")}
+                  "asker": body.get("display_name") or user.get("display_name"),
+                  "history": render_history(body.get("history"))}
         run_id = queue.submit("ask", params=params, trigger="ask")
         store.log_ask(user_id, user["team_id"], question, run_id)
         return web.json_response({"run_id": run_id, "queued": queue.size})
@@ -157,6 +158,31 @@ def build_app(cfg, queue, clock):
 
     app.add_routes(routes)
     return app
+
+
+def render_history(history, limit=6000):
+    """
+    Earlier turns of a Discord thread as prompt text, or "" when there are
+    none. Each entry is {"role": "user"|"analyst", "text": ...}. The text is
+    league members' own words, so it is quoted as data, never as
+    instructions; the analyst prompt says so.
+    """
+    if not history:
+        return ""
+    lines = []
+    for turn in history:
+        if not isinstance(turn, dict):
+            continue
+        role = "Them" if turn.get("role") == "user" else "You"
+        text = str(turn.get("text") or "").strip()
+        if text:
+            lines.append(f"{role}: {text}")
+    if not lines:
+        return ""
+    body = "\n".join(lines)
+    if len(body) > limit:
+        body = body[-limit:]
+    return "Earlier in this thread (oldest first):\n" + body + "\n\nNow they say:"
 
 
 async def _json(request):

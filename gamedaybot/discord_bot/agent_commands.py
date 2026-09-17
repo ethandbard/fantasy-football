@@ -141,26 +141,75 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
 
     # -------------------------------------------------------------- /ask
 
+    WORKING = "Working on it."
+
+    async def start_ask(user, question, history=None):
+        """Submit a question for `user`. Returns (ok, run_id or error text)."""
+        status, row = await call(client.get, f"/users/{user.id}")
+        if status == 404:
+            return False, "Claim your team first with `/claim-team`."
+        if status != 200:
+            return False, row.get("error", "the analyst is unavailable")
+        body = {"question": question, "discord_user_id": str(user.id),
+                "display_name": user.display_name, "team_name": row.get("display_name"),
+                "history": history or []}
+        status, data = await call(client.post, "/ask", body)
+        if status != 200:
+            return False, data.get("error", "could not ask")
+        return True, data["run_id"]
+
     @tree.command(name="ask", description="Ask the league analyst a question about your team")
     @app_commands.describe(question="Your question, e.g. 'who should I start at flex this week?'")
     async def ask(interaction: discord.Interaction, question: str):
         await interaction.response.defer()
-        status, user = await call(client.get, f"/users/{interaction.user.id}")
-        if status == 404:
-            await interaction.followup.send("Claim your team first with `/claim-team`.")
+        ok, result = await start_ask(interaction.user, question)
+        if not ok:
+            await interaction.followup.send(result)
             return
-        if status != 200:
-            await interaction.followup.send(user.get("error", "the analyst is unavailable"))
-            return
-        body = {"question": question, "discord_user_id": str(interaction.user.id),
-                "display_name": interaction.user.display_name, "team_name": user.get("display_name")}
-        status, data = await call(client.post, "/ask", body)
-        if status != 200:
-            await interaction.followup.send(data.get("error", "could not ask"))
-            return
-        msg = await interaction.followup.send(f"Working on it. (run `{data['run_id']}`)", wait=True)
-        answer = await _wait_for_run(data["run_id"])
+        msg = await interaction.followup.send(f"{WORKING} (run `{result}`) Reply in the thread to follow up.", wait=True)
+        answer = await _wait_for_run(result)
         await _reply_in_thread(interaction, msg, question, answer)
+
+    # ------------------------------------------------- thread follow-ups
+
+    async def is_analyst_thread(thread):
+        """A thread the bot started from its own "Working on it" message."""
+        if thread.owner_id != bot.user.id or thread.parent is None:
+            return False
+        try:
+            starter = await thread.parent.fetch_message(thread.id)
+        except discord.HTTPException:
+            return False
+        return starter.author.id == bot.user.id and starter.content.startswith(WORKING)
+
+    async def thread_history(thread, before_message):
+        """The conversation so far, oldest first, as {role, text}. The thread name is the original question."""
+        history = [{"role": "user", "text": thread.name}]
+        async for m in thread.history(limit=30, oldest_first=True):
+            if m.id == before_message.id or not m.content:
+                continue
+            if m.author.id == bot.user.id:
+                history.append({"role": "analyst", "text": m.content})
+            elif not m.author.bot:
+                history.append({"role": "user", "text": m.content})
+        return history
+
+    @bot.event
+    async def on_message(message: discord.Message):
+        if message.author.bot or not isinstance(message.channel, discord.Thread):
+            return
+        thread = message.channel
+        if not await is_analyst_thread(thread):
+            return
+        history = await thread_history(thread, message)
+        async with thread.typing():
+            ok, result = await start_ask(message.author, message.content, history)
+            if not ok:
+                await thread.send(result)
+                return
+            answer = await _wait_for_run(result)
+        for i in range(0, len(answer), 1900):
+            await thread.send(answer[i:i + 1900])
 
     async def _reply_in_thread(interaction, msg, question, answer):
         """
