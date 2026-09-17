@@ -121,6 +121,7 @@ you edit it.
 | `MONITOR_REPORT` | No | `True` | Posts the Sunday injury report. |
 | `TOP_HALF_SCORING` | No | `False` | Adds top-half scoring to standings. |
 | `INIT_MSG` | No | None | Replaces the generated startup message. |
+| `INIT_WEBHOOK_URL` | No | None | Webhook(s) that receive the startup message instead of every `DISCORD_WEBHOOK_URL`, so restarts stay out of the league channel. |
 | `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
 | `DB_PATH` | No | `/app/data/fantasy.db` | SQLite file backing the dashboard. |
 | `DASHBOARD_URL` | No | `http://localhost:<port>` | Link the `/dashboard` slash command returns. |

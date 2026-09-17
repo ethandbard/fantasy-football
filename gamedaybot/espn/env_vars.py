@@ -77,4 +77,8 @@ def get_env_vars():
     if init_msg:
         data['init_msg'] = init_msg
 
+    # Where the startup message goes. Unset means every URL in
+    # DISCORD_WEBHOOK_URL; set it to keep restarts out of the league channel.
+    data['init_webhook_urls'] = parse_webhook_urls(os.environ.get("INIT_WEBHOOK_URL", "")) or None
+
     return data

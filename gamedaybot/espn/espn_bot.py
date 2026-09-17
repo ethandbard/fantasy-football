@@ -102,6 +102,8 @@ def check_trades(discord_bot, league):
 
 
 def _send_init(discord_bot, data, league=None):
+    if data.get('init_webhook_urls'):
+        discord_bot = Discord(data['init_webhook_urls'])
     init_msg = data.get('init_msg')
     if init_msg:
         # INIT_MSG replaces the generated summary outright.
