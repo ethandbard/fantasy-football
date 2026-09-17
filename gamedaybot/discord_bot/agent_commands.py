@@ -160,11 +160,24 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
             return
         msg = await interaction.followup.send(f"Working on it. (run `{data['run_id']}`)", wait=True)
         answer = await _wait_for_run(data["run_id"])
+        await _reply_in_thread(interaction, msg, question, answer)
+
+    async def _reply_in_thread(interaction, msg, question, answer):
+        """
+        Thread the answer under the "working on it" message. A deferred
+        followup comes back as a webhook message with no guild attached, so
+        the thread is created from the channel, not the message object.
+        Anything that fails falls back to a plain followup.
+        """
         try:
-            thread = await msg.create_thread(name=question[:90])
-            await thread.send(answer[:1990])
-        except discord.HTTPException:
-            await interaction.followup.send(answer[:1990])
+            channel = interaction.channel
+            thread = await channel.create_thread(name=question[:90] or "analyst", message=discord.Object(id=msg.id))
+            for i in range(0, len(answer), 1900):
+                await thread.send(answer[i:i + 1900])
+        except Exception:
+            logger.exception("thread reply failed; falling back to a followup")
+            for i in range(0, len(answer), 1900):
+                await interaction.followup.send(answer[i:i + 1900])
 
     async def _wait_for_run(run_id):
         waited = 0
