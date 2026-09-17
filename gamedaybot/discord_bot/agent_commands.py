@@ -126,14 +126,15 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
     @agent.command(name="recap", description="Write the week's league recap for the dashboard now")
     @app_commands.describe(week="Week to recap; defaults to the week just played")
     async def agent_recap(interaction: discord.Interaction, week: int = None):
-        await _run_job(interaction, "recap", {"week": week} if week else {})
+        await _run_job(interaction, "recap", {"week": week} if week else {},
+                       done="The recap lands on the dashboard's This week page when it finishes; nothing posts here.")
 
     @agent.command(name="trade", description="Ask the trade reviewer about an offer, in your own words")
     @app_commands.describe(offer="Describe the trade, e.g. 'my Rice for Chris's Bucky Irving'")
     async def agent_trade(interaction: discord.Interaction, offer: str):
         await _run_job(interaction, "trade_review", {"trade": offer[:1000]})
 
-    async def _run_job(interaction, job, params):
+    async def _run_job(interaction, job, params, done="The brief posts here when it finishes."):
         if not is_owner(interaction.user):
             await interaction.response.send_message("Only the team owner can run the agents.", ephemeral=True)
             return
@@ -142,7 +143,7 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         if status != 200:
             await interaction.followup.send(data.get("error", "could not start the job"))
             return
-        await interaction.followup.send(f"Started `{job}` as run `{data['run_id']}`. The brief posts here when it finishes.")
+        await interaction.followup.send(f"Started `{job}` as run `{data['run_id']}`. {done}")
 
     @agent.command(name="approve", description="Approve a pending action by its id")
     async def agent_approve(interaction: discord.Interaction, ask_id: str):
