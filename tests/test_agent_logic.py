@@ -57,3 +57,13 @@ def test_analyst_tools_exclude_private_and_writes():
         assert f"mcp__espn__{private}" not in analyst
     assert not any("execute" in n or "preview" in n for n in analyst)
     assert "mcp__espn__execute_lineup" in tool_names("write")
+
+
+def test_agent_webhook_accepts_a_list_like_the_bot():
+    from types import SimpleNamespace
+    one = SimpleNamespace(webhook_url="https://discord.com/api/webhooks/1/a")
+    two = SimpleNamespace(webhook_url="https://discord.com/api/webhooks/1/a, https://discord.com/api/webhooks/2/b")
+    none = SimpleNamespace(webhook_url=None)
+    assert discord_out.webhook_urls(one) == ["https://discord.com/api/webhooks/1/a"]
+    assert discord_out.webhook_urls(two) == ["https://discord.com/api/webhooks/1/a", "https://discord.com/api/webhooks/2/b"]
+    assert discord_out.webhook_urls(none) == []

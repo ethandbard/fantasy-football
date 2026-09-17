@@ -7,7 +7,14 @@ import logging
 
 import requests
 
+from gamedaybot.espn.env_vars import parse_webhook_urls
+
 logger = logging.getLogger(__name__)
+
+
+def webhook_urls(cfg):
+    """AGENT_WEBHOOK_URL may hold one URL or a comma-separated list, like the bot's."""
+    return parse_webhook_urls(cfg.webhook_url or "")
 
 COLORS = {
     "brief": 0x9B59B6,
@@ -42,38 +49,44 @@ def chunk(body, limit=EMBED_LIMIT):
 def post(cfg, title, body, kind="brief", wait=False):
     """Post a titled message. Returns the first message id when wait=True and a webhook exists."""
     pieces = chunk(body) or ["(empty)"]
-    if not cfg.webhook_url:
+    urls = webhook_urls(cfg)
+    if not urls:
         logger.info("DISCORD (no webhook) %s\n%s", title, body)
         return None
     first_id = None
-    for i, piece in enumerate(pieces):
-        embed = {
-            "title": title if i == 0 else f"{title} ({i + 1}/{len(pieces)})",
-            "description": piece,
-            "color": COLORS.get(kind, COLORS["info"]),
-        }
-        url = cfg.webhook_url + ("?wait=true" if wait else "")
-        try:
-            r = requests.post(url, json={"embeds": [embed]}, timeout=20)
-        except requests.RequestException as e:
-            logger.error("Discord post failed: %s", e)
-            return first_id
-        if r.status_code not in (200, 204):
-            logger.error("Discord webhook returned %s: %s", r.status_code, r.text[:200])
-            return first_id
-        if wait and first_id is None and r.status_code == 200:
+    for base in urls:
+        for i, piece in enumerate(pieces):
+            embed = {
+                "title": title if i == 0 else f"{title} ({i + 1}/{len(pieces)})",
+                "description": piece,
+                "color": COLORS.get(kind, COLORS["info"]),
+            }
+            url = base + ("?wait=true" if wait else "")
             try:
-                first_id = r.json().get("id")
-            except ValueError:
-                pass
+                r = requests.post(url, json={"embeds": [embed]}, timeout=20)
+            except requests.RequestException as e:
+                logger.error("Discord post failed: %s", e)
+                break
+            if r.status_code not in (200, 204):
+                logger.error("Discord webhook returned %s: %s", r.status_code, r.text[:200])
+                break
+            if wait and first_id is None and r.status_code == 200:
+                try:
+                    first_id = r.json().get("id")
+                except ValueError:
+                    pass
     return first_id
 
 
 def line(cfg, text, kind="info"):
-    if not cfg.webhook_url:
+    urls = webhook_urls(cfg)
+    if not urls:
         logger.info("DISCORD (no webhook) %s", text)
         return
-    try:
-        requests.post(cfg.webhook_url, json={"content": text[:1990]}, timeout=20)
-    except requests.RequestException as e:
-        logger.error("Discord line failed: %s", e)
+    for url in urls:
+        try:
+            r = requests.post(url, json={"content": text[:1990]}, timeout=20)
+            if r.status_code not in (200, 204):
+                logger.error("Discord webhook returned %s: %s", r.status_code, r.text[:200])
+        except requests.RequestException as e:
+            logger.error("Discord line failed: %s", e)
