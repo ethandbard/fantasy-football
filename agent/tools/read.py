@@ -91,16 +91,24 @@ def build(ctx, run):
             )
         return text("\n".join(lines) + "\n\nJSON:\n" + json.dumps(rows))
 
-    @tool("get_matchup", "My matchup for a week (default current): opponent, projections, both lineups.",
-          {"week": int}, READ_ONLY)
+    def team_arg(args):
+        """team_id from the call, defaulting to the team this service manages."""
+        raw = args.get("team_id")
+        return int(raw) if raw not in (None, "", 0) else cfg.team_id
+
+    @tool("get_matchup",
+          "A team's matchup for a week (default current): opponent, projections, both lineups. "
+          "team_id defaults to the managed team; pass another team's id for theirs.",
+          {"week": int, "team_id": int}, READ_ONLY)
     async def get_matchup(args):
         lg = ctx.league()
         week = int(args.get("week") or lg.current_week)
+        team_id = team_arg(args)
         for box in lg.box_scores(week):
             teams = {box.home_team.team_id: ("home", box), box.away_team.team_id: ("away", box)}
-            if cfg.team_id not in teams:
+            if team_id not in teams:
                 continue
-            side, _ = teams[cfg.team_id]
+            side, _ = teams[team_id]
             me, opp = (box.home_team, box.away_team) if side == "home" else (box.away_team, box.home_team)
             my_lineup, opp_lineup = (box.home_lineup, box.away_lineup) if side == "home" else (box.away_lineup, box.home_lineup)
             my_score, opp_score = (box.home_score, box.away_score) if side == "home" else (box.away_score, box.home_score)
@@ -113,9 +121,9 @@ def build(ctx, run):
                     for p in lineup)
             body = (f"Week {week}: {me.team_name} ({me.wins}-{me.losses}) vs {opp.team_name} ({opp.wins}-{opp.losses})\n"
                     f"Score {my_score} - {opp_score}; projected {my_proj} - {opp_proj}\n\n"
-                    f"My lineup:\n{fmt(my_lineup)}\n\nOpponent lineup:\n{fmt(opp_lineup)}")
+                    f"{me.team_name} lineup:\n{fmt(my_lineup)}\n\n{opp.team_name} lineup:\n{fmt(opp_lineup)}")
             return text(body)
-        return err(f"no matchup for week {week}")
+        return err(f"no matchup for team {team_id} in week {week}")
 
     @tool("get_standings", "League standings.", {}, READ_ONLY)
     async def get_standings(args):
@@ -133,12 +141,18 @@ def build(ctx, run):
         rows = ctx.recent_activity(int(args.get("size") or 25))
         return text("\n".join(f"{r['when']}  {r['team']:<32} {r['action']:<16} {r['player']}" for r in rows))
 
-    @tool("get_kickoffs", "Distinct kickoff times this week for my rostered players, with who plays when.", {}, READ_ONLY)
+    @tool("get_kickoffs",
+          "Distinct kickoff times this week for a team's rostered players, with who plays when. "
+          "team_id defaults to the managed team.", {"team_id": int}, READ_ONLY)
     async def get_kickoffs(args):
-        groups = roster.distinct_kickoffs(ctx.my_roster())
+        team_id = team_arg(args)
+        entries = ctx.rosters().get(team_id)
+        if entries is None:
+            return err(f"no team {team_id}")
+        groups = roster.distinct_kickoffs(entries)
         lines = [f"{when.isoformat(timespec='minutes')}  ({when.astimezone(roster._eastern()).strftime('%a %I:%M %p ET')}): {', '.join(names)}"
                  for when, names in groups]
-        return text("\n".join(lines) or "no games found for my roster this period")
+        return text("\n".join(lines) or f"no games found for {ctx.team_name(team_id)} this period")
 
     @tool("get_player", "Look up one player by name: team, position, injury, ownership, season and weekly points.",
           {"name": str}, READ_ONLY)
@@ -159,16 +173,19 @@ def build(ctx, run):
             "weekly_points": weeks, "eligible_slots": p.eligibleSlots,
         }, indent=2))
 
-    @tool("get_week_results", "My box score for a played week: each starter's projection vs actual, and the result.",
-          {"week": int}, READ_ONLY)
+    @tool("get_week_results",
+          "A team's box score for a played week: each starter's projection vs actual, and the result. "
+          "team_id defaults to the managed team.",
+          {"week": int, "team_id": int}, READ_ONLY)
     async def get_week_results(args):
         lg = ctx.league()
         week = int(args.get("week") or max(1, lg.current_week - 1))
+        team_id = team_arg(args)
         for box in lg.box_scores(week):
             ids = {box.home_team.team_id, box.away_team.team_id}
-            if cfg.team_id not in ids:
+            if team_id not in ids:
                 continue
-            home = box.home_team.team_id == cfg.team_id
+            home = box.home_team.team_id == team_id
             me, opp = (box.home_team, box.away_team) if home else (box.away_team, box.home_team)
             mine = box.home_lineup if home else box.away_lineup
             my_score = box.home_score if home else box.away_score
