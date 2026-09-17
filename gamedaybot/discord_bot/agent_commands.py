@@ -105,6 +105,24 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
     async def agent_lineup(interaction: discord.Interaction):
         await _run_job(interaction, "lineup", {})
 
+    @agent.command(name="wakeups", description="Re-plan this week's pre-game checks from the current kickoff schedule")
+    async def agent_wakeups(interaction: discord.Interaction):
+        if not is_owner(interaction.user):
+            await interaction.response.send_message("Only the team owner can plan the pre-game checks.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        status, data = await call(client.post, "/wakeups", {})
+        if status != 200:
+            await interaction.followup.send(data.get("error", "could not plan the pre-game checks"))
+            return
+        rows = data.get("wakeups") or []
+        lines = [f"Planned {data.get('planned', 0)} pre-game check(s); {len(rows)} pending:"]
+        for w in rows[:12]:
+            lines.append(f"• {w['run_at']}  {w['job']}  {w.get('label') or ''}")
+        if not rows:
+            lines.append("• none: no future kickoffs found for the roster this week")
+        await interaction.followup.send("\n".join(lines)[:1990])
+
     @agent.command(name="recap", description="Write the week's league recap for the dashboard now")
     @app_commands.describe(week="Week to recap; defaults to the week just played")
     async def agent_recap(interaction: discord.Interaction, week: int = None):

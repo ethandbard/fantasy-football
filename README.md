@@ -255,6 +255,7 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 | `/agent status` | owner | Next wakeups, recent runs with cost, pending approvals, canary. |
 | `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
+| `/agent wakeups` | owner | Re-plans this week's pre-game checks from the current kickoff schedule. No model run; safe to repeat. Use it when the checks were never planned, for example after a mid-week deploy. |
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |

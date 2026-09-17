@@ -35,6 +35,14 @@ class _Clock:
     async def canary(self, force_post=False):
         return True
 
+    async def ensure_wakeups(self, force=False):
+        import agent.store as store
+        from datetime import datetime, timedelta, timezone
+        self.forced = force
+        run_at = datetime.now(timezone.utc) + timedelta(hours=2)
+        store.add_wakeup("pregame", run_at, params={"players": ["Gibbs"]}, label="Thu 08:15 PM ET kickoff")
+        return [(run_at, "Thu 08:15 PM ET kickoff", {"players": ["Gibbs"]})]
+
 
 @pytest.fixture
 def app_env(tmp_path, monkeypatch):
@@ -50,7 +58,9 @@ def app_env(tmp_path, monkeypatch):
     from agent import config, server
     cfg = config.from_env()
     queue = _Queue()
-    app = server.build_app(cfg, queue, _Clock())
+    clock = _Clock()
+    app = server.build_app(cfg, queue, clock)
+    app["clock"] = clock  # so a test can see what the route asked of it
     yield app, queue, store
     importlib.reload(db)
 
@@ -177,4 +187,19 @@ def test_history_is_rendered_into_the_ask_params(app_env):
             assert "Start Achane." in queue.submitted[-1][1]["history"]
             r = await client.post("/ask", json={"question": "fresh", "discord_user_id": "u3"})
             assert r.status == 200 and queue.submitted[-1][1]["history"] == ""
+    _run(go())
+
+
+def test_wakeups_route_replans_by_force_and_returns_the_pending_list(app_env):
+    app, queue, store = app_env
+
+    async def go():
+        async with TestClient(TestServer(app)) as client:
+            r = await client.post("/wakeups")
+            data = await r.json()
+            assert r.status == 200 and data["planned"] == 1
+            assert data["wakeups"][0]["label"] == "Thu 08:15 PM ET kickoff"
+            assert app["clock"].forced is True
+            # Nothing queued: planning is not a model run.
+            assert queue.submitted == []
     _run(go())

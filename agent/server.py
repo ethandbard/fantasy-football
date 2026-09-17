@@ -16,6 +16,7 @@ Routes:
   POST /users/{discord_id}          {"team_id": N, "display_name": "..."}
   GET  /teams                       team list for the claim command
   POST /canary                      run the auth canary now
+  POST /wakeups                     re-plan this week's pre-game checks now -> pending list
 """
 import asyncio
 import json
@@ -155,6 +156,16 @@ def build_app(cfg, queue, clock):
     async def canary(request):
         ok = await clock.canary(force_post=True)
         return web.json_response({"ok": ok})
+
+    @routes.post("/wakeups")
+    async def wakeups(request):
+        # Plain Python, not a model run: it does not queue behind a job, so
+        # it can plan tonight's check while a research run is still going.
+        try:
+            planned = await clock.ensure_wakeups(force=True)
+        except Exception as e:
+            return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
+        return web.json_response({"planned": len(planned or []), "wakeups": store.pending_wakeups()})
 
     app.add_routes(routes)
     return app

@@ -81,18 +81,28 @@ class Clock:
 
     # -------------------------------------------------- wakeup planning
 
-    async def ensure_wakeups(self):
-        """Safety net: if the plan job did not schedule this week's checks, do it here."""
+    async def ensure_wakeups(self, force=False):
+        """
+        Safety net: if the plan job did not schedule this week's checks, do
+        it here. `force` re-plans even when the week is marked as done, for
+        the /agent wakeups command; re-planning is safe because it replaces
+        the pending pre-game checks and only future kickoffs count.
+
+        Returns the planned (run_at, label, params) list, or None when the
+        week was already planned and nothing was touched.
+        """
         try:
             ctx = self._ctx()
-            if store.get_note("wakeups_planned_for_week") == ctx.week and store.pending_wakeups():
-                return
+            if not force and store.get_note("wakeups_planned_for_week") == ctx.week and store.pending_wakeups():
+                return None
             planned = schedule_week(ctx)
             logger.info("ensure_wakeups planned %d checks", len(planned))
             if planned:
                 discord_out.post(self.cfg, f"Pre-game checks · week {ctx.week}", _wakeup_lines(planned), kind="info")
+            return planned
         except Exception:
             logger.exception("ensure_wakeups failed")
+            raise
 
     async def preview(self):
         """Monday night: what is still pending this week and a reminder the plan comes Tuesday."""
