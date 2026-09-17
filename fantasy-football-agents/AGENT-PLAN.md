@@ -334,9 +334,15 @@ configured account owns `TEAM_ID` and says so in Discord if not.
    `~/.fantasy-football-secrets/agent.env`. The probe run on the VPS with
    them answered `TRAN_ROSTER_SAME_SLOT`: write access confirmed. To refresh
    later: DevTools, Application, Cookies, espn.com, same two names.
-1. On the laptop: `claude setup-token`. Put the token in
-   `~/.fantasy-football-secrets/` and as `CLAUDE_CODE_OAUTH_TOKEN` in the VPS
-   `config.env`.
+1. Done 2026-09-17: Ethan's `claude setup-token` result is
+   `CLAUDE_CODE_OAUTH_TOKEN` in both `config.env` files and the secrets
+   folder. The analyst job ran end to end with it from the laptop.
+   Deployed the same day as commit `037b66a` with `AGENT_DRY_RUN=True`,
+   the trap server's `#team-agent` webhook, channel `1540176470423511130`,
+   and Ethan's user id. The canary is green and the bot polls the agent.
+   Note: the VPS bot's own `DISCORD_WEBHOOK_URL` still points at that same
+   test webhook, not the league server, so scheduled reports go to the trap
+   server until it is switched back per `WEBHOOK_BACKUP.md`.
 2. Discord: create `#team-agent`, a webhook for it (`AGENT_WEBHOOK_URL`),
    note the channel id (`AGENT_CHANNEL_ID`) and Ethan's user id
    (`OWNER_DISCORD_ID`). Add all three to the VPS `config.env`.
