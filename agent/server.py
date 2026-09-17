@@ -114,9 +114,10 @@ def build_app(cfg, queue, clock):
         user = store.team_for_user(user_id)
         if not user:
             return web.json_response({"error": "unknown user; claim a team first"}, status=403)
-        if store.asks_today(user_id) >= cfg.ask_daily_limit:
+        # A limit of 0 means unlimited.
+        if cfg.ask_daily_limit and store.asks_today(user_id) >= cfg.ask_daily_limit:
             return web.json_response({"error": f"daily limit of {cfg.ask_daily_limit} questions reached"}, status=429)
-        if store.asks_today() >= cfg.ask_league_daily_limit:
+        if cfg.ask_league_daily_limit and store.asks_today() >= cfg.ask_league_daily_limit:
             return web.json_response({"error": "the league's daily question budget is used up"}, status=429)
         params = {"question": question[:1500], "asker_team_id": user["team_id"],
                   "team_name": body.get("team_name") or f"team {user['team_id']}",

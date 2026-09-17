@@ -135,3 +135,26 @@ def test_ask_lifecycle_endpoints(app_env, monkeypatch):
             r = await client.post("/asks/missing/reject", json={"by": "ethan"})
             assert r.status == 404
     _run(go())
+
+
+def test_zero_limit_means_unlimited(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "u.db"))
+    monkeypatch.setenv("LEAGUE_ID", "1")
+    monkeypatch.setenv("AGENT_DATA_DIR", str(tmp_path / "agent"))
+    monkeypatch.setenv("AGENT_ASK_DAILY_LIMIT", "0")
+    monkeypatch.setenv("AGENT_ASK_LEAGUE_DAILY_LIMIT", "0")
+    importlib.reload(db)
+    import agent.store as store
+    importlib.reload(store)
+    store.init()
+    from agent import config, server
+    app = server.build_app(config.from_env(), _Queue(), _Clock())
+
+    async def go():
+        async with TestClient(TestServer(app)) as client:
+            await client.post("/users/u9", json={"team_id": 2})
+            for _ in range(6):
+                r = await client.post("/ask", json={"question": "again?", "discord_user_id": "u9"})
+                assert r.status == 200
+    _run(go())
+    importlib.reload(db)

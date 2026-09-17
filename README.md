@@ -134,7 +134,7 @@ you edit it.
 | `AGENT_DRY_RUN` | No | `False` | `True` previews every write and posts nothing to ESPN. |
 | `AGENT_SCHEDULE` | No | `True` | `False` disables the fixed weekly jobs (wakeups and on-demand runs still work). |
 | `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `opus` / `sonnet` | Models for the Tuesday and trade jobs, and for everything else. |
-| `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. |
+| `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. `0` means no limit. |
 | `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
 | `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
 
