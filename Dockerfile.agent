@@ -1,0 +1,27 @@
+# Fantasy football agent service. Runs next to the bot, shares config.env and
+# data/, and talks to the bot over the compose network on port 8010.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-agent.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-agent.txt
+
+COPY gamedaybot/ ./gamedaybot/
+COPY agent/ ./agent/
+COPY fantasy-football-agents/RULES.md fantasy-football-agents/fantasy-season-log.md ./fantasy-football-agents/
+
+# The bundled Claude Code CLI writes its state under $HOME/.claude, so the
+# service user needs a real, writable home.
+RUN mkdir -p /app/data \
+    && useradd --create-home --shell /bin/bash agentuser \
+    && chown -R agentuser:agentuser /app
+USER agentuser
+ENV HOME=/home/agentuser
+
+EXPOSE 8010
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/health', timeout=5).status == 200 else 1)" || exit 1
+
+CMD ["python", "-m", "agent.main"]

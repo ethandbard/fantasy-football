@@ -6,12 +6,14 @@ messages), reusing the same espn_api League + functionality.py formatting
 that the scheduler already uses.
 """
 import logging
+import os
 
 import discord
 from discord import app_commands
 from espn_api.football import League
 
 import gamedaybot.espn.functionality as espn
+import gamedaybot.discord_bot.agent_commands as agent_commands
 import gamedaybot.discord_bot.formatting as fmt
 from gamedaybot.espn.env_vars import NO_ESPN_S2, NO_SWID, get_env_vars
 
@@ -48,6 +50,19 @@ def build_bot(dashboard_url):
     bot = discord.Client(intents=intents)
     tree = app_commands.CommandTree(bot)
 
+    # The agent service is optional. Its commands register whenever a URL is
+    # configured (the compose default reaches the fantasy-agent container);
+    # if the service is down they answer with a plain "not reachable".
+    agent_url = os.environ.get("AGENT_URL", "http://fantasy-agent:8010")
+    approvals_task = None
+    if agent_url:
+        approvals_task = agent_commands.register(
+            tree, bot, agent_url,
+            owner_id=os.environ.get("OWNER_DISCORD_ID"),
+            ask_channel_id=os.environ.get("AGENT_CHANNEL_ID"),
+        )
+    started = {"approvals": False}
+
     @bot.event
     async def on_ready():
         logger.info("Discord bot logged in as %s", bot.user)
@@ -55,6 +70,9 @@ def build_bot(dashboard_url):
             tree.copy_global_to(guild=guild)
             await tree.sync(guild=guild)
             logger.info("Synced slash commands to guild %s", guild.name)
+        if approvals_task and not started["approvals"]:
+            started["approvals"] = True
+            bot.loop.create_task(approvals_task())
 
     def _register(name, description, embed_key, fn):
         @tree.command(name=name, description=description)

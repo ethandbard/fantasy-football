@@ -14,6 +14,14 @@ services:
         aliases:
           - fantasy-bot
 
+  # Joins edge only so the bot (which is edge-only here) can reach it by
+  # name. Nothing routes a public hostname to it.
+  fantasy-agent:
+    networks:
+      edge:
+        aliases:
+          - fantasy-agent
+
 networks:
   edge:
     external: true

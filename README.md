@@ -124,6 +124,19 @@ you edit it.
 | `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
 | `DB_PATH` | No | `/app/data/fantasy.db` | SQLite file backing the dashboard. |
 | `DASHBOARD_URL` | No | `http://localhost:<port>` | Link the `/dashboard` slash command returns. |
+| `AGENT_URL` | No | `http://fantasy-agent:8010` | Where the bot reaches the agent service. |
+| `OWNER_DISCORD_ID` | Agents | None | Discord user id allowed to run agents and approve asks. |
+| `AGENT_CHANNEL_ID` | Agents | None | Channel where the bot posts approval requests with reactions. |
+| `AGENT_WEBHOOK_URL` | Agents | None | Webhook the agent service posts briefs to (a `#team-agent` channel). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Agents | None | Long-lived token from `claude setup-token`. `ANTHROPIC_API_KEY` works instead. |
+| `TEAM_ID` | No | `11` | The ESPN team the agents manage. |
+| `AGENT_ESPN_S2` / `AGENT_SWID` | If the bot's cookies are not the team owner's | falls back to `ESPN_S2` / `SWID` | Cookies from the account that owns `TEAM_ID`. Any league member's cookies can read the league, but ESPN refuses writes from anyone but the owner. |
+| `AGENT_DRY_RUN` | No | `False` | `True` previews every write and posts nothing to ESPN. |
+| `AGENT_SCHEDULE` | No | `True` | `False` disables the fixed weekly jobs (wakeups and on-demand runs still work). |
+| `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `opus` / `sonnet` | Models for the Tuesday and trade jobs, and for everything else. |
+| `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. |
+| `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
+| `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
 
 Each running copy of the container is one league. Scheduled posts go to every
 URL in `DISCORD_WEBHOOK_URL`. Slash commands follow the bot into every server
@@ -197,6 +210,75 @@ every guild it joins when it connects.
 
 If ESPN returns an error, the bot replies with a message explaining that the
 season may not have started yet.
+
+## Team agents
+
+A second container, `fantasy-agent`, runs Claude agents that manage one team
+(`TEAM_ID`) and report to a `#team-agent` channel. The design, including why
+it runs here and not in the cloud, is in
+[fantasy-football-agents/AGENT-PLAN.md](fantasy-football-agents/AGENT-PLAN.md).
+The rules the agents work under are
+[fantasy-football-agents/RULES.md](fantasy-football-agents/RULES.md); a copy
+in `data/agent/RULES.md` and a `data/agent/rules.json` override the shipped
+versions without a redeploy.
+
+Roster actions go through ESPN's own transaction endpoint with the same
+`ESPN_S2` and `SWID` cookies the bot uses. No browser is involved. Every write
+is a preview followed by an execute, and a permission tier decides what
+happens: auto moves post at once, "ask" moves wait for the owner in Discord,
+and "never" moves are refused.
+
+### Schedule
+
+Times are in `TIMEZONE`.
+
+| When | Job | Model | Does |
+| --- | --- | --- | --- |
+| Tuesday 7:00 AM | Research | heavy | Reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` and `state/week-NN.json`. |
+| Tuesday 8:00 AM | Roster plan | heavy | Queues waiver claims with fallbacks, sets the lineup, proposes at most one trade, schedules the pre-game checks. |
+| Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
+| Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
+| Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
+| Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
+| Monday 9:00 PM | Week ahead | none | Posts the pending wakeups. |
+| Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
+| Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. |
+
+Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
+
+### Agent slash commands
+
+| Command | Who | Does |
+| --- | --- | --- |
+| `/agent status` | owner | Next wakeups, recent runs with cost, pending approvals, canary. |
+| `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
+| `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
+| `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
+| `/claim-team` | anyone | Maps your Discord account to your ESPN team. |
+| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Read-only tools, no access to the owner's research. Rate-limited. |
+
+### Running it
+
+The service starts with the stack (`docker compose up -d --build`). It needs
+`CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in `config.env`, plus the
+three Discord values in the configuration table. Without a token it starts,
+serves `/agent status`, runs the canary, and fails every model run with a
+clear error in the agent channel.
+
+To try a job from a shell against the live league without posting anything:
+
+```bash
+docker compose run --rm --no-deps -e AGENT_DRY_RUN=true fantasy-agent python -m agent.cli run lineup
+```
+
+`python -m agent.cli` also has `canary`, `wakeups`, and `roster`. The
+one-time write probe is
+[fantasy-football-agents/tools/espn_write_probe.py](fantasy-football-agents/tools/espn_write_probe.py).
+
+Agent state lives under `data/agent/`: the research and state files, the
+season log the agents append to, per-run tool logs in `runs/`, and the
+tables `agent_runs`, `agent_wakeups`, `agent_asks`, `agent_transactions`,
+`agent_users` in `fantasy.db`.
 
 ## Dashboard
 
@@ -544,6 +626,12 @@ docker compose exec fantasy-bot python dev/collect_players.py 2025
 | `gamedaybot/espn/` | ESPN API access, report text, player pool, and the scheduler. |
 | `gamedaybot/discord_bot/` | Slash-command bot, webhook client, and embed formatting. |
 | `gamedaybot/storage/db.py` | SQLite schema and queries. |
+| `gamedaybot/espn/writes.py` | ESPN transaction payloads and the write client (lineup, add/drop, waivers, trades). |
+| `gamedaybot/espn/roster.py` | Roster reads with slot ids, lock flags, kickoffs, and the lineup legality check. |
+| `gamedaybot/discord_bot/agent_commands.py` | `/agent`, `/ask`, `/claim-team`, and the reaction approval flow. |
+| `agent/` | The agent service: config, storage, policy tiers, tools, jobs and prompts, runner, clock, HTTP API. |
+| `Dockerfile.agent` | Image for the agent service. |
+| `fantasy-football-agents/` | Design plan, rules, the season log seed, and the write probe. |
 | `gamedaybot/web/app.py` | Shiny dashboard: layout and reactive wiring. |
 | `gamedaybot/web/stats.py` | Season arithmetic — records, streaks, head-to-head, trophies. |
 | `gamedaybot/web/draft.py` | Draft-board columns, filters, and sorting. |

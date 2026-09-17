@@ -1,0 +1,4 @@
+# The agent service adds these on top of requirements.txt. The SDK wheel
+# bundles the Claude Code CLI, so the image needs no Node.
+claude-agent-sdk>=0.2.150,<0.3
+aiohttp>=3.9,<4

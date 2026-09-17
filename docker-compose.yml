@@ -23,6 +23,25 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The team agents. One model run at a time; the bot reaches it at
+  # http://fantasy-agent:8010. Shares config.env and data/ with the bot.
+  fantasy-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: fantasy-football-agent
+    restart: unless-stopped
+    env_file:
+      - config.env
+    volumes:
+      - ./data:/app/data
+    mem_limit: 1200m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Off-VPS public URL only. Never start this profile with the VPS tunnel
   # credentials: two connectors on one named tunnel split traffic.
   cloudflared:
