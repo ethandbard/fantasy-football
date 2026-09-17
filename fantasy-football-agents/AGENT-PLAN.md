@@ -338,6 +338,13 @@ week page shows it under the results. `/agent recap [week]` runs it on
 demand. Research, state, and the plan stay off the site: they are the
 owner's edge, and the analyst persona is denied them for the same reason.
 
+Two more kinds followed the same shape: `power` (Tuesday 6:40 AM, the
+League page) and `preview` (Wednesday 10:30 AM after the post-waiver
+adjust, the Next up page), with `/agent power` and `/agent preview`. The
+site also shows the agent's executed moves with their reasons on its own
+team's page, read from `agent_transactions`; dry-run and failed writes
+are left out, and nothing about pending asks or plans is shown.
+
 ### Deploy checklist
 
 0. Done 2026-09-17: Ethan's `espn_s2` and `SWID` were read from his Chrome

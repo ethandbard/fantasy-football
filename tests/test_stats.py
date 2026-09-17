@@ -607,3 +607,369 @@ def test_win_probability_is_even_for_identical_teams():
 def test_win_probability_needs_three_weeks_a_side():
     assert stats.win_probability([100.0, 110.0], [90.0, 95.0, 88.0]) is None
     assert stats.win_probability([], []) is None
+
+
+# ------------------------------------------------------------------ all-play
+
+# Four teams, two weeks, chosen so schedule luck is visible:
+#   wk1  A 100 beat B 90       C 80 beat D 70
+#   wk2  C 120 beat A 100      D 95 beat B 90
+# A outscored five of six opponents all-play but went 1-1; D outscored one
+# of six and also went 1-1.
+LUCK_FIXTURE = [
+    (1, 1, "A", 100.0, 2, "B", 1), (1, 2, "B", 90.0, 1, "A", 0),
+    (1, 3, "C", 80.0, 4, "D", 1), (1, 4, "D", 70.0, 3, "C", 0),
+    (2, 3, "C", 120.0, 1, "A", 1), (2, 1, "A", 100.0, 3, "C", 0),
+    (2, 4, "D", 95.0, 2, "B", 1), (2, 2, "B", 90.0, 4, "D", 0),
+]
+
+
+@pytest.fixture
+def luck_scores():
+    return pd.DataFrame(LUCK_FIXTURE, columns=[
+        "week", "team_id", "team_name", "score", "opponent_id", "opponent_name", "is_home",
+    ]).assign(year=2025, projected_score=95.0)
+
+
+def test_all_play_credits_a_win_over_every_team_outscored(luck_scores):
+    luck = stats.all_play(luck_scores).set_index("team_name")
+
+    assert luck.loc["A", "all_play_wins"] == 5
+    assert luck.loc["A", "all_play_losses"] == 1
+    assert luck.loc["D", "all_play_wins"] == 1
+    # A's expected wins: 3/3 in week 1 plus 2/3 in week 2.
+    assert luck.loc["A", "expected_wins"] == pytest.approx(5 / 3, abs=0.01)
+    assert luck.loc["A", "wins"] == 1
+    assert luck.loc["A", "luck"] == pytest.approx(1 - 5 / 3, abs=0.01)
+    assert luck.loc["D", "luck"] == pytest.approx(1 - 1 / 3, abs=0.01)
+    assert luck.loc["A", "points_for"] == 200
+
+
+def test_all_play_sorts_luckiest_first(luck_scores):
+    order = stats.all_play(luck_scores)["team_name"].tolist()
+    assert set(order[:2]) == {"C", "D"}
+    assert set(order[2:]) == {"A", "B"}
+
+
+def test_all_play_counts_a_playoff_round_once_but_every_week_all_play(playoff_scores):
+    luck = stats.all_play(playoff_scores).set_index("team_name")
+    # Three rounds won, but four weeks of all-play, one of which Aces lost.
+    assert luck.loc["Aces", "wins"] == 3
+    assert luck.loc["Aces", "all_play_wins"] == 3
+    assert luck.loc["Aces", "all_play_losses"] == 1
+
+
+def test_all_play_empty():
+    out = stats.all_play(pd.DataFrame())
+    assert out.empty and "luck" in out.columns
+
+
+# ---------------------------------------------------------------- projections
+
+def test_projection_accuracy_per_team(scores):
+    acc = stats.projection_accuracy(scores).set_index("team_name")
+    # Ravens: +10, +15, -15, -58.
+    assert acc.loc["Ravens", "games"] == 4
+    assert acc.loc["Ravens", "mean_delta"] == pytest.approx(-12.0)
+    assert acc.loc["Ravens", "mae"] == pytest.approx(24.5)
+    assert acc.loc["Ravens", "beat_rate"] == pytest.approx(0.5)
+    # Lions beat their projection every week and top the table.
+    assert stats.projection_accuracy(scores)["team_name"].iloc[0] == "Lions"
+
+
+def test_projection_by_week_summarises_the_league(scores):
+    by_week = stats.projection_by_week(scores).set_index("week")
+    # Week 1: +10, -5, -10, +10 -> mean 1.25, two of four over.
+    assert by_week.loc[1, "league_mean_delta"] == pytest.approx(1.25, abs=0.1)
+    assert by_week.loc[1, "share_over"] == pytest.approx(0.5)
+    assert list(by_week.index) == [1, 2, 3, 4]
+
+
+def test_projection_functions_skip_rows_without_a_projection(scores):
+    blind = scores.copy()
+    blind.loc[blind["week"] == 1, "projected_score"] = 0.0
+    assert stats.projection_accuracy(blind).set_index("team_name").loc["Ravens", "games"] == 3
+    assert 1 not in stats.projection_by_week(blind)["week"].tolist()
+    assert stats.projection_accuracy(pd.DataFrame()).empty
+    assert stats.projection_by_week(pd.DataFrame()).empty
+
+
+# --------------------------------------------------------------- playoff odds
+
+def _remaining_schedule(weeks):
+    return _schedule_frame([
+        (2025, w, w, tid, opp, is_home, 100.0)
+        for w in weeks
+        for tid, opp, is_home in ((1, 2, 1), (2, 1, 0), (3, 4, 1), (4, 3, 0))
+    ])
+
+
+def test_playoff_odds_is_deterministic_under_a_seed(scores):
+    sched = _remaining_schedule((5, 6))
+    first = stats.playoff_odds(scores, sched, reg_weeks=6, playoff_teams=2, sims=500, seed=7)
+    again = stats.playoff_odds(scores, sched, reg_weeks=6, playoff_teams=2, sims=500, seed=7)
+    pd.testing.assert_frame_equal(first, again)
+
+    assert set(first.columns) == {"team_id", "team_name", "wins_now", "avg_wins",
+                                  "playoff_odds", "top_seed_odds", "games_left"}
+    assert (first["games_left"] == 2).all()
+    assert first["playoff_odds"].between(0, 1).all()
+    # Two spots, so the odds sum to two, and exactly one top seed per sim.
+    assert first["playoff_odds"].sum() == pytest.approx(2.0, abs=0.01)
+    assert first["top_seed_odds"].sum() == pytest.approx(1.0, abs=0.01)
+    # Lions (3-1) cannot do worse than 3 wins, and their average must show it.
+    lions = first.set_index("team_name").loc["Lions"]
+    assert lions["wins_now"] == 3.0
+    assert 3.0 <= lions["avg_wins"] <= 5.0
+
+
+def test_playoff_odds_are_certain_once_the_regular_season_is_over(scores):
+    odds = stats.playoff_odds(scores, _remaining_schedule((5, 6)), reg_weeks=4,
+                              playoff_teams=2).set_index("team_name")
+    assert odds.loc["Lions", "playoff_odds"] == 1.0
+    assert odds.loc["Ravens", "playoff_odds"] == 1.0
+    assert odds.loc["Bears", "playoff_odds"] == 0.0
+    assert odds.loc["Colts", "playoff_odds"] == 0.0
+    assert odds.loc["Lions", "top_seed_odds"] == 1.0
+    assert (odds["games_left"] == 0).all()
+    assert odds.loc["Lions", "avg_wins"] == 3.0
+
+
+def test_playoff_odds_with_nothing_left_on_the_schedule(scores):
+    odds = stats.playoff_odds(scores, None, reg_weeks=6, playoff_teams=2)
+    assert odds.set_index("team_name").loc["Lions", "playoff_odds"] == 1.0
+    assert stats.playoff_odds(pd.DataFrame(), None, 6, 2).empty
+
+
+# ----------------------------------------------------------------- draft return
+
+def test_draft_return_tags_steals_and_busts_and_spares_keepers():
+    picks = pd.DataFrame([
+        # overall, round, team_id, team_name, player_id, player_name, keeper
+        (1, 1, 1, "Ravens", 101, "Stud", 0),
+        (2, 1, 2, "Bears", 102, "Dud", 0),
+        (3, 1, 3, "Colts", 103, "Kept", 1),
+        (4, 1, 4, "Lions", 104, "Fine", 0),
+        (5, 2, 4, "Lions", 105, "Late steal", 0),
+        (6, 2, 3, "Colts", 106, "Meh", 0),
+        (7, 2, 2, "Bears", 107, "Unknown", 0),
+        (8, 2, 1, "Ravens", 108, "Flop", 0),
+    ], columns=["overall_pick", "round_num", "team_id", "team_name",
+                "player_id", "player_name", "keeper"]).assign(year=2025)
+    players = pd.DataFrame([
+        (101, "RB", 300.0), (102, "WR", 20.0), (103, "QB", 500.0),
+        (104, "RB", 150.0), (105, "WR", 260.0), (106, "TE", 100.0),
+        (108, "RB", 10.0),
+    ], columns=["player_id", "position", "total_points"]).assign(year=2025)
+
+    dr = stats.draft_return(picks, players, tag_count=2).set_index("player_name")
+
+    assert dr.loc["Unknown", "total_points"] == 0.0        # not in players
+    assert dr.loc["Stud", "position"] == "RB"
+    assert (dr["expected"].notna()).all()
+    assert (dr["delta"] == dr["total_points"] - dr["expected"]).all()
+
+    assert set(dr[dr["tag"] == "steal"].index) == {"Stud", "Late steal"}
+    assert dr.loc["Kept", "tag"] == ""                     # biggest delta, but a keeper
+    assert len(dr[dr["tag"] == "bust"]) == 2
+    assert set(dr[dr["tag"] == "bust"].index) <= {"Dud", "Flop", "Unknown", "Meh"}
+    assert list(dr.reset_index()["overall_pick"]) == list(range(1, 9))
+
+
+def test_draft_return_busts_only_come_from_the_early_rounds():
+    picks = pd.DataFrame(
+        [(i, (i - 1) // 2 + 1, 1, "Ravens", 100 + i, f"P{i}", 0) for i in range(1, 17)],
+        columns=["overall_pick", "round_num", "team_id", "team_name",
+                 "player_id", "player_name", "keeper"])
+    # Everyone scores 100 except the last pick (round 8), who scores nothing.
+    players = pd.DataFrame([(100 + i, "RB", 0.0 if i == 16 else 100.0)
+                            for i in range(1, 17)],
+                           columns=["player_id", "position", "total_points"])
+    dr = stats.draft_return(picks, players).set_index("player_name")
+    assert dr.loc["P16", "tag"] == ""
+    assert (dr[dr["tag"] == "bust"]["round_num"] <= 6).all()
+
+
+def test_draft_return_empty():
+    out = stats.draft_return(pd.DataFrame(), pd.DataFrame())
+    assert out.empty and "tag" in out.columns
+
+
+# --------------------------------------------------------------------- bracket
+
+# Four teams, two regular weeks, then a four-team bracket:
+#   regular  A 2-0 (210)  C 1-1 (177)  B 1-1 (175)  D 0-2   -> seeds A C B D
+#   wk3      A(1) 120 beat D(4) 100     B(3) 110 beat C(2) 105
+#   wk4      B 130 beat A 125 (final)   C 100 beat D 90 (third)
+BRACKET_FIXTURE = [
+    (1, 1, "Aces", 100.0, 2, "Bees", 1), (1, 2, "Bees", 90.0, 1, "Aces", 0),
+    (1, 3, "Cats", 82.0, 4, "Dogs", 1), (1, 4, "Dogs", 70.0, 3, "Cats", 0),
+    (2, 1, "Aces", 110.0, 3, "Cats", 1), (2, 3, "Cats", 95.0, 1, "Aces", 0),
+    (2, 2, "Bees", 85.0, 4, "Dogs", 1), (2, 4, "Dogs", 80.0, 2, "Bees", 0),
+
+    (3, 1, "Aces", 120.0, 4, "Dogs", 1), (3, 4, "Dogs", 100.0, 1, "Aces", 0),
+    (3, 3, "Cats", 105.0, 2, "Bees", 1), (3, 2, "Bees", 110.0, 3, "Cats", 0),
+
+    (4, 1, "Aces", 125.0, 2, "Bees", 1), (4, 2, "Bees", 130.0, 1, "Aces", 0),
+    (4, 3, "Cats", 100.0, 4, "Dogs", 1), (4, 4, "Dogs", 90.0, 3, "Cats", 0),
+]
+
+
+@pytest.fixture
+def bracket_scores():
+    df = pd.DataFrame(BRACKET_FIXTURE, columns=[
+        "week", "team_id", "team_name", "score", "opponent_id", "opponent_name", "is_home",
+    ]).assign(year=2025, projected_score=100.0)
+    df["matchup_period"] = df["week"]
+    df["matchup_score"] = df["score"]
+    return df
+
+
+def test_bracket_labels_semis_final_and_third_place(bracket_scores):
+    rounds = stats.bracket(bracket_scores, playoff_team_count=4, reg_weeks=2)
+
+    assert [r["round"] for r in rounds] == [1, 2]
+    assert rounds[0]["weeks"] == [3] and rounds[1]["weeks"] == [4]
+
+    semis = {(g["home"], g["away"]): g for g in rounds[0]["games"]}
+    assert all(g["kind"] == "playoff" for g in semis.values())
+    assert semis[("Aces", "Dogs")]["winner"] == "Aces"
+    assert semis[("Aces", "Dogs")]["home_seed"] == 1
+    assert semis[("Aces", "Dogs")]["away_seed"] == 4
+    assert semis[("Cats", "Bees")]["winner"] == "Bees"
+
+    last = {g["kind"]: g for g in rounds[1]["games"]}
+    assert last["final"]["home"] == "Aces" and last["final"]["away"] == "Bees"
+    assert last["final"]["winner"] == "Bees"
+    assert last["third"]["winner"] == "Cats"
+    assert "consolation" not in last
+
+
+def test_bracket_marks_unseeded_games_as_consolation(bracket_scores):
+    # Only two make it: the wk3 Aces-Dogs and Cats-Bees games are then a
+    # final between the seeds... except Aces (1) v Dogs (4) is not between
+    # two seeds, so with a two-team field neither wk3 game is the final.
+    rounds = stats.bracket(bracket_scores, playoff_team_count=2, reg_weeks=2)
+    kinds = sorted(g["kind"] for g in rounds[0]["games"])
+    assert kinds == ["consolation", "consolation"]
+
+
+def test_champion_is_the_finals_winner(bracket_scores):
+    assert stats.champion(bracket_scores, 4, 2) == "Bees"
+
+
+def test_champion_is_none_until_the_bracket_reaches_its_final(bracket_scores):
+    semis_only = bracket_scores[bracket_scores["week"] <= 3]
+    rounds = stats.bracket(semis_only, 4, 2)
+    assert len(rounds) == 1
+    assert all(g["kind"] == "playoff" for g in rounds[0]["games"])
+    assert stats.champion(semis_only, 4, 2) is None
+    assert stats.champion(bracket_scores[bracket_scores["week"] <= 2], 4, 2) is None
+
+
+def test_champion_waits_for_a_two_week_final_to_finish(bracket_scores):
+    # Semis span weeks 3-4 as one round; the final starts in week 5 and has
+    # only its first week collected, so nobody has won it yet.
+    df = bracket_scores.copy()
+    df.loc[df["week"] == 4, "matchup_period"] = 3
+    final = df[df["week"] == 4].copy()
+    final["week"] = 5
+    final["matchup_period"] = 5
+    df = pd.concat([df, final], ignore_index=True)
+
+    rounds = stats.bracket(df, 4, 2)
+    assert rounds[0]["weeks"] == [3, 4]
+    assert rounds[1]["weeks"] == [5]
+    assert stats.champion(df, 4, 2) is None
+
+
+def test_champions_reads_settings_per_year(bracket_scores, scores):
+    both = pd.concat([bracket_scores, scores.assign(year=2024)], ignore_index=True)
+    settings = {2025: {"playoff_team_count": 4, "reg_season_count": 2}}
+    # 2024 has no settings row, so it is skipped rather than guessed at.
+    assert stats.champions(both, settings) == {2025: "Bees"}
+    assert stats.champions(both, {}) == {}
+    assert stats.champions(pd.DataFrame(), settings) == {}
+
+
+def test_bracket_empty_and_regular_season_only(scores):
+    assert stats.bracket(pd.DataFrame(), 4, 2) == []
+    assert stats.bracket(scores, 4, reg_weeks=4) == []
+
+
+# ---------------------------------------------------------- chart builders
+
+@pytest.fixture
+def styles():
+    return {n: {"color": "#6699DD", "dash": "solid"}
+            for n in ("Ravens", "Bears", "Colts", "Lions", "A", "B", "C", "D")}
+
+
+def test_luck_quadrant_draws_one_marker_per_team(luck_scores, styles):
+    fig = charts.luck_quadrant(stats.all_play(luck_scores), styles)
+    assert isinstance(fig, charts.go.Figure)
+    assert len(fig.data) == 4
+    assert len(fig.layout.shapes) == 2   # the two mean lines
+    # With logos, the marker hides under an image and the image is placed.
+    with_logo = charts.luck_quadrant(stats.all_play(luck_scores), styles,
+                                     logos={"A": "data:image/png;base64,AAAA"})
+    assert len(with_logo.layout.images) == 1
+
+
+def test_playoff_odds_bars_is_a_single_colored_bar_trace(scores, styles):
+    odds = stats.playoff_odds(scores, None, reg_weeks=4, playoff_teams=2)
+    fig = charts.playoff_odds_bars(odds, styles)
+    assert isinstance(fig, charts.go.Figure)
+    assert len(fig.data) == 1
+    assert len(fig.data[0].y) == 4
+    assert fig.data[0].text[-1] == "100%"   # top of the chart is the favourite
+
+
+def test_projection_bars_color_by_sign(scores, styles):
+    fig = charts.projection_bars(stats.projection_accuracy(scores), styles)
+    assert len(fig.data) == 1
+    colors = list(fig.data[0].marker.color)
+    deltas = list(fig.data[0].x)
+    assert all((c == charts.theme.WIN) == (d >= 0) for c, d in zip(colors, deltas))
+
+
+def test_position_stack_has_one_trace_per_position(styles):
+    contrib = pd.DataFrame([{
+        "team_id": 1, "team_name": "Ravens", "QB": 20.0, "RB": 10.0, "WR": 20.0,
+        "TE": 0.0, "D/ST": 0.0, "K": 0.0, "total": 50.0,
+        "share_QB": 0.4, "share_RB": 0.2, "share_WR": 0.4,
+        "share_TE": 0.0, "share_D/ST": 0.0, "share_K": 0.0,
+    }])
+    fig = charts.position_stack(contrib, styles)
+    assert len(fig.data) == len(stats.POSITIONS)
+    assert fig.layout.barmode == "stack"
+    assert list(fig.data[0].y) == ["Ravens"]
+
+    ordered = charts.position_stack(contrib, styles, order=["Ravens"])
+    assert list(ordered.data[0].y) == ["Ravens"]
+
+
+def test_draft_return_scatter_has_a_trace_per_team_plus_the_expected_line(styles):
+    dr = pd.DataFrame([
+        (1, 1, 1, "Ravens", 101, "Stud", "RB", 300.0, 200.0, 100.0, "steal", False),
+        (2, 1, 2, "Bears", 102, "Dud", "WR", 20.0, 200.0, -180.0, "bust", False),
+        (3, 2, 1, "Ravens", 103, "Fine", "RB", 150.0, 150.0, 0.0, "", False),
+    ], columns=["overall_pick", "round_num", "team_id", "team_name", "player_id",
+                "player_name", "position", "total_points", "expected", "delta",
+                "tag", "keeper"])
+    fig = charts.draft_return_scatter(dr, styles)
+    assert len(fig.data) == 3          # expected line + two teams
+    assert len(fig.layout.annotations) == 2
+
+
+def test_chart_builders_survive_empty_frames(styles):
+    for builder, frame in (
+        (charts.luck_quadrant, stats.all_play(pd.DataFrame())),
+        (charts.playoff_odds_bars, stats.playoff_odds(pd.DataFrame(), None, 6, 2)),
+        (charts.projection_bars, stats.projection_accuracy(pd.DataFrame())),
+        (charts.position_stack, stats.position_contribution(pd.DataFrame())),
+        (charts.draft_return_scatter, stats.draft_return(pd.DataFrame(), None)),
+    ):
+        fig = builder(frame, styles)
+        assert isinstance(fig, charts.go.Figure)
+        assert len(fig.data) == 0

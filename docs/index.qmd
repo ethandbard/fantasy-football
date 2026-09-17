@@ -230,19 +230,31 @@ Results ordered closest-first, who moved in the standings, the week's bests, and
 ::: {.tab}
 ### League
 
-The standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it, the head-to-head grid, the season's trade ledger, and "the race": rank by week for every team on one chart.
+The standings board — record, streak, last-five form, points for/against, and a sparkline per row — sortable by seed, points, or recent form. Below it: luck (all-play record and expected wins, with a points-for against points-against quadrant), playoff odds from a simulation of the remaining schedule, projection accuracy per team, the head-to-head grid, the trade and moves ledgers, the week's power rankings written by the agent, and "the race": rank by week for every team on one chart.
 :::
 
 ::: {.tab}
 ### Teams
 
-One page per team: average, ceiling, floor, projection delta, and points for and against with their league rank; a week-by-week bar chart against the league average; a game log; range vs the league (floor, ceiling, and median next to the league's); and every head-to-head matchup for that team, sorted by average margin, with the opponents not yet played named underneath. The full head-to-head grid stays on the League page.
+One page per team: average, ceiling, floor, projection delta, and points for and against with their league rank; a week-by-week bar chart against the league average; where the points come from by position; bench regrets (the optimal lineup each week against the one started, and the losses that were left on the bench); a game log; range vs the league; and every head-to-head matchup for that team, sorted by average margin. The agent's own team page also carries a manager's log of the moves it made and why. The full head-to-head grid stays on the League page.
+:::
+
+::: {.tab}
+### Players
+
+Leaderboards from every played week's lineups: points as a starter, starts, average, best week, and boom and bust rates, filterable by position. Every rostered player counts, bench weeks included.
 :::
 
 ::: {.tab}
 ### Records
 
-The record book. Twelve season awards, each a row with its scoreline and week, that links straight to the team it belongs to.
+The record book. Twelve season awards, each a row with its scoreline and week, that links straight to the team it belongs to, the all-time book keyed on (year, week), and the champions once a season's bracket is played out.
+:::
+
+::: {.tab}
+### Chat
+
+A data chat for league members, behind a shared passphrase. It answers from the site's own tables (scores, standings, head to head, records, lineups, the draft, trades, moves) with a small model and per-viewer daily caps. It does not give start, sit, or trade advice; that is what `/ask` in Discord is for, and it says so.
 :::
 
 ::::

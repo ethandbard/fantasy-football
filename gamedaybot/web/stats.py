@@ -749,3 +749,767 @@ def win_probability(scores_a, scores_b):
         return 1.0 if mean > 0 else (0.0 if mean < 0 else 0.5)
     z = mean / spread
     return float(0.5 * (1 + math.erf(z / math.sqrt(2))))
+
+
+# ------------------------------------------------------------ luck and odds
+
+def all_play(scores_df):
+    """
+    Every team's record had it played everyone every week.
+
+    A real schedule hands each team one opponent a week, so a 130-point week
+    against the one team that scored 135 is worth exactly as much as a
+    60-point week against the same opponent: nothing. All-play strips the
+    schedule out. Each week a team is credited with a win over every team it
+    outscored, so all_play_wins / (teams - 1) is the share of possible
+    opponents it would have beaten, and that share summed over the weeks is
+    the number of wins its scoring "deserved" (expected_wins). luck is the
+    gap between the wins the schedule actually delivered and that number.
+
+    Actual wins come from the round-level view so a two-week playoff round
+    counts once; all-play is judged week by week, since that is the grain
+    the scores arrive at. A week where two teams tie exactly is worth half
+    an all-play win in the expectation and appears in neither count column.
+    Sorted luckiest first.
+    """
+    cols = ["team_id", "team_name", "wins", "losses", "all_play_wins",
+            "all_play_losses", "expected_wins", "luck", "points_for",
+            "points_against"]
+    if scores_df is None or scores_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    records = derive_records(scores_df).set_index("team_id")
+    tally = {tid: [0, 0, 0.0] for tid in records.index}
+
+    for _, wk in game_log(scores_df).groupby("week"):
+        field = len(wk)
+        if field < 2:
+            continue
+        week_scores = wk["score"].to_numpy(dtype=float)
+        for tid, own in zip(wk["team_id"], week_scores):
+            if tid not in tally or np.isnan(own):
+                continue
+            beat = int((week_scores < own).sum())
+            lost = int((week_scores > own).sum())
+            tied = field - 1 - beat - lost
+            tally[tid][0] += beat
+            tally[tid][1] += lost
+            tally[tid][2] += (beat + 0.5 * tied) / (field - 1)
+
+    rows = []
+    for tid, rec in records.iterrows():
+        ap_wins, ap_losses, expected = tally[tid]
+        rows.append({
+            "team_id": tid,
+            "team_name": rec["team_name"],
+            "wins": int(rec["wins"]),
+            "losses": int(rec["losses"]),
+            "all_play_wins": ap_wins,
+            "all_play_losses": ap_losses,
+            "expected_wins": round(expected, 2),
+            "luck": round(rec["wins"] + 0.5 * rec["ties"] - expected, 2),
+            "points_for": rec["points_for"],
+            "points_against": rec["points_against"],
+        })
+    return (pd.DataFrame(rows, columns=cols)
+              .sort_values(["luck", "wins"], ascending=[False, False])
+              .reset_index(drop=True))
+
+
+def _with_projection(scores_df):
+    """Rows that carry a real projection, with actual - projected attached.
+    A missing or zero projection is the collector not having one, not ESPN
+    projecting a shutout, so those weeks are dropped rather than counted."""
+    if scores_df is None or scores_df.empty or "projected_score" not in scores_df:
+        base = list(scores_df.columns) if scores_df is not None else []
+        return pd.DataFrame(columns=base + ["delta"])
+    df = scores_df[scores_df["projected_score"].notna() &
+                   (scores_df["projected_score"] > 0)].copy()
+    df["delta"] = df["score"] - df["projected_score"]
+    return df
+
+
+def projection_accuracy(scores_df):
+    """
+    How far each team lands from ESPN's projection, per team.
+
+    mean_delta keeps the sign (a team that always beats its projection reads
+    positive), mae drops it (how far off the projection tends to be either
+    way), and beat_rate is the share of weeks over the line -- the number a
+    manager will actually quote. Sorted by mean_delta, best first.
+    """
+    cols = ["team_id", "team_name", "games", "mean_delta", "mae", "beat_rate"]
+    df = _with_projection(scores_df)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    out = (df.groupby(["team_id", "team_name"], sort=False)["delta"]
+             .agg(games="size",
+                  mean_delta="mean",
+                  mae=lambda s: s.abs().mean(),
+                  beat_rate=lambda s: (s > 0).mean())
+             .reset_index())
+    out["mean_delta"] = out["mean_delta"].round(1)
+    out["mae"] = out["mae"].round(1)
+    out["beat_rate"] = out["beat_rate"].round(3)
+    return out.sort_values("mean_delta", ascending=False).reset_index(drop=True)
+
+
+def projection_by_week(scores_df):
+    """
+    The league's projection miss per week: mean actual - projected and the
+    share of teams that beat their number. A week where share_over is well
+    off 0.5 is a week ESPN misread the whole slate, not one team.
+    """
+    cols = ["week", "league_mean_delta", "share_over"]
+    df = _with_projection(scores_df)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    out = (df.groupby("week")["delta"]
+             .agg(league_mean_delta="mean", share_over=lambda s: (s > 0).mean())
+             .reset_index())
+    out["league_mean_delta"] = out["league_mean_delta"].round(1)
+    out["share_over"] = out["share_over"].round(3)
+    return out.sort_values("week").reset_index(drop=True)
+
+
+# Fewer games than this and a team's own mean and spread are pulled toward
+# the league's, since two weeks say more about variance than about the team.
+_SHRINK_GAMES = 4
+# Weekly scores swing by more than this even for the steadiest team; a
+# smaller sample sd is a fluke of the sample, not a property of the roster.
+_SD_FLOOR = 12.0
+
+
+def _remaining_games(schedule_df, last_played, reg_weeks, known):
+    """
+    Each unplayed regular-season matchup once, as (team_id, opponent_id).
+
+    Home rows only, because every game appears from both sides; a schedule
+    stored without a home flag falls back to de-duplicating the pair per
+    week. Games involving a team with no scores yet are dropped, since there
+    is nothing to model that team's score on.
+    """
+    if schedule_df is None or schedule_df.empty or last_played >= reg_weeks:
+        return []
+
+    rem = schedule_df[(schedule_df["week"] > last_played) &
+                      (schedule_df["week"] <= reg_weeks)]
+    rem = rem[rem["team_id"].isin(known) & rem["opponent_id"].isin(known)]
+    if rem.empty:
+        return []
+
+    if "is_home" in rem.columns and (rem["is_home"] == 1).any():
+        rem = rem[rem["is_home"] == 1]
+    else:
+        pair = rem.apply(
+            lambda r: (r["week"], min(r["team_id"], r["opponent_id"]),
+                       max(r["team_id"], r["opponent_id"])), axis=1)
+        rem = rem[~pair.duplicated()]
+    return [(int(t), int(o)) for t, o in zip(rem["team_id"], rem["opponent_id"])]
+
+
+def playoff_odds(scores_df, schedule_df, reg_weeks, playoff_teams,
+                 sims=4000, seed=0):
+    """
+    Monte Carlo playoff odds over the rest of the regular season.
+
+    Each remaining game is settled by drawing both teams' scores from a
+    normal fitted to their played weeks, then the season is ranked on wins
+    and points for -- the same one-line rule derive_records uses, and
+    deliberately not ESPN's unpublished division and head-to-head tiebreaks.
+    A team's sd is floored at _SD_FLOOR, and with fewer than _SHRINK_GAMES
+    games both its mean and sd are blended toward the league's in proportion
+    to how many games are missing. A tie in a simulated game is half a win
+    each.
+
+    Deterministic under `seed`. Once the regular season is over, or nothing
+    remains on the schedule, there is nothing to draw and the odds are 1/0
+    from the actual standings. wins_now counts a tie as half a win.
+
+    Returns per team: team_id, team_name, wins_now, avg_wins, playoff_odds
+    (0-1), top_seed_odds, games_left, sorted by playoff_odds then avg_wins.
+    """
+    cols = ["team_id", "team_name", "wins_now", "avg_wins", "playoff_odds",
+            "top_seed_odds", "games_left"]
+    if scores_df is None or scores_df.empty or not reg_weeks:
+        return pd.DataFrame(columns=cols)
+
+    reg = scores_df[scores_df["week"] <= reg_weeks]
+    if reg.empty:
+        return pd.DataFrame(columns=cols)
+    last_played = int(reg["week"].max())
+
+    records = derive_records(reg)
+    team_ids = [int(t) for t in records["team_id"]]
+    index = {tid: i for i, tid in enumerate(team_ids)}
+    n = len(team_ids)
+    wins_now = (records["wins"] + 0.5 * records["ties"]).to_numpy(dtype=float)
+    pf_now = records["points_for"].to_numpy(dtype=float)
+
+    games = _remaining_games(schedule_df, last_played, reg_weeks, index)
+    games_left = np.zeros(n, dtype=int)
+    for home, away in games:
+        games_left[index[home]] += 1
+        games_left[index[away]] += 1
+
+    # Score model per team.
+    league_mean = float(reg["score"].mean())
+    league_sd = float(reg["score"].std()) if len(reg) > 1 else _SD_FLOOR
+    if np.isnan(league_sd):
+        league_sd = _SD_FLOOR
+    means = np.full(n, league_mean)
+    sds = np.full(n, max(league_sd, _SD_FLOOR))
+    per_team = reg.groupby("team_id")["score"].agg(["mean", "std", "count"])
+    for tid, row in per_team.iterrows():
+        i = index[int(tid)]
+        k = int(row["count"])
+        mean = float(row["mean"])
+        sd = float(row["std"]) if k > 1 and not np.isnan(row["std"]) else league_sd
+        if k < _SHRINK_GAMES:
+            weight = k / _SHRINK_GAMES
+            mean = weight * mean + (1 - weight) * league_mean
+            sd = weight * sd + (1 - weight) * league_sd
+        means[i] = mean
+        sds[i] = max(sd, _SD_FLOOR)
+
+    sims = max(int(sims), 1) if games else 1
+    rng = np.random.default_rng(seed)
+    wins = np.tile(wins_now, (sims, 1))
+    pf = np.tile(pf_now, (sims, 1))
+    if games:
+        home = np.array([index[h] for h, _ in games])
+        away = np.array([index[a] for _, a in games])
+        home_pts = rng.normal(means[home], sds[home], size=(sims, len(games)))
+        away_pts = rng.normal(means[away], sds[away], size=(sims, len(games)))
+        home_win = home_pts > away_pts
+        tie = home_pts == away_pts
+        for g in range(len(games)):
+            wins[:, home[g]] += home_win[:, g] + 0.5 * tie[:, g]
+            wins[:, away[g]] += (~home_win[:, g] & ~tie[:, g]) + 0.5 * tie[:, g]
+            pf[:, home[g]] += home_pts[:, g]
+            pf[:, away[g]] += away_pts[:, g]
+
+    # Wins dominate points in the standings rule; 1e6 clears any season total.
+    key = wins * 1e6 + pf
+    order = np.argsort(-key, axis=1, kind="stable")
+    rank = np.empty_like(order)
+    rank[np.arange(sims)[:, None], order] = np.arange(n)
+
+    out = pd.DataFrame({
+        "team_id": team_ids,
+        "team_name": records["team_name"].tolist(),
+        "wins_now": wins_now,
+        "avg_wins": wins.mean(axis=0).round(2),
+        "playoff_odds": (rank < playoff_teams).mean(axis=0).round(3),
+        "top_seed_odds": (rank == 0).mean(axis=0).round(3),
+        "games_left": games_left,
+    }, columns=cols)
+    return (out.sort_values(["playoff_odds", "avg_wins"], ascending=[False, False])
+               .reset_index(drop=True))
+
+
+# ------------------------------------------------------------------ lineups
+
+# Slots a player can sit in without scoring for the team.
+BENCH_SLOTS = ("BE", "IR")
+# The positions a lineup breaks down into; D/ST and K are positions in
+# ESPN's data even though they are not people.
+POSITIONS = ["QB", "RB", "WR", "TE", "D/ST", "K"]
+# ESPN flex slots that are not spelled as a "/"-joined list of positions.
+_FLEX_ALIASES = {"OP", "DP", "FLEX"}
+
+
+def _is_flex_slot(slot, slot_counts):
+    """
+    A flex slot is one that borrows from dedicated slots: "RB/WR/TE" is a
+    flex because RB is a starting slot of its own, while "D/ST" is a
+    dedicated slot that merely has a slash in its name.
+    """
+    if slot in _FLEX_ALIASES:
+        return True
+    parts = slot.split("/")
+    return len(parts) > 1 and any(p in slot_counts for p in parts)
+
+
+def _points(value):
+    """A points cell as a float, with None/NaN read as zero."""
+    if value is None:
+        return 0.0
+    value = float(value)
+    return 0.0 if math.isnan(value) else value
+
+
+def optimal_lineup(rows, slot_counts):
+    """
+    The best lineup a team could have started, in hindsight.
+
+    `rows` are dicts with player_name, position, slot, eligible_slots and
+    points; `slot_counts` maps starting slot name to how many of it the
+    league starts. Returns (optimal_points, chosen) with chosen a list of
+    (slot, player_name, points).
+
+    Greedy: dedicated slots are filled first, each with its highest-scoring
+    eligible players, and flex slots last from whoever is left. That is
+    optimal because of how ESPN defines eligibility -- a flex slot accepts
+    exactly the players the dedicated slots it spans accept, and every player
+    has one position, so no player is ever a candidate for two dedicated
+    slots. Filling a dedicated slot with its best player therefore never
+    costs a better arrangement elsewhere, and what the flex gets is the best
+    of the rest. A lineup rule that broke that (two overlapping flex types,
+    or dual-position players) would need a proper assignment.
+
+    IR players are skipped, since ESPN will not let them into a slot, and so
+    are rows with no eligibility list -- there is nothing to place them by.
+    """
+    pool = []
+    for r in rows:
+        if r.get("slot") == "IR":
+            continue
+        eligible = r.get("eligible_slots") or []
+        if isinstance(eligible, str) or len(eligible) == 0:
+            continue
+        pool.append((_points(r.get("points")), r.get("player_name"), set(eligible)))
+    # Stable sort keeps the caller's order among equal scores.
+    pool.sort(key=lambda p: -p[0])
+
+    starting = [(slot, int(count)) for slot, count in slot_counts.items()
+                if slot not in BENCH_SLOTS and count]
+    dedicated = [sc for sc in starting if not _is_flex_slot(sc[0], slot_counts)]
+    flex = [sc for sc in starting if _is_flex_slot(sc[0], slot_counts)]
+
+    chosen, used = [], set()
+    for slot, count in dedicated + flex:
+        taken = 0
+        for i, (pts, name, eligible) in enumerate(pool):
+            if taken >= count:
+                break
+            if i in used or slot not in eligible:
+                continue
+            used.add(i)
+            chosen.append((slot, name, pts))
+            taken += 1
+    return round(sum(p for _, _, p in chosen), 2), chosen
+
+
+def _game_context(scores_df):
+    """{(year, week, team_id): (team_name, opponent_score, result)} from the
+    game log, season by season so week numbers never cross years."""
+    context = {}
+    if scores_df is None or scores_df.empty:
+        return context
+    seasons = (scores_df.groupby("year") if "year" in scores_df.columns
+               else [(None, scores_df)])
+    for yr, season in seasons:
+        for _, g in game_log(season).iterrows():
+            key = (None if yr is None else int(yr), int(g["week"]), int(g["team_id"]))
+            context[key] = (g["team_name"], g["opponent_score"], g["result"])
+    return context
+
+
+def bench_regrets(lineup_df, slot_counts, scores_df):
+    """
+    Per team-week, the points left on the bench and whether they mattered.
+
+    actual_points sums what the starters scored, optimal_points is
+    optimal_lineup() over the whole roster, and regret is the difference.
+    opponent_score and the W/L/T result come from the game log for that
+    (year, week, team), and flipped is True when the optimal lineup would
+    have turned a loss into a win -- the only regret anyone remembers.
+    """
+    cols = ["year", "week", "team_id", "team_name", "actual_points",
+            "optimal_points", "regret", "opponent_score", "result", "flipped"]
+    if lineup_df is None or lineup_df.empty or not slot_counts:
+        return pd.DataFrame(columns=cols)
+
+    context = _game_context(scores_df)
+    names = {}
+    if scores_df is not None and not scores_df.empty:
+        names = dict(zip(scores_df["team_id"].astype(int), scores_df["team_name"]))
+
+    rows = []
+    for (yr, wk, tid), roster in lineup_df.groupby(["year", "week", "team_id"]):
+        yr, wk, tid = int(yr), int(wk), int(tid)
+        players = roster.to_dict("records")
+        starters = [p for p in players if p.get("slot") not in BENCH_SLOTS]
+        actual = round(sum(_points(p.get("points")) for p in starters), 2)
+        optimal, _ = optimal_lineup(players, slot_counts)
+
+        name, opp, result = context.get(
+            (yr, wk, tid), context.get((None, wk, tid),
+                                       (names.get(tid, f"Team {tid}"), np.nan, "")))
+        opp = np.nan if opp is None else opp
+        rows.append({
+            "year": yr, "week": wk, "team_id": tid, "team_name": name,
+            "actual_points": actual,
+            "optimal_points": optimal,
+            "regret": round(optimal - actual, 2),
+            "opponent_score": opp,
+            "result": result,
+            "flipped": bool(result == "L" and pd.notna(opp) and optimal > opp),
+        })
+    return (pd.DataFrame(rows, columns=cols)
+              .sort_values(["year", "week", "team_id"])
+              .reset_index(drop=True))
+
+
+def bench_regret_summary(regrets_df):
+    """Season totals of bench_regrets() per team, worst offender first."""
+    cols = ["team_id", "team_name", "total_regret", "avg_regret", "weeks",
+            "flipped_losses"]
+    if regrets_df is None or regrets_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    out = (regrets_df.sort_values(["year", "week"])
+                     .groupby("team_id")
+                     .agg(team_name=("team_name", "last"),
+                          total_regret=("regret", "sum"),
+                          avg_regret=("regret", "mean"),
+                          weeks=("regret", "size"),
+                          flipped_losses=("flipped", "sum"))
+                     .reset_index())
+    out["total_regret"] = out["total_regret"].round(1)
+    out["avg_regret"] = out["avg_regret"].round(1)
+    out["flipped_losses"] = out["flipped_losses"].astype(int)
+    return (out[cols].sort_values("total_regret", ascending=False)
+                     .reset_index(drop=True))
+
+
+def position_contribution(lineup_df, names=None):
+    """
+    Where each team's starting points came from, by position.
+
+    A flex starter counts under the player's own position, not the slot --
+    the question is "how much did your running backs score", not "what did
+    the flex slot yield". `total` is every starter's points, so shares over
+    the six listed positions sum to 1 unless the league starts something
+    else (IDP, say). `names` ({team_id: team_name}) attaches a team_name
+    column, since lineup rows only carry the id.
+    """
+    shares = [f"share_{p}" for p in POSITIONS]
+    cols = ["team_id"] + POSITIONS + ["total"] + shares
+    if names:
+        cols = cols + ["team_name"]
+    if lineup_df is None or lineup_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    starters = lineup_df[~lineup_df["slot"].isin(BENCH_SLOTS)].copy()
+    if starters.empty:
+        return pd.DataFrame(columns=cols)
+    starters["points"] = starters["points"].fillna(0.0).astype(float)
+
+    wide = starters.pivot_table(index="team_id", columns="position",
+                                values="points", aggfunc="sum", fill_value=0.0)
+    for p in POSITIONS:
+        if p not in wide.columns:
+            wide[p] = 0.0
+    out = wide[POSITIONS].round(1)
+    out["total"] = starters.groupby("team_id")["points"].sum().round(1)
+    for p in POSITIONS:
+        out[f"share_{p}"] = (out[p] / out["total"]).where(out["total"] > 0, 0.0).round(3)
+    out = out.reset_index()
+    out.columns.name = None
+    if names:
+        out["team_name"] = out["team_id"].map(lambda t: names.get(int(t), f"Team {t}"))
+    return out[cols].sort_values("total", ascending=False).reset_index(drop=True)
+
+
+def position_contribution_long(contrib_df):
+    """position_contribution() melted to (team_id, position, points, share),
+    which is the shape a stacked bar wants."""
+    cols = ["team_id", "position", "points", "share"]
+    if contrib_df is None or contrib_df.empty:
+        return pd.DataFrame(columns=cols)
+    rows = []
+    for _, r in contrib_df.iterrows():
+        for p in POSITIONS:
+            rows.append({"team_id": r["team_id"], "position": p,
+                         "points": r[p], "share": r[f"share_{p}"]})
+    return pd.DataFrame(rows, columns=cols)
+
+
+def player_leaderboard(lineup_df, min_weeks=1):
+    """
+    Season totals per player across every roster that carried them.
+
+    points_total counts every rostered week, bench included; the *_as_starter
+    columns count only the weeks a manager actually played them, which is
+    what a leaderboard of "who won you games" wants. boom_rate and bust_rate
+    are the share of starts at or above 1.5x and at or below 0.5x the
+    player's own starting average -- a player's volatility relative to
+    himself, so a kicker and a WR1 are judged on the same scale. team_id is
+    the most recent roster. team_name is left to the caller, since lineup
+    rows only carry the id.
+
+    Sorted by points_as_starter, then points_total.
+    """
+    cols = ["player_id", "player_name", "position", "team_id", "weeks_rostered",
+            "starts", "points_total", "points_as_starter", "avg_as_starter",
+            "best_week", "best_points", "boom_rate", "bust_rate"]
+    if lineup_df is None or lineup_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    order = ["year", "week"] if "year" in lineup_df.columns else ["week"]
+    df = lineup_df.sort_values(order).copy()
+    df["points"] = df["points"].fillna(0.0).astype(float)
+    df["is_starter"] = ~df["slot"].isin(BENCH_SLOTS)
+
+    rows = []
+    for pid, g in df.groupby("player_id", sort=False):
+        last = g.iloc[-1]
+        starts = g[g["is_starter"]]
+        n_starts = len(starts)
+        as_starter = float(starts["points"].sum())
+        avg = as_starter / n_starts if n_starts else 0.0
+        best = g.loc[g["points"].idxmax()]
+        if n_starts and avg > 0:
+            boom = float((starts["points"] >= 1.5 * avg).mean())
+            bust = float((starts["points"] <= 0.5 * avg).mean())
+        else:
+            boom = bust = 0.0
+        rows.append({
+            "player_id": pid,
+            "player_name": last["player_name"],
+            "position": last["position"],
+            "team_id": int(last["team_id"]),
+            "weeks_rostered": len(g),
+            "starts": n_starts,
+            "points_total": round(float(g["points"].sum()), 1),
+            "points_as_starter": round(as_starter, 1),
+            "avg_as_starter": round(avg, 1),
+            "best_week": int(best["week"]),
+            "best_points": round(float(best["points"]), 1),
+            "boom_rate": round(boom, 3),
+            "bust_rate": round(bust, 3),
+        })
+
+    out = pd.DataFrame(rows, columns=cols)
+    out = out[out["weeks_rostered"] >= min_weeks]
+    return (out.sort_values(["points_as_starter", "points_total"],
+                            ascending=[False, False])
+               .reset_index(drop=True))
+
+
+# -------------------------------------------------------------------- draft
+
+def draft_return(picks_df, players_df, window=8, tag_count=5, bust_rounds=6):
+    """
+    What each draft pick returned against what its slot usually returns.
+
+    total_points comes from the players table (season points wherever the
+    player scored them, which lineup rows would miss), zero when missing.
+    `expected` is a centred rolling median of total_points over `window`
+    picks in draft order -- a median because one league-winning pick 12
+    should not raise the bar for picks 8 through 16, and a rolling one
+    because the draft's value curve has no reason to follow a formula. delta
+    is the return over that bar.
+
+    tag is "steal" for the `tag_count` biggest deltas and "bust" for the
+    `tag_count` smallest among rounds 1..`bust_rounds`, where a miss actually
+    hurt; a late-round zero is the expected outcome, not a bust. Keepers are
+    excluded from both, since their price was set a year earlier.
+    """
+    cols = ["overall_pick", "round_num", "team_id", "team_name", "player_id",
+            "player_name", "position", "total_points", "expected", "delta",
+            "tag", "keeper"]
+    if picks_df is None or picks_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    picks = picks_df.sort_values("overall_pick").copy()
+    picks = picks.drop(columns=[c for c in ("position", "total_points")
+                                if c in picks.columns])
+    if "keeper" not in picks.columns:
+        picks["keeper"] = False
+    picks["keeper"] = picks["keeper"].fillna(0).astype(bool)
+
+    if players_df is not None and not players_df.empty:
+        keys = ["player_id"] + (["year"] if "year" in picks.columns
+                                and "year" in players_df.columns else [])
+        info = players_df.copy()
+        if "position" not in info.columns:
+            info["position"] = None
+        if "total_points" not in info.columns:
+            info["total_points"] = np.nan
+        info = info[keys + ["position", "total_points"]].drop_duplicates(keys)
+        picks = picks.merge(info, on=keys, how="left")
+    else:
+        picks["position"] = None
+        picks["total_points"] = np.nan
+
+    picks["total_points"] = picks["total_points"].fillna(0.0).astype(float).round(1)
+    picks["expected"] = (picks["total_points"]
+                         .rolling(window, center=True, min_periods=1)
+                         .median().round(1))
+    picks["delta"] = (picks["total_points"] - picks["expected"]).round(1)
+
+    picks["tag"] = ""
+    eligible = picks[~picks["keeper"]]
+    steals = eligible.nlargest(tag_count, "delta").index
+    busts = (eligible[(eligible["round_num"] <= bust_rounds) &
+                      ~eligible.index.isin(steals)]
+             .nsmallest(tag_count, "delta").index)
+    picks.loc[steals, "tag"] = "steal"
+    picks.loc[busts, "tag"] = "bust"
+
+    return picks.reindex(columns=cols).reset_index(drop=True)
+
+
+# ------------------------------------------------------------------ playoffs
+
+def _playoff_round_count(playoff_team_count):
+    """Rounds a single-elimination bracket of this size takes: 2 -> 1,
+    4 -> 2, 6 and 8 -> 3. A six-team field gives the top two a bye."""
+    if not playoff_team_count or playoff_team_count < 2:
+        return 1
+    return int(math.ceil(math.log2(playoff_team_count)))
+
+
+def bracket(scores_df, playoff_team_count, reg_weeks):
+    """
+    The playoff rounds after `reg_weeks`, one entry per round.
+
+    Each round is {"round", "weeks", "games"} with a game per matchup
+    (home side first) carrying the names, ids, seeds, scores, the winner
+    (None for a tie) and a `kind`:
+
+      "playoff"      an earlier-round game between two seeds still alive
+      "final"        the last round's game between the two teams that won
+                     every earlier playoff game
+      "third"        the last round's game between the two teams that each
+                     lost exactly once, in the semifinal
+      "consolation"  everything else, including the losers' ladder
+
+    Seeds are the top `playoff_team_count` teams by derive_records over the
+    regular season, and the last round is the one a bracket of that size
+    needs, so a half-collected postseason reports its rounds as "playoff"
+    until the final actually arrives. Rounds come from matchup_log, so a
+    two-week round is one game.
+    """
+    if scores_df is None or scores_df.empty or not reg_weeks:
+        return []
+
+    regular = scores_df[scores_df["week"] <= reg_weeks]
+    seeds = [int(t) for t in derive_records(regular)["team_id"].head(playoff_team_count)]
+    seed_of = {tid: i + 1 for i, tid in enumerate(seeds)}
+
+    post = scores_df[scores_df["week"] > reg_weeks].copy()
+    if post.empty:
+        return []
+    if "matchup_period" in post.columns:
+        post["matchup_period"] = post["matchup_period"].fillna(post["week"])
+    else:
+        post["matchup_period"] = post["week"]
+
+    log = matchup_log(post)
+    total_rounds = _playoff_round_count(playoff_team_count)
+    alive = set(seeds)
+    eliminated_in = {}
+    rounds = []
+
+    for n, period in enumerate(sorted(log["matchup_period"].unique()), start=1):
+        this_round = log[(log["matchup_period"] == period) & log["opponent_score"].notna()]
+        if "is_home" in this_round.columns and (this_round["is_home"] == 1).any():
+            this_round = this_round[this_round["is_home"] == 1]
+        elif not this_round.empty:
+            pair = this_round.apply(
+                lambda r: (min(r["team_id"], r["opponent_id"]),
+                           max(r["team_id"], r["opponent_id"])), axis=1)
+            this_round = this_round[~pair.duplicated()]
+
+        games, losers = [], []
+        for _, g in this_round.iterrows():
+            home, away = int(g["team_id"]), int(g["opponent_id"])
+            home_score, away_score = float(g["score"]), float(g["opponent_score"])
+            if home_score > away_score:
+                winner, loser = g["team_name"], away
+            elif away_score > home_score:
+                winner, loser = g["opponent_name"], home
+            else:
+                winner, loser = None, None
+
+            seeded = home in seed_of and away in seed_of
+            both_alive = home in alive and away in alive
+            if n == total_rounds and seeded and both_alive:
+                kind = "final"
+            elif (n == total_rounds and seeded
+                  and eliminated_in.get(home) == n - 1
+                  and eliminated_in.get(away) == n - 1):
+                kind = "third"
+            elif n < total_rounds and seeded and both_alive:
+                kind = "playoff"
+            else:
+                kind = "consolation"
+
+            games.append({
+                "home": g["team_name"], "away": g["opponent_name"],
+                "home_id": home, "away_id": away,
+                "home_seed": seed_of.get(home), "away_seed": seed_of.get(away),
+                "home_score": home_score, "away_score": away_score,
+                "winner": winner, "kind": kind,
+            })
+            if loser is not None:
+                losers.append(loser)
+
+        # Eliminations land after the round, so both games of a round are
+        # judged on who was alive going in.
+        for loser in losers:
+            if loser in alive:
+                alive.discard(loser)
+                eliminated_in[loser] = n
+
+        weeks = sorted(int(w) for w in
+                       post.loc[post["matchup_period"] == period, "week"].unique())
+        rounds.append({"round": n, "weeks": weeks, "games": games})
+
+    return rounds
+
+
+def champion(scores_df, playoff_team_count, reg_weeks):
+    """
+    The final's winner, or None while the season is still going.
+
+    "Still going" is judged two ways, since the scores table has no flag for
+    it: the bracket has not reached the round a field of this size needs,
+    or the last round has been collected for fewer weeks than an earlier
+    round ran -- a two-week final with one week in. A two-week final after
+    one-week semifinals slips past that check and reads as decided a week
+    early; the collector's next pass corrects it.
+    """
+    rounds = bracket(scores_df, playoff_team_count, reg_weeks)
+    total = _playoff_round_count(playoff_team_count)
+    if len(rounds) < total:
+        return None
+    last = rounds[total - 1]
+    earlier = [len(r["weeks"]) for r in rounds[:total - 1]]
+    if earlier and len(last["weeks"]) < max(earlier):
+        return None
+    for game in last["games"]:
+        if game["kind"] == "final":
+            return game["winner"]
+    return None
+
+
+def champions(all_scores_df, settings_by_year):
+    """
+    {year: champion} across every season with the settings to decide one.
+
+    `settings_by_year` is {year: {"playoff_team_count", "reg_season_count"}};
+    a year without both is skipped rather than guessed at, and so is a year
+    whose bracket has no decided final yet.
+    """
+    out = {}
+    if (all_scores_df is None or all_scores_df.empty
+            or "year" not in all_scores_df.columns):
+        return out
+    for yr, season in all_scores_df.groupby("year"):
+        yr = int(yr)
+        settings = settings_by_year.get(yr) or settings_by_year.get(str(yr)) or {}
+        teams = settings.get("playoff_team_count")
+        reg = settings.get("reg_season_count")
+        if not teams or not reg:
+            continue
+        winner = champion(season, int(teams), int(reg))
+        if winner:
+            out[yr] = winner
+    return out

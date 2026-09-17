@@ -141,7 +141,7 @@ def parse_player_entry(entry, year, bye_by_team, rank_type="STANDARD"):
         return None
 
     pro_team_id = player.get("proTeamId") or 0
-    projected, last_year = _season_stats(player.get("stats") or [], year)
+    projected, last_year, actual = _season_stats(player.get("stats") or [], year)
 
     ownership = player.get("ownership") or {}
     ranks = player.get("draftRanksByRankType") or {}
@@ -180,6 +180,7 @@ def parse_player_entry(entry, year, bye_by_team, rank_type="STANDARD"):
         "projected_points": _round(projected.get("points"), 1),
         "projected_avg": _round(projected.get("avg"), 1),
         "last_year_points": _round(last_year.get("points"), 1),
+        "total_points": _round(actual.get("points"), 1),
         "projected_stats": json.dumps(projected.get("breakdown") or {}, sort_keys=True),
         "last_year_stats": json.dumps(last_year.get("breakdown") or {}, sort_keys=True),
         "on_team_id": entry.get("onTeamId") or player.get("onTeamId") or 0,
@@ -224,6 +225,7 @@ def _season_stats(stats_list, year):
     """
     projected = {}
     last_year = {}
+    actual = {}
     for stats in stats_list:
         if stats.get("statSplitTypeId") == 2:
             continue
@@ -240,12 +242,11 @@ def _season_stats(stats_list, year):
             projected = bucket
         elif season == year - 1 and source == 0:
             last_year = bucket
-        elif season == year and source == 0 and not last_year:
-            # Preseason has no last-year block for rookies; in-season this
-            # branch is the actual season-to-date, which the board can show
-            # in last_year_points until a dedicated actuals column exists.
-            pass
-    return projected, last_year
+        elif season == year and source == 0:
+            # The actual season-to-date: empty before week 1, and the draft
+            # return chart's y-axis once games are played.
+            actual = bucket
+    return projected, last_year, actual
 
 
 # PLAYER_STATS_MAP reuses passingYards/rushingYards/receivingYards for both

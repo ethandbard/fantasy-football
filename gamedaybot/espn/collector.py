@@ -52,9 +52,12 @@ def collect_weekly_snapshot(league):
     # run.
     already_have = db.get_collected_weeks(year)
     newest_have = max(already_have) if already_have else 0
+    # Lineup rows arrived after the score rows existed, so a week with scores
+    # but no lineups is re-fetched once; the box score call yields both.
+    have_lineups = db.get_lineup_weeks(year)
     last_played = None
     for w in range(1, week + 1):
-        if w in already_have and w != newest_have:
+        if w in already_have and w != newest_have and w in have_lineups:
             continue
         if _collect_scores(league, year, w):
             last_played = w
@@ -193,7 +196,45 @@ def _collect_scores(league, year, week):
 
     db.upsert_weekly_scores(rows)
     logger.info("Collected %d score rows for %s week %s", len(rows), year, week)
+
+    lineup_rows = []
+    for b in box_scores:
+        if not b.away_team:
+            continue
+        lineup_rows.extend(lineup_rows_from_box(b, year, week))
+    if lineup_rows:
+        db.replace_lineup_week(year, week, lineup_rows)
+        logger.info("Collected %d lineup rows for %s week %s", len(lineup_rows), year, week)
     return True
+
+
+def lineup_rows_from_box(box, year, week):
+    """
+    One lineup_scores row per rostered player on both sides of a box score,
+    bench and IR included. Every attribute read has a fallback because ESPN
+    drops fields for players it no longer knows (retired, cut mid-week).
+    """
+    rows = []
+    for team, lineup in ((box.home_team, box.home_lineup), (box.away_team, box.away_lineup)):
+        if team is None:
+            continue
+        for p in lineup or []:
+            player_id = getattr(p, "playerId", None)
+            if player_id is None:
+                continue
+            rows.append({
+                "year": year, "week": week, "team_id": team.team_id,
+                "player_id": int(player_id),
+                "player_name": getattr(p, "name", None),
+                "position": getattr(p, "position", None),
+                "pro_team": getattr(p, "proTeam", None),
+                "slot": getattr(p, "slot_position", None) or "BE",
+                "eligible_slots": list(getattr(p, "eligibleSlots", None) or []),
+                "projected": getattr(p, "projected_points", None),
+                "points": getattr(p, "points", None),
+                "injury_status": getattr(p, "injuryStatus", None),
+            })
+    return rows
 
 
 def _weekly_scores(box, weeks_in_round):
@@ -268,10 +309,80 @@ def collect_league_state(league):
     """
     collected = collect_player_pool(league)
     collect_teams(league)
+    collect_league_settings(league)
     collect_logos(league)
     collect_schedule(league)
     collected = collect_draft_picks(league) or collected
+    collect_activity(league)
     return collected
+
+
+def collect_league_settings(league):
+    """
+    The settings the derivations need: playoff team count, regular-season
+    length, team count, and the starting slot counts. Cheap, and stored per
+    season so a backfilled year keeps the rules it was played under.
+    """
+    db.init_db()
+    settings = getattr(league, "settings", None)
+    if settings is None:
+        return
+    raw_counts = getattr(settings, "position_slot_counts", None) or {}
+    slot_counts = {name: int(n) for name, n in raw_counts.items()
+                   if n and name not in ("BE", "IR")}
+    db.upsert_league_settings(
+        league.year,
+        team_count=len(league.teams) or None,
+        reg_season_count=getattr(settings, "reg_season_count", None),
+        playoff_team_count=getattr(settings, "playoff_team_count", None),
+        slot_counts=slot_counts,
+    )
+    logger.info("Collected league settings for %s", league.year)
+
+
+def _activity_rows(activity, year):
+    """Every non-trade action of one Activity as activity-table rows."""
+    rows = []
+    for team, action, player, bid in activity.actions:
+        if action in ("TRADE_SENT", "TRADE_RECEIVED", "UNKNOWN"):
+            continue
+        player_id = getattr(player, "playerId", None)
+        if player_id is None:
+            player_id = player if isinstance(player, int) else hash(str(player))
+        rows.append({
+            "year": year, "date": int(activity.date),
+            "team_id": getattr(team, "team_id", None) if team else None,
+            "team_name": getattr(team, "team_name", None) if team else None,
+            "action": action,
+            "player_id": int(player_id),
+            "player_name": getattr(player, "name", str(player)),
+            "position": getattr(player, "position", None),
+            "bid_amount": bid or 0,
+        })
+    return rows
+
+
+def collect_activity(league, size=100):
+    """
+    Adds, drops, and waiver claims into the activity table. Insert-only, so
+    the ledger outlives ESPN's recent window. Needs the league cookies like
+    trades do; a public league logs and moves on.
+    """
+    db.init_db()
+    try:
+        activities = league.recent_activity(size)
+    except Exception as e:
+        logger.info("Skipping activity collection for %s: %s", league.year, e)
+        return []
+    rows = []
+    for activity in activities:
+        rows.extend(_activity_rows(activity, league.year))
+    if not rows:
+        return []
+    new = db.insert_new_activity(rows)
+    if new:
+        logger.info("Collected %d new activity rows for %s", len(new), league.year)
+    return new
 
 
 def collect_draft_picks(league):

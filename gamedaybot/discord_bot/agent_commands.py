@@ -129,6 +129,17 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         await _run_job(interaction, "recap", {"week": week} if week else {},
                        done="The recap lands on the dashboard's This week page when it finishes; nothing posts here.")
 
+    @agent.command(name="preview", description="Write this week's matchup preview for the dashboard now")
+    async def agent_preview(interaction: discord.Interaction):
+        await _run_job(interaction, "preview", {},
+                       done="The preview lands on the dashboard's Next up page when it finishes; nothing posts here.")
+
+    @agent.command(name="power", description="Write the power rankings for the dashboard now")
+    @app_commands.describe(week="Rank the league after this week; defaults to the week just played")
+    async def agent_power(interaction: discord.Interaction, week: int = None):
+        await _run_job(interaction, "power", {"week": week} if week else {},
+                       done="The rankings land on the dashboard's League page when it finishes; nothing posts here.")
+
     @agent.command(name="trade", description="Ask the trade reviewer about an offer, in your own words")
     @app_commands.describe(offer="Describe the trade, e.g. 'my Rice for Chris's Bucky Irving'")
     async def agent_trade(interaction: discord.Interaction, offer: str):

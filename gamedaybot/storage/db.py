@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS players (
     projected_points REAL,
     projected_avg REAL,
     last_year_points REAL,
+    total_points REAL,
     projected_stats TEXT,
     last_year_stats TEXT,
     on_team_id INTEGER,
@@ -139,11 +140,75 @@ CREATE TABLE IF NOT EXISTS site_content (
     written_at TEXT,
     PRIMARY KEY (kind, year, week)
 );
+
+-- Every rostered player in every played week's box score: slot, projection,
+-- points. Bench and IR rows included, which is what makes bench regrets,
+-- position contribution, and the player leaderboards possible. Replaced per
+-- (year, week) on every collect, so a player dropped mid-week does not
+-- linger. eligible_slots is a JSON list of slot names ("RB", "RB/WR/TE").
+CREATE TABLE IF NOT EXISTS lineup_scores (
+    year INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT,
+    position TEXT,
+    pro_team TEXT,
+    slot TEXT NOT NULL,
+    eligible_slots TEXT,
+    projected REAL,
+    points REAL,
+    injury_status TEXT,
+    collected_at TEXT,
+    PRIMARY KEY (year, week, team_id, player_id)
+);
+
+-- League settings the derivations need and used to guess at: how many
+-- teams make the playoffs, how long the regular season is, and the starting
+-- slot counts (JSON {slot name: count}) that decide an optimal lineup.
+CREATE TABLE IF NOT EXISTS league_settings (
+    year INTEGER PRIMARY KEY,
+    team_count INTEGER,
+    reg_season_count INTEGER,
+    playoff_team_count INTEGER,
+    slot_counts TEXT,
+    collected_at TEXT
+);
+
+-- The league activity feed: adds, drops, waiver claims, trades, one row per
+-- player moved. date is ESPN's millisecond timestamp. Insert-only, so the
+-- ledger keeps moves that have scrolled out of ESPN's recent window.
+CREATE TABLE IF NOT EXISTS activity (
+    year INTEGER NOT NULL,
+    date INTEGER NOT NULL,
+    team_id INTEGER,
+    team_name TEXT,
+    action TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT,
+    position TEXT,
+    bid_amount REAL,
+    collected_at TEXT,
+    PRIMARY KEY (year, date, action, player_id)
+);
+
+-- Questions asked of the dashboard's data chat, for the daily caps. The
+-- viewer key is a per-browser token, not an identity.
+CREATE TABLE IF NOT EXISTS chat_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    viewer TEXT,
+    question TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER
+);
 """
 
 # The kinds of prose the dashboard knows where to show. The agent's write
 # tool refuses anything else, so a mistyped kind cannot land as an orphan row.
-SITE_CONTENT_KINDS = ("recap",)
+# recap: last week, on This week. preview: the coming matchups, on Next up.
+# power: weekly power rankings, on League.
+SITE_CONTENT_KINDS = ("recap", "preview", "power")
 
 
 @contextmanager
@@ -180,6 +245,12 @@ _ADDED_COLUMNS = {
     },
     "schedule": {
         "projected_score": "REAL",
+    },
+    "players": {
+        # Season points scored so far, from the daily pool collect. The draft
+        # return chart reads this; lineup_scores misses points a player
+        # scored on another roster or on waivers.
+        "total_points": "REAL",
     },
 }
 
@@ -306,6 +377,9 @@ def replace_players(year, rows):
     pool (retired, cut, no longer ranked) would otherwise stay on the draft
     board forever.
     """
+    # total_points arrived after the first release; a caller (or a test)
+    # building rows without it still writes.
+    rows = [{"total_points": None, **r} for r in rows]
     with get_connection() as conn:
         conn.execute("DELETE FROM players WHERE year = ?", (year,))
         conn.executemany(
@@ -314,13 +388,13 @@ def replace_players(year, rows):
                 (year, player_id, name, position, pro_team, bye_week,
                  injury_status, injured, percent_owned, percent_started,
                  adp, auction_value, draft_rank, pos_rank, projected_points,
-                 projected_avg, last_year_points, projected_stats,
+                 projected_avg, last_year_points, total_points, projected_stats,
                  last_year_stats, on_team_id, collected_at)
             VALUES
                 (:year, :player_id, :name, :position, :pro_team, :bye_week,
                  :injury_status, :injured, :percent_owned, :percent_started,
                  :adp, :auction_value, :draft_rank, :pos_rank, :projected_points,
-                 :projected_avg, :last_year_points, :projected_stats,
+                 :projected_avg, :last_year_points, :total_points, :projected_stats,
                  :last_year_stats, :on_team_id, datetime('now'))
             """,
             rows,
@@ -383,6 +457,150 @@ def get_all_trades():
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM trades ORDER BY year DESC, trade_date DESC, player_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def replace_lineup_week(year, week, rows):
+    """
+    Replace every lineup row for one week. rows: dicts with the lineup_scores
+    columns (eligible_slots as a list; stored as JSON). Idempotent, and a
+    player who left a roster since the last collect does not linger.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM lineup_scores WHERE year = ? AND week = ?", (int(year), int(week)))
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO lineup_scores
+                (year, week, team_id, player_id, player_name, position, pro_team, slot,
+                 eligible_slots, projected, points, injury_status, collected_at)
+            VALUES
+                (:year, :week, :team_id, :player_id, :player_name, :position, :pro_team, :slot,
+                 :eligible_slots, :projected, :points, :injury_status, datetime('now'))
+            """,
+            [dict(r, eligible_slots=json.dumps(r.get("eligible_slots") or [])) for r in rows],
+        )
+
+
+def get_lineup_weeks(year):
+    """Weeks of a season that have lineup rows."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT DISTINCT week FROM lineup_scores WHERE year = ?", (int(year),)).fetchall()
+        return {int(r["week"]) for r in rows}
+
+
+def get_all_lineup_scores():
+    """Every lineup row, every season, eligible_slots decoded to a list."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM lineup_scores ORDER BY year, week, team_id, slot, player_name"
+        ).fetchall()
+        out = []
+        for r in rows:
+            row = dict(r)
+            raw = row.get("eligible_slots")
+            try:
+                row["eligible_slots"] = json.loads(raw) if raw else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                row["eligible_slots"] = []
+            out.append(row)
+        return out
+
+
+def upsert_league_settings(year, team_count=None, reg_season_count=None, playoff_team_count=None,
+                           slot_counts=None):
+    """slot_counts: {slot name: count} for the starting slots."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO league_settings
+                (year, team_count, reg_season_count, playoff_team_count, slot_counts, collected_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (int(year), team_count, reg_season_count, playoff_team_count,
+             json.dumps(slot_counts or {})),
+        )
+
+
+def get_all_league_settings():
+    """{year: {team_count, reg_season_count, playoff_team_count, slot_counts}}."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM league_settings").fetchall()
+        out = {}
+        for r in rows:
+            row = dict(r)
+            row["slot_counts"] = _loads_json(row.get("slot_counts"))
+            out[int(row["year"])] = row
+        return out
+
+
+def insert_new_activity(rows):
+    """
+    Insert activity rows not already stored (keyed on year, date, action,
+    player). Returns the rows that were new.
+    """
+    new = []
+    with get_connection() as conn:
+        for r in rows:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO activity
+                    (year, date, team_id, team_name, action, player_id, player_name, position,
+                     bid_amount, collected_at)
+                VALUES
+                    (:year, :date, :team_id, :team_name, :action, :player_id, :player_name,
+                     :position, :bid_amount, datetime('now'))
+                """,
+                r,
+            )
+            if cur.rowcount:
+                new.append(r)
+    return new
+
+
+def get_all_activity():
+    """Every stored activity row, newest first."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM activity ORDER BY year DESC, date DESC, action, player_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def log_chat(viewer, question, input_tokens=None, output_tokens=None):
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO chat_log (at, viewer, question, input_tokens, output_tokens) VALUES (datetime('now'), ?, ?, ?, ?)",
+            (viewer, question, input_tokens, output_tokens),
+        )
+
+
+def chats_today(viewer=None):
+    """Questions asked since UTC midnight, for one viewer or everyone."""
+    with get_connection() as conn:
+        if viewer is None:
+            row = conn.execute("SELECT COUNT(*) AS n FROM chat_log WHERE at >= date('now')").fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM chat_log WHERE at >= date('now') AND viewer = ?",
+                               (viewer,)).fetchone()
+        return int(row["n"])
+
+
+def get_agent_transactions(limit=50):
+    """
+    The agent's executed ESPN writes, newest first, or [] when the agent
+    service has never created its tables in this database. The dashboard
+    shows these as the manager's log; the table itself belongs to agent.store.
+    """
+    with get_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_transactions'"
+        ).fetchone()
+        if not exists:
+            return []
+        rows = conn.execute(
+            "SELECT at, kind, description, reason, ok, dry_run, code, message FROM agent_transactions "
+            "ORDER BY at DESC LIMIT ?", (int(limit),)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -604,7 +822,11 @@ def fingerprint():
                    (SELECT COALESCE(MAX(collected_at), '') FROM team_logos),
                    (SELECT COUNT(*) FROM trades),
                    (SELECT COUNT(*) FROM site_content),
-                   (SELECT COALESCE(MAX(written_at), '') FROM site_content)
+                   (SELECT COALESCE(MAX(written_at), '') FROM site_content),
+                   (SELECT COUNT(*) FROM lineup_scores),
+                   (SELECT COALESCE(MAX(collected_at), '') FROM lineup_scores),
+                   (SELECT COUNT(*) FROM league_settings),
+                   (SELECT COUNT(*) FROM activity)
             """
         ).fetchone())
 

@@ -72,6 +72,14 @@ JOBS = {
         "recap", "League recap", "brief", "light",
         ["analyst", "site"], web=False, writes=False, max_turns_key="light", search_cap_key="light",
         prompt_file="recap.md", owner_job=False, post_brief=False),
+    "preview": JobSpec(
+        "preview", "Matchup preview", "brief", "light",
+        ["analyst", "site"], web=False, writes=False, max_turns_key="light", search_cap_key="light",
+        prompt_file="preview.md", owner_job=False, post_brief=False),
+    "power": JobSpec(
+        "power", "Power rankings", "brief", "light",
+        ["analyst", "site"], web=False, writes=False, max_turns_key="light", search_cap_key="light",
+        prompt_file="power.md", owner_job=False, post_brief=False),
 }
 
 

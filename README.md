@@ -138,6 +138,10 @@ you edit it.
 | `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. `0` means no limit. |
 | `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
 | `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
+| `ANTHROPIC_API_KEY` | Dashboard chat | None | Pays for the dashboard's data chat by the token. Without it the Chat page says it is not configured. |
+| `CHAT_PASSPHRASE` | Dashboard chat | None | Shared league passphrase that opens the Chat page. Unset disables the chat. |
+| `CHAT_MODEL` | No | `claude-haiku-4-5-20251001` | Model behind the data chat. |
+| `CHAT_DAILY_LIMIT` / `CHAT_LEAGUE_DAILY_LIMIT` | No | `20` / `200` | Chat questions per browser and per league per day. |
 
 Each running copy of the container is one league. Scheduled posts go to every
 URL in `DISCORD_WEBHOOK_URL`. Slash commands follow the bot into every server
@@ -236,6 +240,8 @@ Times are in `TIMEZONE`.
 | When | Job | Model | Does |
 | --- | --- | --- | --- |
 | Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only, no web, no Discord post. |
+| Tuesday 6:40 AM | Power rankings | light | Ranks the league 1–8 after last week, for the dashboard's League page. Same rules as the recap. |
+| Wednesday 10:30 AM | Matchup preview | light | Previews this week's four matchups after waivers clear, for the dashboard's Next up page. Same rules as the recap. |
 | Tuesday 7:00 AM | Research | heavy | Reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` and `state/week-NN.json`. |
 | Tuesday 8:00 AM | Roster plan | heavy | Queues waiver claims with fallbacks, sets the lineup, proposes at most one trade, schedules the pre-game checks. |
 | Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
@@ -255,6 +261,8 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 | `/agent status` | owner | Next wakeups, recent runs with cost, pending approvals, canary. |
 | `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
+| `/agent preview` | owner | Writes this week's matchup preview for the dashboard now. |
+| `/agent power [week]` | owner | Writes the power rankings for the dashboard now. |
 | `/agent wakeups` | owner | Re-plans this week's pre-game checks from the current kickoff schedule. No model run; safe to repeat. Use it when the checks were never planned, for example after a mid-week deploy. |
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |

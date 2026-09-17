@@ -1861,7 +1861,8 @@ button { font-family: inherit; }
   background: #0E1116;
   border-top: 1px solid var(--line-strong);
   padding-bottom: 10px;
-  grid-template-columns: repeat(6, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   z-index: 40;
 }
 
@@ -2220,3 +2221,251 @@ button { font-family: inherit; }
   .h2h-list-head,
   .h2h-row { grid-template-columns: minmax(0, 1fr) 36px 64px 44px; gap: 6px; }
 }
+
+/* ---------- League: moves ledger, power rankings ---------- */
+
+.ledgers {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 40px;
+}
+
+.moves-section { margin-top: 34px; }
+
+.move-group { padding: 8px 0 4px; border-bottom: 1px solid var(--line); }
+
+.move-day {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+  margin-bottom: 4px;
+}
+
+.move-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 58px minmax(0, 1.2fr) 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.move-row:hover { background: var(--raised); }
+.move-logo { width: 16px; height: 16px; }
+.move-team { color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.move-verb { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.move-verb.add { color: var(--win); }
+.move-verb.drop { color: var(--loss); }
+.move-player { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.move-pos { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); text-align: right; }
+
+.power-section .recap-body ol { padding-left: 24px; }
+.power-section .recap-body li { margin-bottom: 10px; }
+.power-section .recap-body li::marker { font-family: var(--font-mono); color: var(--accent); font-weight: 700; }
+
+/* ---------- Teams: manager's log ---------- */
+
+.managers-log { margin-top: 30px; }
+
+.log-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.log-when { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); padding-top: 2px; }
+.log-stack { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.log-what { font-size: 13.5px; color: var(--ink); }
+.log-why { font-size: 12.5px; color: var(--ink-dim); line-height: 1.4; }
+
+@media (max-width: 640px) {
+  .ledgers { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .move-row { grid-template-columns: 16px minmax(0, 1fr) 52px minmax(0, 1fr); }
+  .move-pos { display: none; }
+}
+
+/* ---------- Chat ---------- */
+
+.chat-screen { display: none; }
+
+.chat-gate { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 24px; }
+.chat-gate .form-group { margin: 0; }
+.chat-gate input.form-control { min-width: 260px; }
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-accent:hover { filter: brightness(1.1); }
+
+/* The chat component ships its own light styling; keep it on our ground. */
+shiny-chat-container {
+  --shiny-chat-border: 1px solid var(--line);
+  --shiny-chat-user-message-bg: var(--raised);
+  background: transparent;
+  font-family: var(--font-body);
+  margin-top: 16px;
+}
+
+shiny-chat-container .message { font-size: 15px; line-height: 1.55; }
+shiny-chat-container table { font-size: 13.5px; }
+shiny-chat-container th, shiny-chat-container td { padding: 4px 10px; border-bottom: 1px solid var(--line); }
+shiny-chat-container th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mute); }
+
+/* ---------- League analytics: luck, odds, projection ---------- */
+
+.analytics-wrap { display: none; }
+.screen-top { padding-bottom: 0; }
+.screen-bottom { padding-top: 0; }
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+.chart-square { min-height: 460px; }
+.chart-short { min-height: 300px; }
+
+.luck-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px 64px 68px 56px;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.luck-row:hover { background: var(--raised); }
+.luck-head { cursor: default; border-bottom: 1px solid var(--line-strong); }
+.luck-head:hover { background: none; }
+.luck-head .col { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-mute); text-align: right; }
+.luck-head .col:first-child { text-align: left; }
+.luck-team { color: var(--ink); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.luck-num { font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); text-align: right; }
+.luck-num.luck-pos { color: var(--win); font-weight: 700; }
+.luck-num.luck-neg { color: var(--loss); font-weight: 700; }
+
+/* ---------- Teams: bench regrets ---------- */
+
+.regrets-block { margin-top: 30px; }
+.regret-summary { font-size: 14px; color: var(--ink-dim); margin: 0 0 8px; line-height: 1.45; }
+
+.regret-row {
+  display: grid;
+  grid-template-columns: 40px 52px 16px 52px 52px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.regret-row .wk { color: var(--ink-mute); font-size: 10px; }
+.regret-row .started { color: var(--ink-dim); text-align: right; }
+.regret-row .arrow { color: var(--ink-mute); text-align: center; }
+.regret-row .optimal { color: var(--ink); font-weight: 600; text-align: right; }
+.regret-row .regret { color: var(--loss); text-align: right; }
+.regret-row .flip { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); padding-left: 6px; }
+
+/* ---------- Draft return ---------- */
+
+.dr-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 18px; }
+
+.dr-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr) 56px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 13.5px;
+}
+
+.dr-row:hover { background: var(--raised); }
+.dr-pick { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
+.dr-player { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-team { color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.dr-delta { font-family: var(--font-mono); font-size: 12px; font-weight: 700; text-align: right; }
+.dr-delta.steal { color: var(--win); }
+.dr-delta.bust { color: var(--loss); }
+
+/* ---------- Players ---------- */
+
+.pl-table { margin-top: 8px; }
+
+.pl-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.6fr) 40px minmax(0, 1.4fr) 60px 72px 56px 88px 52px 52px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.pl-row:hover { background: var(--raised); }
+.pl-head { cursor: default; border-bottom: 1px solid var(--line-strong); }
+.pl-head:hover { background: none; }
+.pl-head .col { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-mute); text-align: right; }
+.pl-head .col:nth-child(-n+4) { text-align: left; }
+.pl-rank { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
+.pl-name { color: var(--ink); font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-pos { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-mute); }
+.pl-team { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-dim); font-size: 13px; }
+.pl-logo { width: 16px; height: 16px; }
+.pl-team-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-num { font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); text-align: right; }
+.pl-points { color: var(--ink); font-weight: 700; font-size: 13px; }
+.pl-sub { font-size: 9.5px; color: var(--ink-mute); }
+.pl-boom { color: var(--win); }
+.pl-bust { color: var(--loss); }
+
+/* ---------- Records: bracket ---------- */
+
+.bracket-section { margin-top: 40px; }
+
+.bracket { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 24px; overflow-x: auto; }
+
+.bk-game { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+.bk-game.final { border-color: var(--accent); }
+.bk-game.consolation { opacity: 0.6; }
+.bk-kind { display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-mute); margin-bottom: 4px; }
+.bk-game.final .bk-kind { color: var(--accent); }
+
+.bk-side { display: grid; grid-template-columns: 16px 20px minmax(0, 1fr) 52px; gap: 6px; align-items: center; padding: 4px 0; cursor: pointer; color: var(--ink-dim); }
+.bk-side.win { color: var(--ink); font-weight: 600; }
+.bk-logo { width: 16px; height: 16px; }
+.bk-seed { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); }
+.bk-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; }
+.bk-score { font-family: var(--font-mono); font-size: 12.5px; text-align: right; }
+
+@media (max-width: 640px) {
+  .analytics-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .chart-square { min-height: 360px; }
+  .luck-row { grid-template-columns: minmax(0, 1fr) 46px 56px 56px 48px; gap: 4px; }
+  .dr-lists { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .pl-row { grid-template-columns: 22px minmax(0, 1.5fr) minmax(0, 1fr) 64px; gap: 6px; }
+  .pl-row > :nth-child(3), .pl-row > :nth-child(5), .pl-row > :nth-child(7), .pl-row > :nth-child(8),
+  .pl-row > :nth-child(9), .pl-row > :nth-child(10) { display: none; }
+  .regret-row { grid-template-columns: 36px 48px 14px 48px 48px minmax(0, 1fr); gap: 4px; }
+}
+
+.draftret-wrap { padding-top: 30px; padding-bottom: 20px; margin-top: 0; }
+.draftret-wrap .screen-title { margin-bottom: 4px; }

@@ -199,3 +199,87 @@ def test_last_scoring_period_counts_playoff_weeks():
         **{str(w): [w] for w in range(1, 15)}, "15": [16, 15], "16": [17, 18],
     }))
     assert collector.last_scoring_period(league) == 18
+
+
+# ------------------------------------------------------------ lineups, settings, activity
+
+def _box_player(pid, name, pos, slot, points, proj, eligible):
+    return SimpleNamespace(playerId=pid, name=name, position=pos, slot_position=slot, points=points,
+                           projected_points=proj, eligibleSlots=eligible, proTeam="DET", injuryStatus="ACTIVE")
+
+
+def test_lineup_rows_cover_both_sides_bench_included():
+    home = SimpleNamespace(team_id=1, team_name="A")
+    away = SimpleNamespace(team_id=2, team_name="B")
+    box = SimpleNamespace(
+        home_team=home, away_team=away,
+        home_lineup=[_box_player(10, "Gibbs", "RB", "RB", 20.5, 18.0, ["RB", "RB/WR/TE", "BE"]),
+                     _box_player(11, "Bench Guy", "WR", "BE", 9.0, 8.0, ["WR", "BE"])],
+        away_lineup=[_box_player(12, "QB1", "QB", "QB", 22.0, 19.0, ["QB", "BE"]),
+                     SimpleNamespace(name="ghost")],  # no playerId: skipped
+    )
+    rows = collector.lineup_rows_from_box(box, 2026, 3)
+    assert [(r["team_id"], r["player_id"], r["slot"]) for r in rows] == [(1, 10, "RB"), (1, 11, "BE"), (2, 12, "QB")]
+    assert rows[0]["eligible_slots"] == ["RB", "RB/WR/TE", "BE"] and rows[0]["points"] == 20.5
+    assert all(r["year"] == 2026 and r["week"] == 3 for r in rows)
+
+
+def test_lineup_rows_round_trip_through_the_database(fresh_db):
+    home = SimpleNamespace(team_id=1, team_name="A")
+    away = SimpleNamespace(team_id=2, team_name="B")
+    box = SimpleNamespace(home_team=home, away_team=away,
+                          home_lineup=[_box_player(10, "Gibbs", "RB", "RB", 20.5, 18.0, ["RB", "BE"])],
+                          away_lineup=[_box_player(12, "QB1", "QB", "QB", 22.0, 19.0, ["QB", "BE"])])
+    fresh_db.replace_lineup_week(2026, 3, collector.lineup_rows_from_box(box, 2026, 3))
+    assert fresh_db.get_lineup_weeks(2026) == {3}
+    rows = fresh_db.get_all_lineup_scores()
+    assert len(rows) == 2 and rows[0]["eligible_slots"] == ["RB", "BE"]
+    # Replacing the week drops a player who is no longer on the roster.
+    box.home_lineup = []
+    fresh_db.replace_lineup_week(2026, 3, collector.lineup_rows_from_box(box, 2026, 3))
+    assert [r["player_id"] for r in fresh_db.get_all_lineup_scores()] == [12]
+
+
+def test_snapshot_refetches_a_week_that_has_scores_but_no_lineups(fresh_db, monkeypatch):
+    """Score rows written before lineup_scores existed are re-fetched once."""
+    def row(week, team_id):
+        return {"year": 2025, "week": week, "team_id": team_id, "team_name": f"Team {team_id}",
+                "score": 100.0, "projected_score": 95.0, "opponent_id": 3 - team_id,
+                "opponent_name": f"Team {3 - team_id}", "is_home": 1 if team_id == 1 else 0,
+                "matchup_period": week, "matchup_score": 100.0}
+    for w in (1, 2):
+        fresh_db.upsert_weekly_scores([row(w, 1), row(w, 2)])
+    fresh_db.replace_lineup_week(2025, 2, [{"year": 2025, "week": 2, "team_id": 1, "player_id": 5, "player_name": "x",
+                                          "position": "RB", "pro_team": "DET", "slot": "RB", "eligible_slots": ["RB"],
+                                          "projected": 1, "points": 2, "injury_status": "ACTIVE"}])
+    asked = []
+    monkeypatch.setattr(collector, "_collect_scores", lambda league, year, week: asked.append(week) or True)
+    monkeypatch.setattr(collector, "collect_league_state", lambda league: None)
+    monkeypatch.setattr(collector, "_collect_standings", lambda league, year, week: None)
+    league = SimpleNamespace(year=2025, current_week=3)
+    collector.collect_weekly_snapshot(league)
+    # Week 1 has no lineups (re-fetched), week 2 is the newest stored week
+    # (always re-fetched), week 3 is new.
+    assert asked == [1, 2, 3]
+
+
+def test_league_settings_and_activity_rows(fresh_db):
+    settings = SimpleNamespace(position_slot_counts={"QB": 1, "RB": 2, "BE": 7, "IR": 1, "RB/WR/TE": 1},
+                               reg_season_count=14, playoff_team_count=4)
+    league = SimpleNamespace(year=2026, settings=settings, teams=[1] * 8)
+    collector.collect_league_settings(league)
+    stored = fresh_db.get_all_league_settings()[2026]
+    assert stored["playoff_team_count"] == 4 and stored["reg_season_count"] == 14 and stored["team_count"] == 8
+    assert stored["slot_counts"] == {"QB": 1, "RB": 2, "RB/WR/TE": 1}
+
+    team = SimpleNamespace(team_id=3, team_name="Space Cadets")
+    player = SimpleNamespace(playerId=77, name="Some RB", position="RB")
+    activity = SimpleNamespace(date=1758000000000, actions=[
+        (team, "WAIVER ADDED", player, 0),
+        (team, "DROPPED", SimpleNamespace(playerId=78, name="Old TE", position="TE"), 0),
+        (team, "TRADE_SENT", player, 0),
+    ])
+    rows = collector._activity_rows(activity, 2026)
+    assert [r["action"] for r in rows] == ["WAIVER ADDED", "DROPPED"]
+    assert fresh_db.insert_new_activity(rows) and not fresh_db.insert_new_activity(rows)
+    assert [r["player_name"] for r in fresh_db.get_all_activity()] == ["Old TE", "Some RB"]

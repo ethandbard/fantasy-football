@@ -403,3 +403,292 @@ def set_highlight(widget, team_name):
             if trace.meta == "pa":
                 trace.visible = team_name == trace.name
             trace.opacity = 1.0 if team_name in (None, trace.name) else 0.2
+
+
+# ----------------------------------------------------------- luck and odds
+
+def _color(styles, name):
+    return styles.get(name, {}).get("color", theme.INK_DIM)
+
+
+def _padded_range(values, frac=0.18):
+    """An axis range with breathing room on both ends, so a marker or logo
+    at the extreme is never clipped by the plot edge."""
+    lo, hi = float(min(values)), float(max(values))
+    span = (hi - lo) or max(abs(hi), 1.0)
+    return [lo - span * frac, hi + span * frac]
+
+
+def luck_quadrant(luck_df, styles, logos=None):
+    """
+    Points for against points against, one marker per team.
+
+    Dashed lines at the league means split the plane into four: right of
+    the vertical line a team scores more than most, above the horizontal
+    one it faces more than most. The all-play luck number lives in the
+    hover, since a chart of it would be a bar chart; what the scatter adds
+    is *why* a team's luck reads the way it does. A team's logo stands in
+    for its marker when one is supplied, the same way the race chart does
+    at line endpoints.
+    """
+    if luck_df is None or luck_df.empty:
+        return empty_fig("No games played yet.")
+
+    logos = logos or {}
+    fig = go.Figure()
+    x_range = _padded_range(luck_df["points_for"])
+    y_range = _padded_range(luck_df["points_against"])
+    x_span = x_range[1] - x_range[0]
+    y_span = y_range[1] - y_range[0]
+    x_mean = float(luck_df["points_for"].mean())
+    y_mean = float(luck_df["points_against"].mean())
+
+    for _, row in luck_df.iterrows():
+        name = row["team_name"]
+        color = _color(styles, name)
+        logo = logos.get(name)
+        record = f"{int(row['wins'])}-{int(row['losses'])}"
+        fig.add_trace(go.Scatter(
+            x=[row["points_for"]], y=[row["points_against"]], name=name,
+            mode="markers",
+            # An invisible marker under a logo keeps the hover target where
+            # the logo is; Plotly does not hover layout images.
+            marker=dict(size=16, color=color, opacity=0 if logo else 1,
+                        line=dict(width=1.5, color=theme.GROUND)),
+            showlegend=False,
+            hovertemplate=(
+                f"<b>{name}</b> · {record}<br>"
+                f"{row['points_for']:.0f} PF / {row['points_against']:.0f} PA<br>"
+                f"Expected {row['expected_wins']:.1f} wins · "
+                f"luck {row['luck']:+.1f}<extra></extra>"),
+        ))
+        if logo:
+            fig.add_layout_image(
+                source=logo, xref="x", yref="y",
+                x=row["points_for"], y=row["points_against"],
+                xanchor="center", yanchor="middle",
+                sizex=x_span * 0.075, sizey=y_span * 0.10,
+                sizing="contain", layer="above",
+            )
+        fig.add_annotation(
+            x=row["points_for"], y=row["points_against"], text=name,
+            yshift=-(22 if logo else 16), showarrow=False,
+            font=dict(family=_FONT, size=10.5, color=color),
+        )
+
+    line = dict(color=theme.INK_MUTE, width=1, dash="dash")
+    fig.add_shape(type="line", x0=x_mean, x1=x_mean, y0=y_range[0], y1=y_range[1], line=line)
+    fig.add_shape(type="line", x0=x_range[0], x1=x_range[1], y0=y_mean, y1=y_mean, line=line)
+
+    # Corner labels in paper coordinates, so they sit in the same place
+    # whatever the data's spread.
+    corners = [
+        ("Good but unlucky", 0.99, 0.99, "right", "top"),
+        ("Bad and unlucky", 0.01, 0.99, "left", "top"),
+        ("Good and lucky", 0.99, 0.01, "right", "bottom"),
+        ("Bad but lucky", 0.01, 0.01, "left", "bottom"),
+    ]
+    for text, x, y, xanchor, yanchor in corners:
+        fig.add_annotation(
+            xref="paper", yref="paper", x=x, y=y, text=text.upper(),
+            xanchor=xanchor, yanchor=yanchor, showarrow=False,
+            font=dict(family=_MONO, size=10, color=theme.INK_MUTE),
+        )
+
+    style_fig(fig, hovermode="closest", showlegend=False,
+              margin=dict(t=8, b=8, l=8, r=8))
+    fig.update_xaxes(title_text="POINTS FOR", range=x_range)
+    fig.update_yaxes(title_text="POINTS AGAINST", range=y_range)
+    return fig
+
+
+def _bar_height(count):
+    """Enough height for `count` horizontal bars to keep their labels
+    legible: a 12-team league gets more room than a 4-team one."""
+    return max(260, 32 * count + 60)
+
+
+def playoff_odds_bars(odds_df, styles):
+    """
+    Playoff odds as horizontal bars in team colors, best odds at the top.
+
+    Plotly stacks horizontal categories bottom-up, so the frame is sorted
+    ascending to put the favourite on top. The x-axis runs past 100 so an
+    outside label on a 100% bar has somewhere to go.
+    """
+    if odds_df is None or odds_df.empty:
+        return empty_fig("No games played yet.")
+
+    df = odds_df.sort_values(["playoff_odds", "avg_wins"], ascending=[True, True])
+    names = df["team_name"].tolist()
+    pct = (df["playoff_odds"] * 100).tolist()
+    fig = go.Figure(go.Bar(
+        x=pct, y=names, orientation="h",
+        marker=dict(color=[_color(styles, n) for n in names]),
+        text=[f"{p:.0f}%" for p in pct], textposition="outside",
+        textfont=dict(family=_MONO, size=11, color=theme.INK),
+        customdata=list(zip(df["avg_wins"], df["games_left"], df["top_seed_odds"] * 100)),
+        hovertemplate=("<b>%{y}</b><br>%{x:.1f}% to make the playoffs<br>"
+                       "%{customdata[2]:.1f}% for the top seed<br>"
+                       "%{customdata[0]:.1f} projected wins · "
+                       "%{customdata[1]} left<extra></extra>"),
+        cliponaxis=False,
+    ))
+    style_fig(fig, showlegend=False, height=_bar_height(len(names)),
+              margin=dict(t=8, b=8, l=8, r=48))
+    fig.update_xaxes(title_text="PLAYOFF ODDS", range=[0, 112], ticksuffix="%",
+                     showgrid=True)
+    fig.update_yaxes(showgrid=False, tickfont=dict(family=_FONT, size=11.5,
+                                                   color=theme.INK_DIM))
+    return fig
+
+
+def projection_bars(acc_df, styles):
+    """
+    Mean actual-minus-projected per team: a bar to the right for a team
+    that beats its number, to the left for one that falls short, in the
+    win and loss colors rather than team colors because the sign is the
+    whole story. `styles` is accepted for signature parity with the other
+    builders and unused.
+    """
+    if acc_df is None or acc_df.empty:
+        return empty_fig("No projections collected yet.")
+
+    df = acc_df.sort_values("mean_delta", ascending=True)
+    names = df["team_name"].tolist()
+    delta = df["mean_delta"].tolist()
+    fig = go.Figure(go.Bar(
+        x=delta, y=names, orientation="h",
+        marker=dict(color=[theme.WIN if d >= 0 else theme.LOSS for d in delta]),
+        text=[f"{d:+.1f}" for d in delta], textposition="outside",
+        textfont=dict(family=_MONO, size=11, color=theme.INK),
+        customdata=list(zip(df["beat_rate"] * 100, df["mae"], df["games"])),
+        hovertemplate=("<b>%{y}</b><br>%{x:+.1f} vs projection on average<br>"
+                       "over in %{customdata[0]:.0f}% of %{customdata[2]} weeks · "
+                       "%{customdata[1]:.1f} pt typical miss<extra></extra>"),
+        cliponaxis=False,
+    ))
+    reach = max(abs(d) for d in delta) or 1.0
+    style_fig(fig, showlegend=False, height=_bar_height(len(names)),
+              margin=dict(t=8, b=8, l=8, r=40))
+    fig.update_xaxes(title_text="POINTS VS PROJECTION",
+                     range=[-reach * 1.35, reach * 1.35], zeroline=True)
+    fig.update_yaxes(showgrid=False, tickfont=dict(family=_FONT, size=11.5,
+                                                   color=theme.INK_DIM))
+    return fig
+
+
+# ---------------------------------------------------------------- lineups
+
+# One color per position, reused from the team palette because a stacked
+# bar puts teams on the axis rather than in color: the hues are already
+# proven to hold apart on GROUND, and a reader never sees both keys on one
+# chart.
+POSITION_COLORS = {
+    "QB": "#EE6677",
+    "RB": "#44BB77",
+    "WR": "#6699DD",
+    "TE": "#EE9944",
+    "D/ST": "#CC66AA",
+    "K": "#DDCC55",
+}
+
+
+def position_stack(contrib_df, styles, order=None):
+    """
+    Starting points by position, one stacked horizontal bar per team.
+
+    Teams are labelled by `team_name` when the frame carries one (see
+    position_contribution's `names`) and by id otherwise. `order` is the
+    list of labels top to bottom; the default is by total, biggest first.
+    `styles` is accepted for signature parity and unused, since the bars
+    are colored by position.
+    """
+    if contrib_df is None or contrib_df.empty:
+        return empty_fig("No lineups collected yet.")
+
+    df = contrib_df.copy()
+    label_col = "team_name" if "team_name" in df.columns else "team_id"
+    df["label"] = df[label_col].astype(str)
+    if order:
+        wanted = [str(o) for o in order if str(o) in set(df["label"])]
+        df = df.set_index("label").loc[wanted].reset_index()
+    else:
+        df = df.sort_values("total", ascending=False)
+    # Bottom-up stacking: reverse so the first label lands on top.
+    df = df.iloc[::-1]
+    labels = df["label"].tolist()
+
+    fig = go.Figure()
+    positions = [p for p in POSITION_COLORS if p in df.columns]
+    for pos in positions:
+        share = df.get(f"share_{pos}")
+        custom = (share * 100).tolist() if share is not None else [0] * len(df)
+        fig.add_trace(go.Bar(
+            x=df[pos], y=labels, name=pos, orientation="h",
+            marker=dict(color=POSITION_COLORS[pos],
+                        line=dict(width=0.5, color=theme.GROUND)),
+            customdata=custom,
+            hovertemplate=(f"<b>%{{y}}</b> · {pos}<br>%{{x:.1f}} pts · "
+                           "%{customdata:.0f}% of starters<extra></extra>"),
+        ))
+
+    style_fig(fig, barmode="stack", height=_bar_height(len(labels)),
+              margin=dict(t=32, b=8, l=8, r=8))
+    fig.update_xaxes(title_text="STARTING POINTS")
+    fig.update_yaxes(showgrid=False, tickfont=dict(family=_FONT, size=11.5,
+                                                   color=theme.INK_DIM))
+    return fig
+
+
+# ------------------------------------------------------------------ draft
+
+def draft_return_scatter(dr_df, styles):
+    """
+    Season points by draft slot, with the slot's expected return as a line.
+
+    Markers take the drafting team's color, so a manager can find their own
+    picks at a glance; the steals and busts draft_return tagged get the
+    player's name, in win or loss color, since those five-and-five are the
+    picks the chart exists to argue about.
+    """
+    if dr_df is None or dr_df.empty:
+        return empty_fig("No draft picks recorded.")
+
+    df = dr_df.sort_values("overall_pick")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["overall_pick"], y=df["expected"], name="Expected",
+        mode="lines", line=dict(color=theme.INK_MUTE, width=1.6, dash="dot"),
+        hovertemplate="Pick %{x} · %{y:.1f} expected<extra></extra>",
+    ))
+
+    for name, picks in df.groupby("team_name", sort=True):
+        color = _color(styles, name)
+        fig.add_trace(go.Scatter(
+            x=picks["overall_pick"], y=picks["total_points"], name=name,
+            mode="markers",
+            marker=dict(size=9, color=color, line=dict(width=1, color=theme.GROUND)),
+            customdata=list(zip(picks["player_name"], picks["position"].fillna(""),
+                                picks["round_num"], picks["delta"])),
+            hovertemplate=(f"<b>%{{customdata[0]}}</b> %{{customdata[1]}}<br>"
+                           f"{name} · round %{{customdata[2]}}, pick %{{x}}<br>"
+                           "%{y:.1f} pts · %{customdata[3]:+.1f} vs expected"
+                           "<extra></extra>"),
+        ))
+
+    tagged = df[df["tag"] != ""]
+    for _, pick in tagged.iterrows():
+        steal = pick["tag"] == "steal"
+        fig.add_annotation(
+            x=pick["overall_pick"], y=pick["total_points"],
+            text=pick["player_name"], showarrow=True, arrowhead=0,
+            arrowcolor=theme.INK_MUTE, ax=0, ay=-22 if steal else 22,
+            font=dict(family=_FONT, size=10.5,
+                      color=theme.WIN if steal else theme.LOSS),
+        )
+
+    style_fig(fig, hovermode="closest", margin=dict(t=32, b=8, l=8, r=8))
+    fig.update_xaxes(title_text="OVERALL PICK")
+    fig.update_yaxes(title_text="SEASON POINTS")
+    return fig

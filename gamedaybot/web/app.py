@@ -11,7 +11,8 @@
 # on the live dashboard.
 import hashlib
 import html
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +23,7 @@ from shinywidgets import render_widget
 
 import gamedaybot.storage.db as db
 import gamedaybot.web.charts as charts
+import gamedaybot.web.chat as datachat
 import gamedaybot.web.draft as draft
 import gamedaybot.web.stats as stats
 import gamedaybot.web.theme as theme
@@ -59,8 +61,13 @@ NAV_ITEMS = [
     ("draft", "Draft"),
     ("league", "League"),
     ("teams", "Teams"),
+    ("players", "Players"),
     ("records", "Records"),
+    ("chat", "Chat"),
 ]
+
+# The team the agent service manages, for the manager's log on its page.
+AGENT_TEAM_ID = int(os.environ.get("TEAM_ID") or 0)
 
 ui.page_opts(window_title="Fantasy Football Dashboard", fillable=False)
 
@@ -77,6 +84,32 @@ ui.head_content(
     # none of this data-dependent, per-session UI can be wired with a real
     # input id ahead of time. Any element carrying data-set/data-value routes
     # through here instead of getting its own listener.
+    # A per-browser token for the chat's daily cap, and the league passphrase
+    # the viewer typed last time, both from localStorage. Neither is an
+    # identity; the token only makes the cap survive a refresh.
+    core_ui.tags.script(
+        "(function () {"
+        "  function send() {"
+        "    if (!window.Shiny || !Shiny.setInputValue) { return setTimeout(send, 200); }"
+        "    var t = null, p = null;"
+        "    try {"
+        "      t = localStorage.getItem('ff-viewer');"
+        "      if (!t) { t = Math.random().toString(36).slice(2) + Date.now().toString(36);"
+        "               localStorage.setItem('ff-viewer', t); }"
+        "      p = localStorage.getItem('ff-chat-pass');"
+        "    } catch (e) {}"
+        "    Shiny.setInputValue('viewer_token', t || 'anon');"
+        "    if (p) { Shiny.setInputValue('chat_pass_saved', p); }"
+        "  }"
+        "  document.addEventListener('shiny:connected', send);"
+        "  document.addEventListener('click', function (e) {"
+        "    if (e.target && e.target.id === 'chat_go') {"
+        "      var v = document.getElementById('chat_pass');"
+        "      try { if (v && v.value) { localStorage.setItem('ff-chat-pass', v.value); } } catch (err) {}"
+        "    }"
+        "  });"
+        "})();"
+    ),
     core_ui.tags.script(
         "document.addEventListener('click', function (e) {"
         "  var el = e.target.closest && e.target.closest('[data-set]');"
@@ -222,6 +255,48 @@ def _all_trades():
 def _all_content():
     """Prose the agents wrote for the dashboard, every season, newest first."""
     return db.get_all_site_content()
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_lineups():
+    return pd.DataFrame(db.get_all_lineup_scores())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_settings():
+    return db.get_all_league_settings()
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _all_activity():
+    return pd.DataFrame(db.get_all_activity())
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _agent_log():
+    return db.get_agent_transactions(limit=60)
+
+
+def _season_lineups():
+    df = _all_lineups()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_activity():
+    df = _all_activity()
+    return df[df["year"] == _year()] if not df.empty else df
+
+
+def _season_settings():
+    """The season's league settings row, or {} before the first collect."""
+    return _all_settings().get(_year(), {})
+
+
+def _slot_counts():
+    """Starting slot counts for the season, with ESPN's standard lineup as
+    the fallback so bench regrets still compute on a backfilled year."""
+    counts = _season_settings().get("slot_counts") or {}
+    return counts or {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "RB/WR/TE": 1, "D/ST": 1, "K": 1}
 
 
 def _content(kind, weeks):
@@ -1023,9 +1098,15 @@ def screen_week():
 
 
 def _recap_block(rows):
+    """The week's recap, written by the league recap agent on Tuesday morning."""
+    return _prose_block(rows, "recap")
+
+
+def _prose_block(rows, noun, extra_class=""):
     """
-    The week's recap, written by the league recap agent on Tuesday morning,
-    or None when nothing has been written for these weeks yet.
+    One piece of agent-written prose (the newest row handed in), or None
+    when nothing has been written for these weeks yet. `noun` names it in
+    the label: "Week 3 recap", "Week 4 preview", "Week 3 power rankings".
 
     The body is markdown from a model that only ever saw league data, but
     it is still escaped before rendering so a stray angle bracket in a team
@@ -1036,14 +1117,79 @@ def _recap_block(rows):
         return None
     row = rows[0]
     ago = _ago(row.get("written_at"))
-    label = f"Week {int(row['week'])} recap"
+    label = f"Week {int(row['week'])} {noun}"
     if ago:
         label += f" · written {ago}"
     return core_ui.div(
         core_ui.p(label, class_="section-label"),
         core_ui.h2(row["title"], class_="recap-title") if row.get("title") else None,
         core_ui.div(ui.markdown(html.escape(row["body"], quote=False)), class_="recap-body"),
-        class_="recap-section",
+        class_=f"recap-section {extra_class}".strip(),
+    )
+
+
+def _moves_list(activity_df, logos, limit=40):
+    """
+    The add/drop/waiver ledger, newest first, grouped by day. One row per
+    player moved; a claim and its drop share a timestamp and read as one
+    move. Trades live in their own ledger.
+    """
+    if activity_df.empty:
+        return core_ui.p("No moves recorded yet this season.", class_="empty-note")
+    df = activity_df.sort_values("date", ascending=False).head(limit)
+    verbs = {"WAIVER ADDED": "claimed", "FA ADDED": "added", "DROPPED": "dropped", "ADDED": "added"}
+    groups = []
+    for day, day_rows in df.groupby(df["date"].map(lambda ms: datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date()), sort=False):
+        items = []
+        for _, r in day_rows.iterrows():
+            verb = verbs.get(r["action"], str(r["action"]).lower())
+            cls = "add" if verb in ("claimed", "added") else "drop"
+            items.append(_clickable(
+                core_ui.div, "team_pick", r["team_name"] or "",
+                _logo_img(logos.get(r["team_name"]), "team-logo move-logo"),
+                core_ui.span(r["team_name"] or "—", class_="move-team"),
+                core_ui.span(verb, class_=f"move-verb {cls}"),
+                core_ui.span(r["player_name"] or "?", class_="move-player"),
+                core_ui.span(r["position"] or "", class_="move-pos"),
+                class_="move-row", role="button",
+            ))
+        groups.append(core_ui.div(
+            core_ui.span(day.strftime("%a %b %d").upper(), class_="move-day"),
+            *items,
+            class_="move-group",
+        ))
+    return core_ui.div(*groups, class_="moves-list")
+
+
+def _managers_log(rows):
+    """
+    The agent's executed ESPN moves with its stated reasons, newest first.
+    Only the moves themselves: no plans, no research, nothing that has not
+    already happened on ESPN where the league can see it anyway.
+    """
+    done = [r for r in rows if r.get("ok") and not r.get("dry_run")]
+    if not done:
+        return None
+    items = []
+    for r in done[:15]:
+        stamp = r.get("at") or ""
+        try:
+            when = datetime.fromisoformat(stamp.replace("Z", "+00:00")).strftime("%b %d")
+        except ValueError:
+            when = stamp[:10]
+        items.append(core_ui.div(
+            core_ui.span(when, class_="log-when"),
+            core_ui.div(
+                core_ui.span(r.get("description") or r.get("kind") or "", class_="log-what"),
+                core_ui.span(r.get("reason") or "", class_="log-why") if r.get("reason") else None,
+                class_="log-stack",
+            ),
+            class_="log-row",
+        ))
+    return core_ui.div(
+        core_ui.p("Manager's log · moves the team's agent made", class_="section-label"),
+        *items,
+        class_="managers-log",
     )
 
 
@@ -1258,6 +1404,7 @@ def screen_next():
         ),
         core_ui.p(note, class_="headline"),
         core_ui.div(*cards, class_="nextup-list"),
+        _prose_block(_content("preview", [wk]), "preview", "preview-section"),
         class_="screen",
     )
 
@@ -1414,6 +1561,57 @@ def _draft_grid_ui(clubs, rows, logos):
                     style=f"--grid-cols: {template}"),
         class_="draft-grid-wrap",
     )
+
+
+def _draft_return_df():
+    picks, players = _season_picks(), _season_players()
+    if picks.empty or players.empty or "total_points" not in players.columns:
+        return pd.DataFrame()
+    if players["total_points"].fillna(0).sum() <= 0:
+        return pd.DataFrame()
+    return stats.draft_return(picks, players)
+
+
+@render.ui
+def draftret_visibility_style():
+    display = "block" if screen() == "draft" and not _draft_return_df().empty else "none"
+    return core_ui.tags.style(f"#draftret-wrap {{ display: {display}; }}")
+
+
+with ui.div(id="draftret-wrap", class_="race-wrap analytics-wrap draftret-wrap"):
+    core_ui.h1("DRAFT RETURN", class_="screen-title board")
+    core_ui.p("Season points by pick", class_="section-label")
+    core_ui.p("The line is the typical return at each pick, a rolling median. Above it the pick "
+              "outperformed its slot; the five biggest gaps each way are named.", class_="screen-note")
+
+    with ui.div(class_="chart-wrap"):
+        @render_widget
+        def draftret_widget():
+            dr = _draft_return_df()
+            if dr.empty:
+                return charts.as_widget(charts.empty_fig("No season points yet."))
+            return charts.as_widget(charts.draft_return_scatter(dr, _styles()))
+
+    @render.ui
+    def draftret_lists():
+        dr = _draft_return_df()
+        if dr.empty:
+            return None
+
+        def col(title, tag):
+            part = dr[dr["tag"] == tag].sort_values("delta", ascending=(tag == "bust"))
+            items = [_clickable(
+                core_ui.div, "team_pick", r["team_name"] or "",
+                core_ui.span(f"#{int(r['overall_pick'])}", class_="dr-pick"),
+                core_ui.span(r["player_name"], class_="dr-player"),
+                core_ui.span(r["team_name"] or "", class_="dr-team"),
+                core_ui.span(f"{r['delta']:+.0f}", class_=f"dr-delta {tag}"),
+                class_="dr-row", role="button",
+            ) for _, r in part.iterrows()]
+            return core_ui.div(core_ui.p(title, class_="section-label"), *items, class_="dr-col")
+
+        return core_ui.div(col("Steals", "steal"), col("Busts", "bust"), class_="dr-lists")
+
 
 
 @render.ui
@@ -1789,12 +1987,7 @@ def screen_league():
         # the ledger exactly when the league is talking about it.
         return core_ui.div(
             core_ui.p("No weeks in this range.", class_="empty-note"),
-            core_ui.div(
-                core_ui.p("Trades", class_="section-label"),
-                _trade_list(_season_trades(), _logos_by_name()),
-                class_="trades-section",
-            ),
-            class_="screen",
+            class_="screen screen-top",
         )
 
     rec = stats.derive_records(scoped)
@@ -1891,23 +2084,11 @@ def screen_league():
         *rows,
     )
 
-    h2h_records, h2h_margins = _h2h_frame()
-
     return core_ui.div(
         core_ui.h1("STANDINGS", class_="screen-title board"),
         core_ui.p(core_ui.HTML(note), class_="screen-note"),
         board,
-        core_ui.div(
-            core_ui.p("Head to head", class_="section-label"),
-            _h2h_matrix(h2h_records, h2h_margins, logos=logos),
-            class_="h2h-section",
-        ),
-        core_ui.div(
-            core_ui.p("Trades", class_="section-label"),
-            _trade_list(_season_trades(), logos),
-            class_="trades-section",
-        ),
-        class_="screen",
+        class_="screen screen-top",
     )
 
 
@@ -2012,6 +2193,149 @@ with ui.div(id="totals-wrap", class_="race-wrap"):
 @reactive.effect
 def _totals_highlight():
     charts.set_highlight(totals_plot_widget.widget, team.get())
+
+
+def _reg_weeks():
+    """Regular-season length: the stored setting, else inferred from the data."""
+    season = _season_scores()
+    stored = _season_settings().get("reg_season_count")
+    if stored:
+        return int(stored)
+    return stats.regular_season_weeks(_standings_df(), season) or (int(season["week"].max()) if not season.empty else 14)
+
+
+def _playoff_teams():
+    return int(_season_settings().get("playoff_team_count") or 4)
+
+
+def _luck_table(luck_df):
+    if luck_df.empty:
+        return core_ui.p("No weeks in this range.", class_="empty-note")
+    rows = [core_ui.div(
+        core_ui.span("Team", class_="col"), core_ui.span("Record", class_="col"),
+        core_ui.span("All-play", class_="col"), core_ui.span("Exp. wins", class_="col"),
+        core_ui.span("Luck", class_="col"),
+        class_="luck-row luck-head",
+    )]
+    for _, r in luck_df.iterrows():
+        luck = float(r["luck"])
+        cls = "pos" if luck > 0.25 else ("neg" if luck < -0.25 else "even")
+        rows.append(_clickable(
+            core_ui.div, "team_pick", r["team_name"],
+            core_ui.span(r["team_name"], class_="luck-team"),
+            core_ui.span(f"{int(r['wins'])}-{int(r['losses'])}", class_="luck-num"),
+            core_ui.span(f"{int(r['all_play_wins'])}-{int(r['all_play_losses'])}", class_="luck-num"),
+            core_ui.span(f"{r['expected_wins']:.1f}", class_="luck-num"),
+            core_ui.span(f"{luck:+.1f}", class_=f"luck-num luck-{cls}"),
+            class_="luck-row", role="button",
+        ))
+    return core_ui.div(*rows, class_="luck-table")
+
+
+def _odds_note(odds_df, reg_weeks, playoff_teams):
+    if odds_df.empty:
+        return "No games played yet."
+    left = int(odds_df["games_left"].max()) if "games_left" in odds_df else 0
+    if left == 0:
+        return (f"The regular season is over: the top {playoff_teams} by record, then points, "
+                "are in. Odds are what happened.")
+    return (f"{playoff_teams} of {len(odds_df)} make it after week {reg_weeks}. Odds are from 4,000 "
+            f"simulated finishes of the remaining {left} games per team, each team scoring around "
+            "its own average with its own spread. Not a model of injuries, byes, or trades.")
+
+
+@render.ui
+def analytics_visibility_style():
+    display = "block" if screen() == "league" else "none"
+    return core_ui.tags.style(
+        f"#luck-wrap, #odds-wrap, #proj-wrap, #league-more {{ display: {display}; }}")
+
+
+with ui.div(id="luck-wrap", class_="race-wrap analytics-wrap"):
+    core_ui.p("Luck · all-play record and expected wins", class_="section-label")
+    core_ui.p("All-play counts a week as a win against every team you outscored. Expected wins "
+              "is that share summed over the weeks; luck is real wins minus expected. Above the "
+              "diagonal in the chart is good and lucky, below it is good and robbed.",
+              class_="screen-note")
+
+    with ui.div(class_="analytics-grid"):
+        @render.ui
+        def luck_table_ui():
+            return _luck_table(stats.all_play(_scope_scores()))
+
+        with ui.div(class_="chart-wrap chart-square"):
+            @render_widget
+            def luck_widget():
+                scoped = _scope_scores()
+                if scoped.empty:
+                    return charts.as_widget(charts.empty_fig())
+                return charts.as_widget(charts.luck_quadrant(stats.all_play(scoped), _styles(), _logos_by_name()))
+
+
+with ui.div(id="odds-wrap", class_="race-wrap analytics-wrap"):
+    core_ui.p("Playoff odds", class_="section-label")
+
+    @render.ui
+    def odds_note_ui():
+        season = _season_scores()
+        reg = _reg_weeks()
+        odds = stats.playoff_odds(season[season["week"] <= reg], _season_schedule(), reg, _playoff_teams())
+        return core_ui.p(_odds_note(odds, reg, _playoff_teams()), class_="screen-note")
+
+    with ui.div(class_="chart-wrap chart-short"):
+        @render_widget
+        def odds_widget():
+            season = _season_scores()
+            if season.empty:
+                return charts.as_widget(charts.empty_fig())
+            reg = _reg_weeks()
+            odds = stats.playoff_odds(season[season["week"] <= reg], _season_schedule(), reg, _playoff_teams())
+            return charts.as_widget(charts.playoff_odds_bars(odds, _styles()))
+
+
+with ui.div(id="proj-wrap", class_="race-wrap analytics-wrap"):
+    core_ui.p("Against projection · average points over or under ESPN's number", class_="section-label")
+
+    with ui.div(class_="chart-wrap chart-short"):
+        @render_widget
+        def proj_widget():
+            scoped = _scope_scores()
+            if scoped.empty:
+                return charts.as_widget(charts.empty_fig())
+            return charts.as_widget(charts.projection_bars(stats.projection_accuracy(scoped), _styles()))
+
+
+@render.ui
+def screen_league_more():
+    """The rest of the League page, below the chart slots: the grid, the
+    ledgers, and the power rankings."""
+    if screen() != "league":
+        return None
+    scoped = _scope_scores()
+    logos = _logos_by_name()
+    h2h_records, h2h_margins = _h2h_frame()
+    return core_ui.div(
+        core_ui.div(
+            core_ui.p("Head to head", class_="section-label"),
+            _h2h_matrix(h2h_records, h2h_margins, logos=logos),
+            class_="h2h-section",
+        ) if not scoped.empty else None,
+        core_ui.div(
+            core_ui.div(
+                core_ui.p("Trades", class_="section-label"),
+                _trade_list(_season_trades(), logos),
+                class_="trades-section",
+            ),
+            core_ui.div(
+                core_ui.p("Moves", class_="section-label"),
+                _moves_list(_season_activity(), logos),
+                class_="moves-section",
+            ),
+            class_="ledgers",
+        ),
+        _prose_block(_content("power", range(1, 19)), "power rankings", "power-section"),
+        class_="screen screen-bottom",
+    )
 
 
 # -------------------------------------------------------------- screen: TEAMS
@@ -2182,6 +2506,9 @@ def screen_teams():
 
     h2h_records, h2h_margins = _h2h_frame()
     h2h_scope_note = "all seasons" if h2h_scope.get() == "all" else f"weeks {lo}–{hi}"
+    teams_df = _season_teams()
+    agent_names = set(teams_df[teams_df["team_id"] == AGENT_TEAM_ID]["team_name"]) if not teams_df.empty else set()
+    is_agent_team = AGENT_TEAM_ID and current in agent_names and _year() == CURRENT_YEAR
 
     return core_ui.div(
         _team_rail(styles, current, logos),
@@ -2200,11 +2527,85 @@ def screen_teams():
                 range_block,
                 core_ui.p(f"Head to head · {h2h_scope_note}", class_="section-label"),
                 _h2h_list(h2h_records, h2h_margins, current, logos),
+                _bench_regrets_block(current, scoped),
+                _managers_log(_agent_log()) if is_agent_team else None,
             ),
             class_="team-body",
         ),
         class_="screen",
     )
+
+
+def _scoped_lineups():
+    """This season's lineup rows narrowed to the scope segment's weeks."""
+    df = _season_lineups()
+    if df.empty:
+        return df
+    lo, hi = _scope_bounds()
+    return df[(df["week"] >= lo) & (df["week"] <= hi)]
+
+
+def _bench_regrets_block(current, scoped):
+    """
+    Optimal lineup against the one started, for the team on screen: a
+    summary line, then the weeks with the most points left on the bench.
+    A loss the optimal lineup would have won is called out.
+    """
+    lineups = _scoped_lineups()
+    if lineups.empty or scoped.empty:
+        return None
+    regrets = stats.bench_regrets(lineups, _slot_counts(), scoped)
+    mine = regrets[regrets["team_name"] == current].sort_values("regret", ascending=False)
+    if mine.empty:
+        return None
+    total = float(mine["regret"].sum())
+    flipped = int(mine["flipped"].sum())
+    weeks = len(mine)
+    summary = f"{total:.1f} points left on the bench over {weeks} week{'s' if weeks != 1 else ''}"
+    summary += f", {flipped} loss{'es' if flipped != 1 else ''} the best lineup would have won." if flipped else "."
+    rows = []
+    for _, r in mine.head(6).iterrows():
+        if float(r["regret"]) <= 0:
+            continue
+        rows.append(core_ui.div(
+            core_ui.span(f"WK {int(r['week'])}", class_="wk"),
+            core_ui.span(f"{r['actual_points']:.1f}", class_="started"),
+            core_ui.span("→", class_="arrow"),
+            core_ui.span(f"{r['optimal_points']:.1f}", class_="optimal"),
+            core_ui.span(f"+{r['regret']:.1f}", class_="regret"),
+            core_ui.span("would have won", class_="flip") if bool(r["flipped"]) else None,
+            class_="regret-row",
+        ))
+    return core_ui.div(
+        core_ui.p("Bench regrets · started → best possible", class_="section-label"),
+        core_ui.p(summary, class_="regret-summary"),
+        *rows,
+        class_="regrets-block",
+    )
+
+
+@render.ui
+def position_visibility_style():
+    display = "block" if screen() == "teams" else "none"
+    return core_ui.tags.style(f"#position-wrap {{ display: {display}; }}")
+
+
+with ui.div(id="position-wrap", class_="race-wrap analytics-wrap"):
+    core_ui.p("Where the points come from · starters by position, every team", class_="section-label")
+
+    with ui.div(class_="chart-wrap chart-short"):
+        @render_widget
+        def position_widget():
+            lineups = _scoped_lineups()
+            if lineups.empty:
+                return charts.as_widget(charts.empty_fig("No lineups collected yet for this season."))
+            teams_df = _season_teams()
+            names = dict(zip(teams_df["team_id"], teams_df["team_name"])) if not teams_df.empty else {}
+            if not names:
+                scoped = _scope_scores()
+                names = dict(zip(scoped["team_id"], scoped["team_name"])) if not scoped.empty else {}
+            contrib = stats.position_contribution(lineups, names=names)
+            return charts.as_widget(charts.position_stack(contrib, _styles()))
 
 
 def _ordinal_rank(records, column, team_name, high_is_good):
@@ -2352,6 +2753,94 @@ def _team_rail(styles, current, logos=None):
     )
 
 
+# ------------------------------------------------------------ screen: PLAYERS
+
+players_pos = reactive.value("ALL")
+
+
+@reactive.effect
+@reactive.event(input.players_pos)
+def _on_players_pos():
+    players_pos.set(input.players_pos())
+
+
+@render.ui
+def screen_players():
+    if screen() != "players":
+        return None
+
+    lineups = _scoped_lineups()
+    scoped = _scope_scores()
+    lo, hi = _scope_bounds()
+    if lineups.empty:
+        return core_ui.div(
+            core_ui.h1("PLAYERS", class_="screen-title board"),
+            core_ui.p("No lineups collected yet for this season. They arrive with the Tuesday snapshot.",
+                      class_="empty-note"),
+            class_="screen",
+        )
+
+    board = stats.player_leaderboard(lineups)
+    pos = players_pos.get()
+    if pos != "ALL":
+        board = board[board["position"] == pos]
+    board = board.head(60)
+
+    teams_df = _season_teams()
+    names = dict(zip(teams_df["team_id"], teams_df["team_name"])) if not teams_df.empty else {}
+    if not names and not scoped.empty:
+        names = dict(zip(scoped["team_id"], scoped["team_name"]))
+    logos = _logos_by_name()
+
+    pills = [_clickable(core_ui.tags.button, "players_pos", key, label,
+                        class_="team-pill active" if pos == key else "team-pill", type="button")
+             for key, label in (("ALL", "All"), ("QB", "QB"), ("RB", "RB"), ("WR", "WR"),
+                                ("TE", "TE"), ("K", "K"), ("D/ST", "D/ST"))]
+
+    head = core_ui.div(
+        core_ui.span("#", class_="col"), core_ui.span("Player", class_="col"),
+        core_ui.span("Pos", class_="col"), core_ui.span("Team", class_="col"),
+        core_ui.span("Starts", class_="col"), core_ui.span("Points", class_="col"),
+        core_ui.span("Avg", class_="col"), core_ui.span("Best", class_="col"),
+        core_ui.span("Boom", class_="col"), core_ui.span("Bust", class_="col"),
+        class_="pl-row pl-head",
+    )
+    rows = []
+    for i, r in enumerate(board.itertuples(), start=1):
+        team_name = names.get(int(r.team_id), f"Team {r.team_id}")
+        rows.append(_clickable(
+            core_ui.div, "team_pick", team_name,
+            core_ui.span(str(i), class_="pl-rank"),
+            core_ui.span(r.player_name, class_="pl-name"),
+            core_ui.span(r.position, class_="pl-pos"),
+            core_ui.span(_logo_img(logos.get(team_name), "team-logo pl-logo"),
+                         core_ui.span(team_name, class_="pl-team-name"), class_="pl-team"),
+            core_ui.span(f"{int(r.starts)}/{int(r.weeks_rostered)}", class_="pl-num"),
+            core_ui.span(f"{r.points_as_starter:.1f}", class_="pl-num pl-points"),
+            core_ui.span(f"{r.avg_as_starter:.1f}", class_="pl-num"),
+            core_ui.span(f"{r.best_points:.1f}", core_ui.span(f" wk {int(r.best_week)}", class_="pl-sub"), class_="pl-num"),
+            core_ui.span(f"{r.boom_rate * 100:.0f}%", class_="pl-num pl-boom"),
+            core_ui.span(f"{r.bust_rate * 100:.0f}%", class_="pl-num pl-bust"),
+            class_="pl-row", role="button",
+        ))
+
+    return core_ui.div(
+        core_ui.div(
+            core_ui.h1("PLAYERS", class_="screen-title board"),
+            core_ui.span(f"Weeks {lo}–{hi} · {_freshness()}", class_="stamp"),
+            class_="title-row",
+        ),
+        core_ui.p("Points as a starter, from every played week's lineups. Starts are out of weeks on a "
+                  "roster; a boom is a start at 1.5× the player's own average, a bust is one at half. "
+                  "Points scored on the bench count for nobody, which is the whole point of the Teams "
+                  "page's bench regrets.", class_="screen-note"),
+        core_ui.div(*pills, class_="teamrail draft-clubs"),
+        core_ui.div(head, *rows, class_="pl-table") if rows else
+        core_ui.p("Nobody at that position has started a game in this range.", class_="empty-note"),
+        class_="screen",
+    )
+
+
 # ------------------------------------------------------------ screen: RECORDS
 
 @render.ui
@@ -2412,6 +2901,7 @@ def screen_records():
         return ledger_row(a, week_badge=badge)
 
     all_time_awards = stats.all_time_trophies(_all_scores())
+    champion_rows = _champion_rows()
 
     return core_ui.div(
         core_ui.h1("RECORD BOOK", class_="screen-title board"),
@@ -2438,15 +2928,178 @@ def screen_records():
             core_ui.p("Every season in the database, whole — the Weeks "
                        "segment narrows this season's half of the page, not "
                        "this one. Keyed on (year, week) so week numbers never "
-                       "collide across seasons. Championships are skipped: "
-                       "they need playoff-bracket logic this schema doesn't "
-                       "carry yet.",
+                       "collide across seasons. Champions come from the "
+                       "bracket once a season's final is played.",
                        class_="ledger-heading records-alltime-note"),
+            *[all_time_row(a) for a in champion_rows],
             *[all_time_row(a) for a in all_time_awards],
             class_="ledger-group",
-        ) if all_time_awards else None,
+        ) if all_time_awards or champion_rows else None,
+        _bracket_block(),
         class_="screen",
     )
+
+
+def _champion_rows():
+    """One record-book row per decided season: the champion, with the
+    final's score as the detail so the row reads like the others."""
+    all_scores = _all_scores()
+    settings = _all_settings()
+    rows = []
+    for year, name in sorted(stats.champions(all_scores, settings).items(), reverse=True):
+        cfg = settings.get(int(year), {})
+        season = all_scores[all_scores["year"] == int(year)]
+        detail = "won the final"
+        for rnd in stats.bracket(season, int(cfg.get("playoff_team_count") or 4), int(cfg.get("reg_season_count") or 14)):
+            for g in rnd.get("games", []):
+                if g.get("kind") == "final" and g.get("winner") == name:
+                    loser = g["away"] if g["home"] == name else g["home"]
+                    w = g["home_score"] if g["home"] == name else g["away_score"]
+                    l = g["away_score"] if g["home"] == name else g["home_score"]
+                    detail = f"{w:.1f} pts — beat {loser} {l:.1f} in the final"
+        rows.append({"icon": "🏆", "title": "Champion", "team": name, "focus": name,
+                     "detail": detail, "week": None, "year": int(year)})
+    return rows
+
+
+def _bracket_block():
+    """
+    The selected season's playoff bracket, round by round, once a playoff
+    game has been played. The final and third-place game are named; the
+    consolation side is shown smaller.
+    """
+    season = _season_scores()
+    if season.empty:
+        return None
+    reg = _reg_weeks()
+    rounds = stats.bracket(season, _playoff_teams(), reg)
+    rounds = [r for r in rounds if r.get("games")]
+    if not rounds:
+        return None
+    logos = _logos_by_name()
+    labels = {"final": "Final", "third": "Third place", "playoff": "Playoff", "consolation": "Consolation"}
+
+    def game(g):
+        winner = g.get("winner")
+
+        def side(name, score, seed):
+            cls = "bk-side win" if name == winner else "bk-side"
+            return _clickable(
+                core_ui.div, "team_pick", name,
+                _logo_img(logos.get(name), "team-logo bk-logo"),
+                core_ui.span(f"{seed} " if seed else "", class_="bk-seed"),
+                core_ui.span(name, class_="bk-name"),
+                core_ui.span(f"{score:.1f}" if score is not None else "—", class_="bk-score"),
+                class_=cls, role="button",
+            )
+        return core_ui.div(
+            core_ui.span(labels.get(g.get("kind"), ""), class_="bk-kind"),
+            side(g["home"], g.get("home_score"), g.get("home_seed")),
+            side(g["away"], g.get("away_score"), g.get("away_seed")),
+            class_=f"bk-game {g.get('kind') or ''}",
+        )
+
+    cols = []
+    for r in rounds:
+        weeks = r.get("weeks") or []
+        title = f"Round {r['round']} · week{'s' if len(weeks) > 1 else ''} {weeks[0]}" + (f"–{weeks[-1]}" if len(weeks) > 1 else "")
+        cols.append(core_ui.div(core_ui.p(title, class_="section-label"), *[game(g) for g in r["games"]], class_="bk-round"))
+    return core_ui.div(
+        core_ui.h2("Playoff bracket", class_="records-section-title"),
+        core_ui.div(*cols, class_="bracket"),
+        class_="bracket-section",
+    )
+
+
+# --------------------------------------------------------------- screen: CHAT
+
+chat_ok = reactive.value(False)
+_chat_client = {"client": None}
+
+
+def _viewer():
+    try:
+        return str(input.viewer_token() or "anon")
+    except Exception:
+        return "anon"
+
+
+@reactive.effect
+def _chat_saved_pass():
+    """A passphrase remembered by the browser opens the gate on load."""
+    try:
+        saved = input.chat_pass_saved()
+    except Exception:
+        return
+    if saved and datachat.check_passphrase(saved):
+        chat_ok.set(True)
+
+
+@reactive.effect
+@reactive.event(input.chat_go)
+def _chat_gate_submit():
+    if datachat.check_passphrase(input.chat_pass() or ""):
+        chat_ok.set(True)
+    else:
+        ui.notification_show("That is not the league passphrase.", type="warning", duration=4)
+
+
+@render.ui
+def chat_visibility_style():
+    display = "block" if screen() == "chat" else "none"
+    # The input only shows once the gate is open; a box you cannot use is
+    # a promise the page cannot keep.
+    box = "block" if (screen() == "chat" and chat_ok.get() and datachat.enabled()[0]) else "none"
+    return core_ui.tags.style(f"#chat-wrap {{ display: {display}; }} #datachat-box {{ display: {box}; }}")
+
+
+with ui.div(id="chat-wrap", class_="screen chat-screen"):
+    core_ui.h1("ASK THE DATA", class_="screen-title board")
+
+    @render.ui
+    def chat_gate():
+        enabled, reason = datachat.enabled()
+        if not enabled:
+            return core_ui.p(reason, class_="empty-note")
+        if chat_ok.get():
+            return core_ui.p(
+                "Answers come from this site's own tables: scores, standings, head to head, "
+                "records, lineups, the draft, trades, and moves. For start, sit, and trade advice "
+                "use /ask in Discord, which reads live ESPN data.",
+                class_="screen-note",
+            )
+        return core_ui.div(
+            core_ui.p("The chat is for league members. Enter the passphrase from the league "
+                      "Discord once and this browser remembers it.", class_="screen-note"),
+            core_ui.div(
+                ui.input_password("chat_pass", None, placeholder="League passphrase"),
+                ui.input_action_button("chat_go", "Open the chat", class_="btn-accent"),
+                class_="chat-gate",
+            ),
+        )
+
+    datachat_ui = ui.Chat(id="datachat")
+    with ui.div(id="datachat-box"):
+        datachat_ui.ui(
+            placeholder="Who has the best record against Space Cadets? Top scorers at RB?",
+            height="560px",
+            greeting="Ask me anything the dashboard's data can answer. I know every season in the "
+                     "database, not what happened on ESPN this morning.",
+        )
+
+    @datachat_ui.on_user_submit
+    async def _chat_turn(user_input: str):
+        if not chat_ok.get():
+            await datachat_ui.append_message("Enter the league passphrase above first.")
+            return
+        viewer = _viewer()
+        ok, reason = datachat.allow(viewer)
+        if not ok:
+            await datachat_ui.append_message(reason)
+            return
+        if _chat_client["client"] is None:
+            _chat_client["client"] = datachat.make_client()
+        await datachat_ui.append_message_stream(datachat.answer(_chat_client["client"], viewer, user_input))
 
 
 # ---------------------------------------------------------------- bottom bar

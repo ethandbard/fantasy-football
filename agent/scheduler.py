@@ -36,7 +36,10 @@ class Clock:
             # After ESPN rolls the week (before 6:00) and before the research
             # run, so the dashboard's recap is up first thing Tuesday.
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=30, timezone=tz), args=["recap"], id="recap")
+            add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=40, timezone=tz), args=["power"], id="power")
             add(self._submit, CronTrigger(day_of_week="tue", hour=7, minute=0, timezone=tz), args=["research"], id="research")
+            # After the post-waiver adjust, so the preview sees settled rosters.
+            add(self._submit, CronTrigger(day_of_week="wed", hour=10, minute=30, timezone=tz), args=["preview"], id="preview_site")
             add(self._submit, CronTrigger(day_of_week="tue", hour=8, minute=0, timezone=tz), args=["plan"], id="plan")
             add(self.ensure_wakeups, CronTrigger(day_of_week="tue", hour=9, minute=15, timezone=tz), id="ensure_wakeups")
             add(self._submit, CronTrigger(day_of_week="wed", hour=9, minute=30, timezone=tz), args=["postwaiver"], id="postwaiver")

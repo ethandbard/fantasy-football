@@ -92,3 +92,14 @@ def test_recap_prompt_targets_the_week_just_played():
     # Week 1 cannot recap week 0.
     ctx.week = 1
     assert "week to recap is week 1" in jobs.user_prompt(spec, ctx, {})
+
+
+def test_preview_and_power_jobs_are_league_facing_like_the_recap():
+    for name in ("preview", "power"):
+        spec = jobs.get(name)
+        assert not spec.owner_job and not spec.writes and not spec.web and not spec.post_brief
+        names = [n for g in spec.tool_groups for n in tool_names(g)]
+        assert "mcp__espn__write_site_content" in names
+        assert not any("execute" in n or "preview_" in n for n in names)
+        for private in ("read_research", "read_state", "read_season_log", "get_rules"):
+            assert f"mcp__espn__{private}" not in names
