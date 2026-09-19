@@ -237,6 +237,12 @@ def _all_teams():
 
 
 @reactive.poll(db.fingerprint, DB_POLL_SECONDS)
+def _manager_names():
+    """{manager key: what the league calls them}, from dev/set_managers.py."""
+    return db.get_managers()
+
+
+@reactive.poll(db.fingerprint, DB_POLL_SECONDS)
 def _all_picks():
     return pd.DataFrame(db.get_all_draft_picks())
 
@@ -363,6 +369,18 @@ def _season_schedule():
 def _season_trades():
     df = _all_trades()
     return df[df["year"] == _year()] if not df.empty else df
+
+
+def _managers():
+    """Every team-season tied to its manager, labelled for the selected
+    season -- see stats.managers()."""
+    return stats.managers(_all_scores(), _all_teams(), _manager_names(), _year())
+
+
+def _reg_weeks_by_year():
+    """{year: regular-season length}, for telling a playoff meeting apart."""
+    return {int(y): int(s["reg_season_count"]) for y, s in _all_settings().items()
+            if s.get("reg_season_count")}
 
 
 def _standings_df():
@@ -1239,10 +1257,10 @@ def week_rail():
 
 # ----------------------------------------------------------- screen: NEXT UP
 
-def _nu_side(team_id, names, rec_by_id, scores_by_id, css, logos=None):
-    """One team's half of an upcoming-matchup card: logo, name, record,
-    season average, and last-five pips. Preseason, only the logo and name
-    exist yet."""
+def _nu_side(team_id, names, rec_by_id, scores_by_id, css, logos=None, manager=None):
+    """One team's half of an upcoming-matchup card: logo, name, manager,
+    record, season average, and last-five pips. Preseason, only the logo,
+    name and manager exist yet."""
     logos = logos or {}
     name = names.get(team_id, f"Team {team_id}")
     children = [_name_with_logo(name, logos.get(team_id),
@@ -1252,31 +1270,54 @@ def _nu_side(team_id, names, rec_by_id, scores_by_id, css, logos=None):
     scores = scores_by_id.get(team_id, [])
     if r is not None and scores:
         avg = sum(scores) / len(scores)
+        sub = f"{r.record} · avg {avg:.1f}"
         children.append(core_ui.span(
-            f"{r.record} · avg {avg:.1f}", class_="nu-sub",
+            f"{manager} · {sub}" if manager else sub, class_="nu-sub",
         ))
         pips = [core_ui.span(class_=f"pip {c.lower()}") for c in r.form.split()]
         if pips:
             children.append(core_ui.div(*pips, class_="form-pips nu-pips"))
+    elif manager:
+        children.append(core_ui.span(manager, class_="nu-sub"))
 
     return _clickable(core_ui.div, "team_pick", name, *children,
                       class_=css, role="button")
 
 
-def _nu_h2h_note(name_a, name_b, h2h_records):
-    """"A leads B 3-1 all-time", "tied 2-2", or "first meeting"."""
-    try:
-        rec = h2h_records.at[name_a, name_b]
-    except KeyError:
-        rec = ""
-    if not rec:
-        return "First meeting."
-    wins, losses = (int(x) for x in rec.split("-"))
-    if wins > losses:
-        return f"{name_a} leads {name_b} {wins}-{losses} all-time."
-    if losses > wins:
-        return f"{name_b} leads {name_a} {losses}-{wins} all-time."
-    return f"All-time series tied {wins}-{losses}."
+def _nu_rivalry(r):
+    """
+    The history under an upcoming-matchup card: the all-time series as a
+    headline, every past meeting as a pip (green when the left team won, red
+    when the right did -- the same sides as the probability bar above it),
+    grouped by season, then the streak and last-meeting lines.
+
+    All of it is between managers, not team names: a team renamed every year
+    would otherwise read "first meeting" every September.
+    """
+    notes = stats.rivalry_notes(r)
+    children = [core_ui.p(notes[0], class_="nu-h2h")]
+
+    if r["meetings"]:
+        strip = []
+        for year in r["seasons"]:
+            pips = []
+            for m in (m for m in r["meetings"] if m["year"] == year):
+                cls = {"a": "w", "b": "l"}.get(m["winner"], "t")
+                pips.append(core_ui.span(
+                    class_=f"pip {cls}{' post' if m['postseason'] else ''}",
+                    title=(f"{stats.meeting_when(m)}{' (postseason)' if m['postseason'] else ''}: "
+                           f"{m['a_name']} {m['a_score']:.1f} – {m['b_score']:.1f} {m['b_name']}"),
+                ))
+            strip.append(core_ui.span(
+                core_ui.span(str(year), class_="nu-series-year"),
+                core_ui.span(*pips, class_="form-pips"),
+                class_="nu-series-season",
+            ))
+        children.append(core_ui.div(*strip, class_="nu-series"))
+
+    if len(notes) > 1:
+        children.append(core_ui.p(" ".join(notes[1:]), class_="nu-rivalry-detail"))
+    return core_ui.div(*children, class_="nu-rivalry")
 
 
 def _nu_prob_bar(name_a, name_b, p):
@@ -1334,7 +1375,8 @@ def screen_next():
     scores_by_id = ({tid: g["score"].tolist()
                      for tid, g in season.groupby("team_id")}
                     if not season.empty else {})
-    h2h_records, _h2h_margins = stats.head_to_head_all_time(_all_scores())
+    all_scores, all_teams, manager_names = _all_scores(), _all_teams(), _manager_names()
+    reg_weeks = _reg_weeks_by_year()
     logo_ids = _season_logo_ids()
 
     # A playoff round spans more than one week; say so instead of pretending
@@ -1374,22 +1416,25 @@ def screen_next():
 
         p = stats.win_probability(scores_by_id.get(home_id, []),
                                   scores_by_id.get(away_id, []))
+        # `before` keeps a week that is scored but still on screen out of
+        # its own history.
+        rivalry = stats.rivalry(all_scores, all_teams, _year(), home_id, away_id,
+                                manager_names, reg_weeks, before=(_year(), wk))
 
         cards.append(core_ui.div(
             core_ui.div(
                 _nu_side(home_id, names, rec_by_id, scores_by_id, "side left",
-                         logo_ids),
+                         logo_ids, rivalry["a"]["manager"]),
                 core_ui.span(proj_text(home_id), class_="score"),
                 core_ui.span("–", class_="dash"),
                 core_ui.span(proj_text(away_id), class_="score"),
                 _nu_side(away_id, names, rec_by_id, scores_by_id, "side right",
-                         logo_ids),
+                         logo_ids, rivalry["b"]["manager"]),
                 core_ui.span(tag_text, class_="margin", title="Projected margin"),
                 class_="scorebug nu-bug",
             ),
             _nu_prob_bar(home_name, away_name, p),
-            core_ui.p(_nu_h2h_note(home_name, away_name, h2h_records),
-                       class_="nu-h2h"),
+            _nu_rivalry(rivalry),
             class_="nextup-card",
         ))
 
@@ -1866,7 +1911,8 @@ def _h2h_frame():
     with the range note directly above it.
     """
     if h2h_scope.get() == "all":
-        return stats.head_to_head_all_time(_all_scores())
+        return stats.head_to_head_all_time(_all_scores(), _all_teams(),
+                                           _manager_names(), _year())
     return stats.head_to_head(_scope_scores())
 
 
@@ -2434,6 +2480,7 @@ def screen_teams():
                     core_ui.h1(current, class_="team-name"),
                     class_="profile-title",
                 ),
+                _lineage_line(current),
             ),
             core_ui.span(f"{record_text} · {streak_text}" if streak_text else record_text,
                         class_="record-streak"),
@@ -2660,6 +2707,27 @@ def _week_bars(games, scoped):
         core_ui.div(*labels, class_="weekbars-weeks"),
         class_="weekbars-block", style=f"--n:{len(bars)}",
     )
+
+
+def _lineage_line(current):
+    """Who runs the team and what it was called in other seasons -- the
+    all-time head-to-head below counts those seasons too, so say whose they
+    are. None when neither is known."""
+    index = _managers()
+    mine = index[(index["year"] == _year()) & (index["team_name"] == current)]
+    if mine.empty:
+        return None
+    me = mine.iloc[0]
+    seasons = index[(index["mid"] == me["mid"]) & (index["year"] != _year())]
+    other = [f"{r.team_name} ({r.year})"
+             for r in seasons.sort_values("year", ascending=False).itertuples()
+             if r.team_name != current]
+    parts = []
+    if me["manager"]:
+        parts.append(f"Managed by {me['manager']}")
+    if other:
+        parts.append("also " + ", ".join(other))
+    return core_ui.p(" · ".join(parts), class_="profile-lineage") if parts else None
 
 
 def _h2h_list(records_tbl, margins_tbl, current, logos=None):

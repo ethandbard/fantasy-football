@@ -16,6 +16,11 @@ Do, in order:
    and write nothing.
 3. get_recent_activity(size 25) for the notable adds, drops, and trades of
    the past week.
+4. get_rivalry once per matchup, with the two team ids and
+   before_week={played_week}, for the history between the two managers
+   going into the game, across every season on file and through team
+   renames. The result you are recapping is not in it: add it yourself
+   when you say a streak was extended or snapped.
 
 Then call write_site_content once with kind "recap", week {played_week},
 a short title (a headline, under 60 characters, no week number), and the
@@ -26,7 +31,11 @@ recap in markdown:
   game first, with the final score, the swing player or two, and one
   number that explains the result (a starter far over or under projection,
   a zero from an injured or bye-week starter, a bench score the manager
-  left sitting only if the tool showed it).
+  left sitting only if the tool showed it). When the result did something
+  to the history, say so in a clause: a streak of three or more extended
+  or snapped, a first-ever win over an opponent, revenge for a postseason
+  loss. Count it exactly from what get_rivalry reported. Otherwise leave
+  the history out.
 - A `## Standings` section: two or three sentences on what moved, who is
   in the playoff picture, and who is running out of weeks.
 - A `## Moves` section only if the activity feed showed something worth

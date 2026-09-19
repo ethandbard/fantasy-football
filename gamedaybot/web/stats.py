@@ -6,8 +6,11 @@ tested without standing a server up. Everything here derives from the
 weekly_scores table alone, which already carries opponent_id, is_home and
 projected_score even though none of the three reached the old UI.
 
-Every function expects a frame already narrowed to a single season, since
-week numbers only identify a matchup within one year.
+Most functions expect a frame already narrowed to a single season, since
+week numbers only identify a matchup within one year. The all-time ones
+(head_to_head_all_time, rivalry, all_time_trophies, champions) take every
+season at once; the first two follow managers rather than teams, because
+neither a team's name nor its id survives from one season to the next.
 """
 import math
 
@@ -259,10 +262,294 @@ def _cross_season(scores_df):
     return df
 
 
-def head_to_head_all_time(scores_df):
-    """head_to_head() over every season in scores_df at once, via _cross_season
-    so identical round numbers in different years don't collide."""
-    return head_to_head(_cross_season(scores_df))
+def _text(value):
+    """A cell as a stripped string, with None and NaN both reading as ''."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    return str(value).strip()
+
+
+def manager_key(team_row):
+    """
+    The key that follows one manager across seasons, from a teams row.
+
+    Neither team_id nor team_name can do this: ESPN hands a departed
+    manager's id to whoever joins next, and most of the league renames its
+    team every year. The owner GUID is stable; the display name stands in for
+    rows collected before the GUID was stored (case-folded, since ESPN is not
+    consistent about "ESPNfan" vs "espnfan"), and a team with neither is its
+    own one-season manager.
+    """
+    return (_text(team_row.get("owner_id"))
+            or _text(team_row.get("owner")).casefold()
+            or f"{int(team_row['year'])}:{int(team_row['team_id'])}")
+
+
+def managers(scores_df, teams_df, names=None, as_of_year=None):
+    """
+    One row per team-season, tied to the manager who ran it.
+
+    Columns: year, team_id, team_name, key, mid (a small integer per manager),
+    manager (what the league calls them, or None), and label -- the team name
+    the manager goes by in `as_of_year`, or in their last season if they were
+    not in the league that year. Labelling relative to the season on screen
+    keeps an all-time table keyed by the same names as everything around it.
+
+    `names` is {manager key: display name}; ESPN's first name is the fallback.
+    Team-seasons present in scores_df but missing from teams_df are kept as
+    one-season managers rather than dropped.
+    """
+    names = names or {}
+    rows = {}
+    if teams_df is not None and not teams_df.empty:
+        for t in teams_df.to_dict("records"):
+            rows[(int(t["year"]), int(t["team_id"]))] = {
+                "year": int(t["year"]), "team_id": int(t["team_id"]),
+                "team_name": t["team_name"], "key": manager_key(t),
+                "owner_name": _text(t.get("owner_name")),
+            }
+    if scores_df is not None and not scores_df.empty and "year" in scores_df.columns:
+        seen = scores_df[["year", "team_id", "team_name"]].drop_duplicates(["year", "team_id"])
+        for s in seen.to_dict("records"):
+            pair = (int(s["year"]), int(s["team_id"]))
+            rows.setdefault(pair, {
+                "year": pair[0], "team_id": pair[1], "team_name": s["team_name"],
+                "key": f"{pair[0]}:{pair[1]}", "owner_name": "",
+            })
+
+    columns = ["year", "team_id", "team_name", "key", "mid", "manager", "label"]
+    if not rows:
+        return pd.DataFrame(columns=columns)
+
+    out = pd.DataFrame(sorted(rows.values(), key=lambda r: (r["year"], r["team_id"])))
+    out["mid"] = out["key"].map({k: i for i, k in enumerate(dict.fromkeys(out["key"]), start=1)})
+
+    labels, label_year, manager = {}, {}, {}
+    for key, seasons in out.groupby("key", sort=False):
+        seasons = seasons.sort_values("year")
+        this_year = seasons[seasons["year"] == as_of_year]
+        pick = this_year.iloc[-1] if not this_year.empty else seasons.iloc[-1]
+        labels[key], label_year[key] = pick["team_name"], int(pick["year"])
+        known = [n for n in seasons["owner_name"] if n]
+        manager[key] = names.get(key) or (known[-1] if known else None)
+
+    # Two managers can land on one label -- a departed team's last name reused
+    # by someone else. The one not in the season on screen carries its year.
+    newest = max(label_year.values())
+    for key, label in list(labels.items()):
+        clash = [k for k, v in labels.items() if v == label]
+        if len(clash) > 1 and label_year[key] != (as_of_year or newest):
+            labels[key] = f"{label} ({label_year[key]})"
+
+    out["label"] = out["key"].map(labels)
+    out["manager"] = out["key"].map(manager)
+    return out[columns]
+
+
+def by_manager(scores_df, teams_df, names=None, as_of_year=None):
+    """
+    Every season's scores re-keyed by manager: team_id and opponent_id become
+    the manager's `mid`, team_name and opponent_name their label, and the name
+    the team actually played under survives as `name_then`. Weeks are offset
+    by _cross_season, so the matchup-level views run over the result as if it
+    were one long season.
+    """
+    cross = _cross_season(scores_df)
+    if cross.empty or "year" not in cross.columns:
+        return cross
+    index = managers(scores_df, teams_df, names, as_of_year)
+    mids = {(r.year, r.team_id): r.mid for r in index.itertuples()}
+    label = dict(zip(index["mid"], index["label"]))
+
+    df = cross.copy()
+    years = df["year"].astype(int)
+    df["name_then"] = df["team_name"]
+    df["team_id"] = [mids[(y, int(t))] for y, t in zip(years, df["team_id"])]
+    # An opponent with no row of its own (a half-collected week) keeps a
+    # negative id, so it can never be mistaken for a real manager.
+    df["opponent_id"] = [mids.get((y, int(o)), -int(o)) if pd.notna(o) else o
+                         for y, o in zip(years, df["opponent_id"])]
+    df["team_name"] = df["team_id"].map(label)
+    df["opponent_name"] = df["opponent_id"].map(label).fillna(df["opponent_name"])
+    return df
+
+
+def head_to_head_all_time(scores_df, teams_df=None, names=None, as_of_year=None):
+    """
+    head_to_head() over every season at once, via _cross_season so identical
+    round numbers in different years don't collide.
+
+    With teams_df the pairings are between managers, not team names, so a
+    rename does not split one rivalry into "first meeting" every September,
+    and a reassigned team_id does not merge two people. Without it, the old
+    name-keyed behaviour.
+    """
+    if teams_df is None or teams_df.empty:
+        return head_to_head(_cross_season(scores_df))
+    return head_to_head(by_manager(scores_df, teams_df, names, as_of_year))
+
+
+def rivalry(scores_df, teams_df, year, team_a, team_b, names=None,
+            reg_weeks=None, before=None):
+    """
+    Everything two managers have done to each other, across every season.
+
+    team_a and team_b are team ids in `year`. reg_weeks is {year: regular
+    season length}, used to flag postseason meetings; before is a
+    (year, week) pair that cuts the history off ahead of that week, for
+    writing about a game without counting it.
+
+    Returns a dict: `a` and `b` (label, manager, first_year in the league),
+    `year`, the league's `first_season`, `meetings` oldest first
+    (year, week and first_week -- they differ for a multi-week round -- the
+    names and scores of the day, winner as 'a'/'b'/'t', postseason), wins_a / wins_b / ties, avg_margin from a's side, `streak`
+    (side, length, since_year, since_week -- the current run, None when the
+    last meeting was a tie or there are none), `biggest` and `closest`
+    meetings, postseason wins per side, and the seasons they met in.
+    """
+    reg_weeks = reg_weeks or {}
+    index = managers(scores_df, teams_df, names, as_of_year=year)
+
+    def side(team_id):
+        row = index[(index["year"] == year) & (index["team_id"] == team_id)]
+        if row.empty:
+            return {"mid": None, "label": f"Team {team_id}", "manager": None, "first_year": None}
+        r = row.iloc[0]
+        return {"mid": int(r["mid"]), "label": r["label"], "manager": r["manager"],
+                "first_year": int(index[index["mid"] == r["mid"]]["year"].min())}
+
+    a, b = side(team_a), side(team_b)
+    out = {"a": a, "b": b, "meetings": [], "wins_a": 0, "wins_b": 0, "ties": 0,
+           "avg_margin": None, "streak": None, "biggest": None, "closest": None,
+           "postseason_a": 0, "postseason_b": 0, "seasons": [], "year": int(year),
+           "first_season": int(index["year"].min()) if not index.empty else None}
+    if a["mid"] is None or b["mid"] is None or scores_df is None or scores_df.empty:
+        return out
+
+    keyed = by_manager(scores_df, teams_df, names, as_of_year=year)
+    log = matchup_log(keyed)
+    games = log[(log["team_id"] == a["mid"]) & (log["opponent_id"] == b["mid"])
+                & (log["result"] != "")].sort_values("week")
+    if before is not None:
+        games = games[games["week"] < int(before[0]) * 1000 + int(before[1])]
+    if games.empty:
+        return out
+
+    name_then = {(r.year, r.mid): r.team_name for r in index.itertuples()}
+    # matchup_log keeps a round's last week; a two-week playoff round also
+    # needs its first, or its doubled score reads as one enormous game.
+    round_start = keyed[keyed["team_id"] == a["mid"]].groupby("matchup_period")["week"].min()
+    for g in games.itertuples():
+        yr, wk = int(g.week) // 1000, int(g.week) % 1000
+        out["meetings"].append({
+            "year": yr, "week": wk,
+            "first_week": int(round_start.get(g.matchup_period, g.week)) % 1000,
+            "a_name": name_then.get((yr, a["mid"]), a["label"]),
+            "b_name": name_then.get((yr, b["mid"]), b["label"]),
+            "a_score": round(float(g.score), 2),
+            "b_score": round(float(g.opponent_score), 2),
+            "margin": round(float(g.margin), 2),
+            "winner": {"W": "a", "L": "b"}.get(g.result, "t"),
+            "postseason": bool(reg_weeks.get(yr)) and wk > int(reg_weeks[yr]),
+        })
+
+    meetings = out["meetings"]
+    winners = [m["winner"] for m in meetings]
+    out["wins_a"], out["wins_b"], out["ties"] = (winners.count(s) for s in "abt")
+    out["avg_margin"] = round(sum(m["margin"] for m in meetings) / len(meetings), 1)
+    out["seasons"] = sorted({m["year"] for m in meetings})
+    out["postseason_a"] = sum(1 for m in meetings if m["postseason"] and m["winner"] == "a")
+    out["postseason_b"] = sum(1 for m in meetings if m["postseason"] and m["winner"] == "b")
+
+    decided = [m for m in meetings if m["winner"] != "t"]
+    if decided:
+        out["biggest"] = max(decided, key=lambda m: abs(m["margin"]))
+        out["closest"] = min(decided, key=lambda m: abs(m["margin"]))
+    if winners[-1] != "t":
+        run = 0
+        for w in reversed(winners):
+            if w != winners[-1]:
+                break
+            run += 1
+        first = meetings[-run]
+        out["streak"] = {"side": winners[-1], "length": run,
+                         "since_year": first["year"], "since_week": first["week"]}
+    return out
+
+
+def meeting_when(m):
+    """'2025 week 6', or '2024 weeks 17–18' for a two-week playoff round."""
+    if m.get("first_week") and m["first_week"] != m["week"]:
+        return f"{m['year']} weeks {m['first_week']}–{m['week']}"
+    return f"{m['year']} week {m['week']}"
+
+
+def rivalry_notes(r):
+    """
+    A rivalry() result as short sentences, most important first: the series,
+    the streak (or that one side has never won), the last meeting, postseason
+    history, and the biggest margin. Teams go by their current labels; a
+    meeting played under an older name says so.
+    """
+    meetings = r["meetings"]
+    # ESPN lets a team name end in a space; a sentence should not.
+    a, b = r["a"]["label"].strip(), r["b"]["label"].strip()
+    if not meetings:
+        # Only worth saying when the league has a past for them to be new to.
+        rookies = [r[s]["label"].strip() for s in "ab"
+                   if r[s].get("first_year") and r.get("first_season")
+                   and r[s]["first_year"] > r["first_season"] and r[s]["first_year"] == r.get("year")]
+        if rookies:
+            return [f"First meeting: {' and '.join(rookies)} "
+                    f"{'are' if len(rookies) > 1 else 'is'} new to the league this season."]
+        return ["First meeting."]
+
+    def then(m, s):
+        now, was = r[s]["label"].strip(), m[f"{s}_name"].strip()
+        return now if now.startswith(was) else f"{now} (then {was})"
+
+    when = meeting_when
+
+    notes = []
+    wa, wb, n = r["wins_a"], r["wins_b"], len(meetings)
+    span = f" over {len(r['seasons'])} seasons" if len(r["seasons"]) > 1 else ""
+    tie_bit = f"-{r['ties']}" if r["ties"] else ""
+    if wa == wb:
+        notes.append(f"All-time series tied {wa}-{wb}{tie_bit}{span}.")
+    else:
+        lead, hi, lo = (a, wa, wb) if wa > wb else (b, wb, wa)
+        notes.append(f"{lead} leads the all-time series {hi}-{lo}{tie_bit}{span}.")
+
+    streak = r["streak"]
+    if streak and streak["length"] >= 2:
+        holder, other = (a, b) if streak["side"] == "a" else (b, a)
+        if streak["length"] == n and n >= 3:
+            notes.append(f"{other} has never beaten {holder} in {n} tries.")
+        else:
+            notes.append(f"{holder} has won the last {streak['length']} meetings, "
+                         f"a run going back to {streak['since_year']} week {streak['since_week']}.")
+
+    last = meetings[-1]
+    hi, lo = max(last["a_score"], last["b_score"]), min(last["a_score"], last["b_score"])
+    if last["winner"] == "t":
+        notes.append(f"Last met in {when(last)}: a {hi:.1f}-all tie.")
+    else:
+        notes.append(f"Last met in {when(last)}: {then(last, last['winner'])} won {hi:.1f}–{lo:.1f}"
+                     f"{' in the postseason' if last['postseason'] else ''}.")
+
+    if r["postseason_a"] or r["postseason_b"]:
+        pa, pb = r["postseason_a"], r["postseason_b"]
+        if pa == pb:
+            notes.append(f"Postseason meetings are split {pa}-{pb}.")
+        else:
+            lead, hi, lo = (a, pa, pb) if pa > pb else (b, pb, pa)
+            notes.append(f"{lead} is {hi}-{lo} against them in the postseason.")
+
+    big = r["biggest"]
+    if big and n >= 3 and big is not last:
+        notes.append(f"Biggest margin: {then(big, big['winner'])} by "
+                     f"{abs(big['margin']):.1f} in {when(big)}.")
+    return notes
 
 
 def _longest_streak(scores_df, result_char):

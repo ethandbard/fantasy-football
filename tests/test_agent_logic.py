@@ -56,6 +56,8 @@ def test_analyst_tools_exclude_private_and_writes():
     for private in ("read_research", "read_state", "read_season_log", "get_rules"):
         assert f"mcp__espn__{private}" not in analyst
     assert not any("execute" in n or "preview" in n for n in analyst)
+    # League history is public: the prose jobs and /ask both get it.
+    assert "mcp__espn__get_rivalry" in analyst and "mcp__espn__get_league_history" in analyst
     assert "mcp__espn__execute_lineup" in tool_names("write")
 
 

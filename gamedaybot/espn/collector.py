@@ -477,15 +477,27 @@ def collect_trades(league, size=50):
 
 
 def collect_teams(league):
-    """Upserts team metadata (name, abbrev, logo, owner) for the season."""
+    """
+    Upserts team metadata (name, abbrev, logo, owner) for the season.
+
+    owner_id is ESPN's member GUID, the one identifier that follows a manager
+    from season to season: team ids get reassigned when someone leaves, and
+    team names change every year. First names only for owner_name -- the
+    dashboard is public.
+    """
     rows = []
     for t in league.teams:
-        owner_names = [o.get("displayName", "") for o in (t.owners or [])]
+        owners = t.owners or []
+        owner_names = [o.get("displayName", "") for o in owners]
+        owner_ids = sorted(str(o.get("id") or "").strip().upper() for o in owners)
+        first_names = [str(o.get("firstName") or "").strip() for o in owners]
         rows.append({
             "year": league.year, "team_id": t.team_id, "team_name": t.team_name,
             "abbrev": getattr(t, "team_abbrev", None),
             "logo_url": getattr(t, "logo_url", None),
             "owner": ", ".join(n for n in owner_names if n) or None,
+            "owner_id": ",".join(i for i in owner_ids if i) or None,
+            "owner_name": " & ".join(n for n in first_names if n) or None,
         })
 
     if rows:

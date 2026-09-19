@@ -231,3 +231,34 @@ def test_site_content_is_newest_first_and_refuses_unknown_kinds(fresh_db):
     assert [(r["year"], r["week"]) for r in fresh_db.get_all_site_content()] == [(2025, 5), (2025, 2), (2024, 9)]
     with pytest.raises(ValueError):
         fresh_db.upsert_site_content("manifesto", 2025, 1, "no")
+
+
+def test_teams_keep_the_owner_guid_and_managers_round_trip(fresh_db):
+    fresh_db.upsert_teams([
+        {"year": 2025, "team_id": 4, "team_name": "New Name", "abbrev": "NEW", "logo_url": None,
+         "owner": "ESPNfan5", "owner_id": "{G-FELIX}", "owner_name": "Felipe"},
+        # Rows from callers that predate the owner columns still write.
+        {"year": 2025, "team_id": 5, "team_name": "Plain", "abbrev": "PLN", "logo_url": None,
+         "owner": None},
+    ])
+    rows = {t["team_id"]: t for t in fresh_db.get_all_teams()}
+    assert rows[4]["owner_id"] == "{G-FELIX}" and rows[4]["owner_name"] == "Felipe"
+    assert rows[5]["owner_id"] is None
+
+    before = fresh_db.fingerprint()
+    fresh_db.upsert_managers({"{G-FELIX}": "Felipe"})
+    fresh_db.upsert_managers({"{G-FELIX}": "Felipe R"})
+    assert fresh_db.get_managers() == {"{G-FELIX}": "Felipe R"}
+    assert fresh_db.fingerprint() != before
+
+
+def test_owner_columns_are_added_to_a_database_that_predates_them(fresh_db):
+    with fresh_db.get_connection() as conn:
+        conn.execute("DROP TABLE teams")
+        conn.execute("CREATE TABLE teams (year INTEGER NOT NULL, team_id INTEGER NOT NULL, "
+                     "team_name TEXT NOT NULL, abbrev TEXT, logo_url TEXT, owner TEXT, "
+                     "PRIMARY KEY (year, team_id))")
+    fresh_db.init_db()
+    with fresh_db.get_connection() as conn:
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(teams)")}
+    assert {"owner_id", "owner_name"} <= columns

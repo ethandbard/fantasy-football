@@ -419,3 +419,31 @@ def test_answer_still_logs_when_the_stream_fails(fresh_db):
     with pytest.raises(RuntimeError):
         _collect(chat.answer(client, "v", "q"))
     assert fresh_db.chats_today("v") == 1
+
+
+def test_rivalry_follows_a_manager_through_a_rename(seeded):
+    # 2024: the manager of 2025's Alpha Wolves ran "Old Alphas" under another
+    # team id, and lost to the manager of Bravo Bears.
+    seeded.upsert_teams([
+        {"year": 2024, "team_id": 7, "team_name": "Old Alphas", "abbrev": "OLD", "logo_url": None,
+         "owner": "Owner 1"},
+        {"year": 2024, "team_id": 2, "team_name": "Bravo Bears", "abbrev": "BRA", "logo_url": None,
+         "owner": "Owner 2"},
+    ])
+    old = {"year": 2024, "week": 1, "projected_score": 100.0, "matchup_period": 1}
+    seeded.upsert_weekly_scores([
+        {**old, "team_id": 7, "team_name": "Old Alphas", "score": 90.0, "matchup_score": 90.0,
+         "opponent_id": 2, "opponent_name": "Bravo Bears", "is_home": 1},
+        {**old, "team_id": 2, "team_name": "Bravo Bears", "score": 99.0, "matchup_score": 99.0,
+         "opponent_id": 7, "opponent_name": "Old Alphas", "is_home": 0},
+    ])
+    seeded.upsert_managers({"owner 1": "Ann"})
+
+    out = chat.rivalry(2025, "ann", "bravo")
+    assert "Alpha Wolves (Ann) vs Bravo Bears" in out
+    assert "All-time series tied 1-1 over 2 seasons." in out
+    assert "| 2024 | 1 | Old Alphas | 90.0 | 99.0 | Bravo Bears |" in out
+
+    grid = chat.head_to_head("all")
+    assert "Old Alphas" not in grid
+    assert next(ln for ln in grid.splitlines() if ln.startswith("| Alpha Wolves |")).split("|")[3].strip() == "1-1"

@@ -34,7 +34,19 @@ CREATE TABLE IF NOT EXISTS teams (
     abbrev TEXT,
     logo_url TEXT,
     owner TEXT,
+    -- ESPN's member GUID(s) for the owner. team_id and team_name both change
+    -- hands between seasons; this is the only key that follows the person.
+    owner_id TEXT,
+    owner_name TEXT,
     PRIMARY KEY (year, team_id)
+);
+
+-- What the league calls each manager, keyed by the same owner key
+-- stats.manager_key() derives. Hand-entered (dev/set_managers.py): ESPN only
+-- knows a legal first name, and a collect must never overwrite these.
+CREATE TABLE IF NOT EXISTS managers (
+    owner_key TEXT PRIMARY KEY,
+    name TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS schedule (
@@ -238,6 +250,10 @@ def init_db():
 # existing table exactly as it found it, so a database created before a column
 # existed needs the ALTER as well as the updated schema above.
 _ADDED_COLUMNS = {
+    "teams": {
+        "owner_id": "TEXT",
+        "owner_name": "TEXT",
+    },
     "weekly_scores": {
         "collected_at": "TEXT",
         "matchup_period": "INTEGER",
@@ -287,16 +303,35 @@ def upsert_teams(rows):
     """
     rows: iterable of dicts with keys matching the teams columns.
     """
+    rows = [{"owner_id": None, "owner_name": None, **r} for r in rows]
     with get_connection() as conn:
         conn.executemany(
             """
             INSERT OR REPLACE INTO teams
-                (year, team_id, team_name, abbrev, logo_url, owner)
+                (year, team_id, team_name, abbrev, logo_url, owner,
+                 owner_id, owner_name)
             VALUES
-                (:year, :team_id, :team_name, :abbrev, :logo_url, :owner)
+                (:year, :team_id, :team_name, :abbrev, :logo_url, :owner,
+                 :owner_id, :owner_name)
             """,
             rows,
         )
+
+
+def upsert_managers(names):
+    """names: {owner_key: display name}. Replaces any name already stored."""
+    with get_connection() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO managers (owner_key, name) VALUES (?, ?)",
+            list(names.items()),
+        )
+
+
+def get_managers():
+    """{owner_key: display name} for every manager the league has named."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT owner_key, name FROM managers").fetchall()
+        return {r["owner_key"]: r["name"] for r in rows}
 
 
 def upsert_team_logo(year, team_id, url, content, content_type=None):
@@ -814,6 +849,8 @@ def fingerprint():
                    (SELECT COUNT(*) FROM players),
                    (SELECT COALESCE(MAX(collected_at), '') FROM players),
                    (SELECT COUNT(*) FROM teams),
+                   (SELECT COUNT(owner_id) FROM teams),
+                   (SELECT COALESCE(GROUP_CONCAT(name, '|'), '') FROM managers),
                    (SELECT COUNT(*) FROM draft_picks),
                    (SELECT COALESCE(MAX(collected_at), '') FROM draft_picks),
                    (SELECT COUNT(*) FROM schedule),

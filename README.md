@@ -239,7 +239,7 @@ Times are in `TIMEZONE`.
 
 | When | Job | Model | Does |
 | --- | --- | --- | --- |
-| Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only, no web, no Discord post. |
+| Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only — this season from ESPN, past seasons and each pairing's all-time history from the dashboard database — no web, no Discord post. |
 | Tuesday 6:40 AM | Power rankings | light | Ranks the league 1–8 after last week, for the dashboard's League page. Same rules as the recap. |
 | Wednesday 10:30 AM | Matchup preview | light | Previews this week's four matchups after waivers clear, for the dashboard's Next up page. Same rules as the recap. |
 | Tuesday 7:00 AM | Research | heavy | Reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` and `state/week-NN.json`. |
@@ -301,10 +301,12 @@ The dashboard reads `data/fantasy.db` and offers six destinations:
   against its own average. Opens on the latest collected week; nothing to
   configure.
 - **Next up**: the coming week's matchups, before they are played. Each card
-  shows both teams' records, season averages, and last-five form, ESPN's
-  projected scores, the pair's all-time head-to-head record, and a win
-  probability derived from each team's scored weeks — labelled as the rough
-  read it is. Projections refresh with the daily player-pool job. Once a
+  shows both teams' managers, records, season averages, and last-five form,
+  ESPN's projected scores, a win probability derived from each team's scored
+  weeks — labelled as the rough read it is — and the two managers' history
+  across every season on file: the all-time series, one pip per past meeting
+  grouped by season (ringed for a postseason meeting; hover for the score),
+  the current streak, and the last meeting. Projections refresh with the daily player-pool job. Once a
   season is played out the page says so instead of inventing a matchup.
 - **Draft**: ESPN's player pool for this league. Rank, ADP, bye, projected
   FPTS (in the league's scoring), last year's FPTS, and position counting
@@ -330,6 +332,17 @@ its chart color instead of ESPN's grey default silhouette. Logos are
 downloaded once per URL by the daily collection job and stored in the
 database; the dashboard serves them from `data/logos/`, which it creates
 itself.
+
+All-time views follow the manager, not the team. Most of the league renames
+its team every year, and ESPN hands a departed manager's team id to whoever
+joins next, so neither the name nor the id identifies a team across seasons.
+The daily collect stores ESPN's owner GUID with each team, and the all-time
+head-to-head grid, the Next up history, the data chat, and the agents' history
+tools all join seasons on it. A manager appears under the team name they use
+in the season on screen; a team page lists the names they used in other
+seasons. Run `dev/set_managers.py` once to fill the GUID in for seasons
+collected before it was stored and to give managers the names the league
+knows them by (see [Development tools](#development-tools)).
 
 League and Records carry a scope segment — Regular, Playoffs, or Full — that
 sets which weeks are in play. The regular-season boundary is derived from the
@@ -590,7 +603,7 @@ Follow these steps only for a host that has never run the stack.
 
 ## Development tools
 
-Both scripts in `dev/` run inside the container and read credentials from the
+The scripts in `dev/` run inside the container and read credentials from the
 environment.
 
 Check that the ESPN API is reachable and preview the available data:
@@ -630,6 +643,30 @@ Pass a year to collect a different season than `LEAGUE_YEAR`:
 docker compose exec fantasy-bot python dev/collect_players.py 2025
 ```
 
+Tie every season's teams to the managers who ran them:
+
+```bash
+docker compose exec fantasy-bot python dev/set_managers.py
+```
+
+The script re-collects the team rows of every season in the database, so each
+carries ESPN's owner GUID, then reads `data/managers.txt` if it exists and
+stores what the league calls each manager. Without the file, ESPN's first
+names are used. The file is a season followed by `Team name - Person` lines:
+
+```text
+2025
+First Down Syndrome - Josh
+Yikes (3) - Ed
+```
+
+One line anywhere in a manager's history names them in every season. Team
+names match loosely (case, spacing, and punctuation are ignored), and a season
+with exactly one unmatched line and one unmatched team pairs the two and says
+so. The file holds real first names, so it lives in `data/`, which git
+ignores. The script is safe to run again, and `--no-refresh` skips the ESPN
+calls when only the names changed.
+
 ## Project layout
 
 | Path | Contents |
@@ -645,7 +682,9 @@ docker compose exec fantasy-bot python dev/collect_players.py 2025
 | `Dockerfile.agent` | Image for the agent service. |
 | `fantasy-football-agents/` | Design plan, rules, the season log seed, and the write probe. |
 | `gamedaybot/web/app.py` | Shiny dashboard: layout and reactive wiring. |
-| `gamedaybot/web/stats.py` | Season arithmetic — records, streaks, head-to-head, trophies. |
+| `gamedaybot/web/stats.py` | Season arithmetic — records, streaks, head-to-head, trophies, and manager identity across seasons. |
+| `gamedaybot/espn/managers.py` | Parser for the league's list of who ran which team. |
+| `agent/tools/history.py` | Agent tools for past seasons: `get_rivalry` and `get_league_history`. |
 | `gamedaybot/web/draft.py` | Draft-board columns, filters, and sorting. |
 | `gamedaybot/web/charts.py` | Plotly figure builders and their shared styling. |
 | `gamedaybot/web/theme.py` | Team palette and the stat-tile sparkline. |

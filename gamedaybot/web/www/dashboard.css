@@ -586,8 +586,47 @@ button { font-family: inherit; }
   border-radius: 3px 0 0 3px;
 }
 
+.nu-rivalry { margin-top: 8px; }
+
+/* Every past meeting, one pip each, grouped under its season. */
+.nu-series {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+
+.nu-series-season { display: inline-flex; align-items: center; gap: 5px; }
+
+.nu-series-year {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-mute);
+}
+
+.nu-series .pip { width: 9px; height: 9px; cursor: help; }
+
+/* A postseason meeting carries a ring. */
+.nu-series .pip.post { outline: 1.5px solid var(--ink); outline-offset: 1px; }
+
+.nu-rivalry-detail {
+  max-width: 62ch;
+  margin: 6px auto 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-mute);
+}
+
+.profile-lineage {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
 .nu-h2h {
-  margin: 8px 0 0;
+  margin: 0;
   text-align: center;
   font-family: var(--font-mono);
   font-size: 10px;

@@ -283,3 +283,18 @@ def test_league_settings_and_activity_rows(fresh_db):
     assert [r["action"] for r in rows] == ["WAIVER ADDED", "DROPPED"]
     assert fresh_db.insert_new_activity(rows) and not fresh_db.insert_new_activity(rows)
     assert [r["player_name"] for r in fresh_db.get_all_activity()] == ["Old TE", "Some RB"]
+
+
+def test_collect_teams_stores_the_owner_guid_and_first_name_only(fresh_db):
+    team = SimpleNamespace(
+        team_id=4, team_name="Half In, Half Hurts", team_abbrev="HALF", logo_url=None,
+        owners=[{"id": "{3013-abc}", "displayName": "ESPNfan79", "firstName": "Felipe ", "lastName": "Surname"}],
+    )
+    ownerless = SimpleNamespace(team_id=5, team_name="Ghost", team_abbrev="GHO", logo_url=None, owners=None)
+    collector.collect_teams(SimpleNamespace(year=2026, teams=[team, ownerless]))
+
+    rows = {t["team_id"]: t for t in fresh_db.get_all_teams()}
+    assert rows[4]["owner_id"] == "{3013-ABC}"
+    assert rows[4]["owner_name"] == "Felipe"
+    assert "Surname" not in str(rows[4])
+    assert rows[5]["owner_id"] is None and rows[5]["owner_name"] is None

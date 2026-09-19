@@ -182,6 +182,13 @@ def _teams(year):
     return rows
 
 
+def _manager_of(team_row):
+    """What the league calls the team's manager, ESPN's first name failing
+    that, or '' when neither is on file."""
+    return (db.get_managers().get(stats.manager_key(team_row))
+            or str(team_row.get("owner_name") or "").strip())
+
+
 def _team_names(year):
     return {int(t["team_id"]): t["team_name"] for t in _teams(year)}
 
@@ -189,7 +196,8 @@ def _team_names(year):
 def _match_team(year, query):
     """
     (team row, None) or (None, message). Case-insensitive; an exact name,
-    abbreviation or owner wins, otherwise a unique substring of any of them.
+    abbreviation, owner or manager's first name wins, otherwise a unique
+    substring of any of them.
     """
     teams = _teams(year)
     if not teams:
@@ -199,7 +207,8 @@ def _match_team(year, query):
     q = str(query).strip().lower()
 
     def fields(t):
-        return [str(t.get(k) or "").lower() for k in ("team_name", "abbrev", "owner")]
+        return ([str(t.get(k) or "").lower() for k in ("team_name", "abbrev", "owner")]
+                + [_manager_of(t).lower()])
 
     exact = [t for t in teams if q in fields(t)]
     if len(exact) == 1:
@@ -305,6 +314,8 @@ def team_summary(year: int, team: str) -> str:
     rec = stats.derive_records(scores)
     mine = rec[rec["team_id"] == tid]
     head = f"{t['team_name']} ({y})"
+    if _manager_of(t):
+        head += f", managed by {_manager_of(t)}"
     if t.get("owner"):
         head += f", owner {t['owner']}"
     if mine.empty:
@@ -341,8 +352,11 @@ def head_to_head(year_or_all: str) -> str:
         scores = _scores()
         if scores.empty:
             return "No scores in the database."
-        records, _ = stats.head_to_head_all_time(scores)
-        title = f"All-time head-to-head across {', '.join(map(str, _years()))}"
+        records, _ = stats.head_to_head_all_time(
+            scores, pd.DataFrame(db.get_all_teams()), db.get_managers(), _years()[0])
+        title = (f"All-time head-to-head across {', '.join(map(str, _years()))}, by manager: "
+                 "each row is one person's teams under every name they used, shown under "
+                 "their newest team name")
     else:
         y, err = _resolve_year(key)
         if err:
@@ -357,6 +371,47 @@ def head_to_head(year_or_all: str) -> str:
         rows.append([t] + [("—" if t == o else (records.at[t, o] or "0-0")) for o in teams])
     return (title + " (row team's wins-losses vs column team).\n"
             + _table(["Team"] + teams, rows))
+
+
+@_safe
+def rivalry(year: int, team_a: str, team_b: str) -> str:
+    """
+    The all-time history between two managers, across every season and
+    through every team rename: series record, current streak, and every
+    meeting with the team names and scores of the day. Use this, not
+    head_to_head, for any question about two specific teams or people.
+
+    Parameters
+    ----------
+    year : int
+        A season both teams played in; it decides which team names the two
+        are looked up and labelled by. The newest season if unsure.
+    team_a : str
+        Team name, abbreviation, owner or manager's first name.
+    team_b : str
+        The other team, the same way.
+    """
+    y, err = _resolve_year(year)
+    if err:
+        return err
+    a, err = _match_team(y, team_a)
+    if err:
+        return err
+    b, err = _match_team(y, team_b)
+    if err:
+        return err
+    reg = {int(k): int(v["reg_season_count"]) for k, v in db.get_all_league_settings().items()
+           if v.get("reg_season_count")}
+    r = stats.rivalry(_scores(), pd.DataFrame(db.get_all_teams()), y,
+                      int(a["team_id"]), int(b["team_id"]), db.get_managers(), reg)
+    who = " vs ".join(f"{r[s]['label']}" + (f" ({r[s]['manager']})" if r[s]["manager"] else "")
+                      for s in "ab")
+    lines = [who, *stats.rivalry_notes(r)]
+    if r["meetings"]:
+        rows = [[m["year"], stats.meeting_when(m).split(" ", 2)[2], m["a_name"], _fmt_pts(m["a_score"]), _fmt_pts(m["b_score"]),
+                 m["b_name"], "postseason" if m["postseason"] else ""] for m in r["meetings"]]
+        lines.append(_table(["Season", "Week", "Team", "Score", "Opp score", "Opponent", ""], rows))
+    return "\n".join(lines)
 
 
 @_safe
@@ -648,7 +703,7 @@ def schedule(year: int, team: str) -> str:
 
 
 TOOLS = (
-    list_seasons, standings, team_summary, head_to_head, week_results,
+    list_seasons, standings, team_summary, head_to_head, rivalry, week_results,
     records, all_time_records, trades, recent_moves, draft,
     player_leaderboard, schedule,
 )
@@ -674,6 +729,7 @@ Rules:
 - You do not give start/sit, waiver, lineup or trade advice. If asked, say in one sentence that the Discord /ask analyst handles advice and offer the data instead.
 - Be concise. Use markdown tables for lists of teams, players or games and short plain sentences otherwise. No headers. Round points to one decimal.
 - Team names are ESPN team names; match a manager's nickname or partial name to the closest team when the tool tells you the options.
+- Teams change names between seasons and ESPN reuses team ids, so a team name or id does not identify a manager across years. The rivalry tool and the all-time head_to_head grid follow the manager; trust them over matching names yourself.
 """
 
 
