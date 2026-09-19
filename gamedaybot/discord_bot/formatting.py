@@ -171,3 +171,71 @@ def init_embed(data, league=None):
         "color": EMBED_COLORS["init"],
         "timestamp": _now_iso(),
     }
+
+
+# ---------------------------------------------------------------------------
+# The agent's schedule, as people read it
+# ---------------------------------------------------------------------------
+
+# Minute-level housekeeping. It always "fires next", so listing it pushes
+# every job anyone is waiting for off the bottom of the list.
+HOUSEKEEPING_JOBS = {"tick", "poll_offers", "expire_asks"}
+
+# Scheduler ids that do not say what they are. "preview" is the Monday note,
+# not the dashboard's matchup preview, which has caught people out.
+JOB_LABELS = {
+    "pregame": "pre-game lineup check",
+    "preview": "week-ahead note to Discord",
+    "preview_site": "matchup preview for the dashboard",
+    "recap": "league recap for the dashboard",
+    "power": "power rankings for the dashboard",
+    "research": "weekly research",
+    "plan": "roster plan",
+    "ensure_wakeups": "re-plan the pre-game checks",
+    "postwaiver": "post-waiver adjustment",
+    "designations": "Friday injury designations",
+    "canary": "ESPN login check",
+}
+
+
+def _eastern():
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("America/New_York")
+    except Exception:  # noqa: BLE001 - no tz database on the host
+        from datetime import timedelta
+        return timezone(timedelta(hours=-4))
+
+
+def _when(raw):
+    """An ISO timestamp as an aware datetime; one with no offset is UTC,
+    which is how the agent stores them."""
+    at = datetime.fromisoformat(str(raw))
+    return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+
+
+def schedule_lines(wakeups=None, fires=None, limit=14):
+    """
+    The agent's planned wakeups and the scheduler's next fixed jobs as one
+    list: Eastern time, soonest first, housekeeping left out.
+
+    The two arrive in different shapes and different zones -- wakeups as
+    {"run_at", "job", "label"} in UTC, fixed jobs as {"next", "job"} in UTC or
+    Eastern depending on the trigger -- and printing them as they come makes
+    a list that is neither readable nor in order.
+    """
+    rows = []
+    for w in wakeups or []:
+        rows.append((_when(w["run_at"]), w["job"], w.get("label") or ""))
+    for f in fires or []:
+        if f["job"] not in HOUSEKEEPING_JOBS:
+            rows.append((_when(f["next"]), f["job"], ""))
+
+    lines = []
+    for at, job, label in sorted(rows, key=lambda r: r[0])[:limit]:
+        stamp = at.astimezone(_eastern()).strftime("%a %b %d, %I:%M %p ET").replace(", 0", ", ")
+        what = JOB_LABELS.get(job, job)
+        # A pre-game label repeats the date the line already opens with.
+        label = label.split(" ", 3)[-1].lstrip("0") if label.endswith("ET kickoff") else label
+        lines.append(f"• {stamp} · {what}" + (f" ({label})" if label else ""))
+    return lines

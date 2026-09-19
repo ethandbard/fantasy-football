@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 import gamedaybot.espn.roster as roster
+from gamedaybot.discord_bot.formatting import schedule_lines
 from agent import discord_out, rules as rules_mod, store
 from agent.espn_ctx import EspnContext
 from agent.tools.state import schedule_week
@@ -111,7 +112,7 @@ class Clock:
         """Monday night: what is still pending this week and a reminder the plan comes Tuesday."""
         try:
             rows = store.pending_wakeups()
-            body = "\n".join(f"{r['run_at']}  {r['job']}  {r['label'] or ''}" for r in rows) or "No pending wakeups."
+            body = "\n".join(schedule_lines(rows)) or "No pending wakeups."
             body += "\n\nTuesday: research at 7:00 AM, roster plan at 8:00 AM, pre-game checks re-planned after."
             discord_out.post(self.cfg, "Week ahead", body, kind="info")
         except Exception:

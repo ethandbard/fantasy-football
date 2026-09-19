@@ -15,6 +15,8 @@ import discord
 from discord import app_commands
 import requests
 
+from gamedaybot.discord_bot.formatting import schedule_lines
+
 logger = logging.getLogger(__name__)
 
 APPROVE, REJECT = "✅", "❌"
@@ -76,11 +78,8 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         lines.append(f"Mode: {'dry run' if data.get('dry_run') else 'live writes'}; Claude auth: {'yes' if data.get('claude_auth') else 'MISSING'}")
         if data.get("current"):
             lines.append(f"Running now: {data['current']} (+{data.get('queue', 0)} queued)")
-        lines.append("\n**Next wakeups**")
-        for w in (data.get("wakeups") or [])[:8]:
-            lines.append(f"• {w['run_at']}  {w['job']}  {w.get('label') or ''}")
-        for f in (data.get("next_fires") or [])[:6]:
-            lines.append(f"• {f['next']}  {f['job']}")
+        lines.append("\n**Coming up** (Eastern time)")
+        lines += schedule_lines(data.get("wakeups"), data.get("next_fires")) or ["• nothing scheduled"]
         lines.append("\n**Recent runs**")
         for r in data.get("recent_runs") or []:
             cost = f" ${r['cost_usd']:.2f}" if r.get("cost_usd") else ""
@@ -117,8 +116,7 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
             return
         rows = data.get("wakeups") or []
         lines = [f"Planned {data.get('planned', 0)} pre-game check(s); {len(rows)} pending:"]
-        for w in rows[:12]:
-            lines.append(f"• {w['run_at']}  {w['job']}  {w.get('label') or ''}")
+        lines += schedule_lines(rows, limit=12)
         if not rows:
             lines.append("• none: no future kickoffs found for the roster this week")
         await interaction.followup.send("\n".join(lines)[:1990])

@@ -248,7 +248,7 @@ Times are in `TIMEZONE`.
 | Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
 | Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
 | Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
-| Monday 9:00 PM | Week ahead | none | Posts the pending wakeups. |
+| Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
 | Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
 | Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. |
 
@@ -258,7 +258,7 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 
 | Command | Who | Does |
 | --- | --- | --- |
-| `/agent status` | owner | Next wakeups, recent runs with cost, pending approvals, canary. |
+| `/agent status` | owner | What runs next, recent runs with cost, pending approvals, canary. Planned pre-game checks and the fixed jobs come as one list in Eastern time, soonest first; the every-minute housekeeping jobs (`tick`, `poll_offers`, `expire_asks`) are left out. |
 | `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
 | `/agent preview` | owner | Writes this week's matchup preview for the dashboard now. |
