@@ -136,6 +136,7 @@ you edit it.
 | `AGENT_SCHEDULE` | No | `True` | `False` disables the fixed weekly jobs (wakeups and on-demand runs still work). |
 | `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `opus` / `sonnet` | Models for the Tuesday and trade jobs, and for everything else. |
 | `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. `0` means no limit. |
+| `AGENT_ASK_SHARE_RECORD` | No | `True` | Every `/ask` can read the managing agent's briefs, research, state, season log, and activity. `False` limits that to the owner. |
 | `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
 | `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
 | `ANTHROPIC_API_KEY` | Dashboard chat | None | Pays for the dashboard's data chat by the token. Without it the Chat page says it is not configured. |
@@ -275,7 +276,7 @@ as still open.
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |
-| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message, each line tagged with the speaker's team. The analyst knows the current week and says when something is not visible to it, such as a declined trade offer. Read-only tools, no access to the owner's research, except when the owner asks: then the analyst can also read the agent's briefs, research, state, season log, and a live record of what became of its asks and proposals. Limits are configurable. |
+| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message, each line tagged with the speaker's team. The analyst knows the current week and says when something is not visible to it, such as a declined trade offer. Read-only tools. By default the analyst can also read the managing agent's briefs, research, state, season log, and a live record of what became of its asks and proposals, for any asker; `AGENT_ASK_SHARE_RECORD=false` keeps that to the owner. Other members' questions stay private either way. Limits are configurable. |
 
 ### Running it
 

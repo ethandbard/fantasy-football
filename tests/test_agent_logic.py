@@ -152,3 +152,25 @@ def test_pending_trade_phase_reads_team_actions():
     assert not d["accepted"] and d["phase"] == "offer awaiting a response from Seemed like the thing to do"
     claim = {"type": "WAIVER", "status": "PENDING", "processDate": 1790199788167, "items": [{"toTeamId": 1}]}
     assert describe_pending(claim, names.get)["phase"].startswith("claim waiting for waivers")
+
+
+def test_record_opens_to_the_league_when_sharing_is_on():
+    from types import SimpleNamespace
+    from agent.tools import groups_for
+    shared = SimpleNamespace(team_id=11, ask_share_record=True)
+    closed = SimpleNamespace(team_id=11, ask_share_record=False)
+    spec = jobs.get("ask")
+    # Sharing on: a league member gets the record and the league note; the owner keeps the owner note.
+    assert jobs.record_open(shared, {"asker_team_id": 6})
+    note = jobs.record_note(shared, {"asker_team_id": 6})
+    assert "opened the record" in note and "read_briefs" in note and "guesswork" in note
+    assert jobs.record_note(shared, {"asker_team_id": 11}).startswith("The asker owns the agent")
+    assert "mcp__espn__read_briefs" in [n for g in groups_for("ask", spec, jobs.record_open(shared, {"asker_team_id": 6}))
+                                         for n in tool_names(g)]
+    # Sharing off: only the owner.
+    assert not jobs.record_open(closed, {"asker_team_id": 6}) and jobs.record_open(closed, {"asker_team_id": 11})
+    assert jobs.record_note(closed, {"asker_team_id": 6}) == ""
+    assert groups_for("ask", spec, jobs.record_open(closed, {"asker_team_id": 6})) == list(spec.tool_groups)
+    # The default is open.
+    from agent import config
+    assert config._bool(None, True) is True and config._bool("false", True) is False

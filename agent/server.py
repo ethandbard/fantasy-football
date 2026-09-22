@@ -127,8 +127,7 @@ def build_app(cfg, queue, clock):
                   "team_name": body.get("team_name") or f"team {user['team_id']}",
                   "asker": body.get("display_name") or user.get("display_name"),
                   "history": render_history(body.get("history"))}
-        if jobs.is_owner(cfg, params):
-            params["owner_note"] = jobs.OWNER_NOTE.format(owner_team_id=cfg.team_id)
+        params["owner_note"] = jobs.record_note(cfg, params)
         run_id = queue.submit("ask", params=params, trigger="ask")
         store.log_ask(user_id, user["team_id"], question, run_id)
         return web.json_response({"run_id": run_id, "queued": queue.size})

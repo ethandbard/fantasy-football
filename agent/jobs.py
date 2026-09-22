@@ -102,16 +102,28 @@ def render(template, **values):
     return template.format_map(_Safe(values))
 
 
-# Rendered into the analyst prompt only when the person asking owns the
-# managed team. Everyone else gets "" and the public tools.
-OWNER_NOTE = (
-    "The asker owns the agent that manages team {owner_team_id}, so its private record is open to them: "
+# Rendered into the analyst prompt when the managing agent's record is open
+# to the person asking: always for the owner, and for everyone while
+# AGENT_ASK_SHARE_RECORD is on. Otherwise the prompt gets "" and the public
+# tools only.
+_RECORD_TOOLS = (
     "read_briefs (the agent's recent briefs, trade reviews included), read_season_log, read_research, "
     "read_state, and get_rules. Use them for anything about that agent's decisions, research, or plans. "
     "Briefs and the season log are snapshots of the moment they were written; get_agent_activity says "
     "what happened since: which asks were approved, sent, rejected, or expired, and whether proposals "
     "the agent sent were accepted or declined. Check it before saying anything is still pending. "
+)
+OWNER_NOTE = (
+    "The asker owns the agent that manages team {owner_team_id}, so its private record is open to them: "
+    + _RECORD_TOOLS +
     "The rules below about not revealing that agent's reasoning do not apply to this asker."
+)
+LEAGUE_NOTE = (
+    "The league has opened the record of the agent that manages team {owner_team_id} to every member, "
+    "including this asker: " + _RECORD_TOOLS +
+    "The rules below about not revealing that agent's reasoning do not apply while the record is open. "
+    "What the agent wrote about other managers is its own guesswork from public data, and you say so "
+    "when you repeat it."
 )
 
 
@@ -121,6 +133,20 @@ def is_owner(cfg, params):
         return int((params or {}).get("asker_team_id")) == int(cfg.team_id)
     except (TypeError, ValueError):
         return False
+
+
+def record_open(cfg, params):
+    """Whether this ask gets the managing agent's record: the owner always, everyone when sharing is on."""
+    return is_owner(cfg, params) or bool(getattr(cfg, "ask_share_record", False))
+
+
+def record_note(cfg, params):
+    """The note the analyst prompt carries about the record, or "" when it stays closed."""
+    if is_owner(cfg, params):
+        return OWNER_NOTE.format(owner_team_id=cfg.team_id)
+    if record_open(cfg, params):
+        return LEAGUE_NOTE.format(owner_team_id=cfg.team_id)
+    return ""
 
 
 def system_prompt(spec, cfg, rules_prose):

@@ -50,6 +50,9 @@ class AgentConfig:
     light_max_turns: int
     ask_expiry_hours: int
     enabled_schedule: bool
+    # Whether every /ask gets the managing agent's record (briefs, research,
+    # state, season log, activity), or only the owner does.
+    ask_share_record: bool
 
     @property
     def has_cookies(self):
@@ -104,4 +107,5 @@ def from_env():
         light_max_turns=_int(os.environ.get("AGENT_LIGHT_MAX_TURNS"), 60),
         ask_expiry_hours=_int(os.environ.get("AGENT_ASK_EXPIRY_HOURS"), 24),
         enabled_schedule=_bool(os.environ.get("AGENT_SCHEDULE"), True),
+        ask_share_record=_bool(os.environ.get("AGENT_ASK_SHARE_RECORD"), True),
     )
