@@ -6,10 +6,13 @@ Discord-user-to-team map, and the friends' question quota all live here so
 they survive a container restart and so /agent status has one place to look.
 """
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from gamedaybot.storage import db
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_runs (
@@ -70,7 +73,9 @@ CREATE TABLE IF NOT EXISTS agent_transactions (
     status INTEGER,
     code TEXT,
     message TEXT,
-    transaction_id TEXT
+    transaction_id TEXT,
+    outcome TEXT,
+    outcome_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS agent_users (
@@ -110,6 +115,15 @@ def init():
     db.init_db()
     with db.get_connection() as conn:
         conn.executescript(SCHEMA)
+        _add_missing_columns(conn, "agent_transactions", {"outcome": "TEXT", "outcome_at": "TEXT"})
+
+
+def _add_missing_columns(conn, table, columns):
+    """CREATE TABLE IF NOT EXISTS leaves an existing table alone; this adds what it lacks."""
+    have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in columns.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def _rows(cursor):
@@ -273,11 +287,30 @@ def resolve_ask(ask_id, status, resolution=None):
                      (status, resolution, now_iso(), ask_id))
 
 
+# Called with each ask that expires, when set (the server points it at the
+# ledger). Expiry is the one resolution nobody sees happen.
+ask_expired_hook = None
+
+
+def recent_asks(limit=10):
+    with db.get_connection() as conn:
+        return _rows(conn.execute("SELECT * FROM agent_asks ORDER BY created_at DESC LIMIT ?", (int(limit),)))
+
+
 def expire_asks(now=None):
+    """Marks overdue pending asks expired and returns them."""
     now = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
     with db.get_connection() as conn:
+        rows = _rows(conn.execute("SELECT * FROM agent_asks WHERE status='pending' AND expires_at < ?", (now,)))
         conn.execute("UPDATE agent_asks SET status='expired', resolved_at=? WHERE status='pending' AND expires_at < ?",
                      (now, now))
+    for ask in rows:
+        if ask_expired_hook is not None:
+            try:
+                ask_expired_hook(ask)
+            except Exception:
+                logger.exception("ask_expired_hook failed for %s", ask.get("id"))
+    return rows
 
 
 # ----------------------------------------------------------- transactions
@@ -307,6 +340,19 @@ def failed_writes_today(kind=None):
         else:
             cur = conn.execute("SELECT * FROM agent_transactions WHERE ok=0 AND dry_run=0 AND at>=?", (start,))
         return _rows(cur)
+
+
+def unresolved_proposals():
+    """Trade proposals the agent really sent that have no recorded outcome yet."""
+    with db.get_connection() as conn:
+        return _rows(conn.execute(
+            "SELECT * FROM agent_transactions WHERE kind='trade_propose' AND ok=1 AND dry_run=0 "
+            "AND transaction_id IS NOT NULL AND outcome IS NULL ORDER BY at"))
+
+
+def set_transaction_outcome(row_id, outcome):
+    with db.get_connection() as conn:
+        conn.execute("UPDATE agent_transactions SET outcome=?, outcome_at=? WHERE id=?", (outcome, now_iso(), row_id))
 
 
 def agent_proposed_trade_ids():

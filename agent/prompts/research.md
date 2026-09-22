@@ -7,7 +7,7 @@ Do, in order:
 
 1. Review last week: get_week_results for the week just played. Note who
    beat or missed projection and why, per starter. Read the season log tail
-   for context on what was tried.
+   and get_agent_activity for what was tried and what became of it.
 2. League state: list_teams, get_standings, get_recent_activity (size 40),
    get_pending_transactions. Note the waiver order and who is chasing what.
 3. My roster: get_my_roster. For each player, a one-line verdict: hold,

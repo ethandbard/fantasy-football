@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from claude_agent_sdk import tool
 
 import gamedaybot.espn.roster as roster
-from agent import store
+from agent import ledger, store
 from agent.tools.common import err, text
 
 NAMES = ["write_research", "write_state", "append_season_log", "schedule_pregame_checks", "list_wakeups"]
@@ -73,10 +73,7 @@ def build(ctx, run):
     @tool("append_season_log", "Append a dated entry (markdown) to the season log. Keep it factual: what was done and why.",
           {"markdown": str})
     async def append_season_log(args):
-        path = cfg.data_dir / "season-log.md"
-        stamp = datetime.now(timezone.utc).astimezone(roster._eastern()).strftime("%Y-%m-%d %I:%M %p ET")
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(f"\n\n### {stamp} · {run.job}\n\n{args['markdown'].strip()}\n")
+        ledger.season_log_append(cfg.data_dir, run.job, args["markdown"])
         return text("appended to season log")
 
     @tool("schedule_pregame_checks",

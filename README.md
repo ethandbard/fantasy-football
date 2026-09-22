@@ -250,9 +250,17 @@ Times are in `TIMEZONE`.
 | Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
 | Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
 | Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
-| Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. |
+| Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome (accepted, declined, expired, or reversed in review) is written to the season log and posted as one line. |
 
 Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
+
+Briefs are snapshots. What happens after one is written (an ask approved and
+sent, rejected, or expired; a proposal answered by the other manager) is
+recorded by the service itself, with no model involved: a line in the season
+log, an outcome on the transaction row, and a Discord line for the silent
+cases. The `get_agent_activity` tool reports it, and the research, plan,
+trade review, and owner-mode `/ask` prompts check it before treating anything
+as still open.
 
 ### Agent slash commands
 
@@ -267,7 +275,7 @@ Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 | `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |
-| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message, each line tagged with the speaker's team. The analyst knows the current week and says when something is not visible to it, such as a declined trade offer. Read-only tools, no access to the owner's research, except when the owner asks: then the analyst can also read the agent's briefs, research, state, and season log. Limits are configurable. |
+| `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message, each line tagged with the speaker's team. The analyst knows the current week and says when something is not visible to it, such as a declined trade offer. Read-only tools, no access to the owner's research, except when the owner asks: then the analyst can also read the agent's briefs, research, state, season log, and a live record of what became of its asks and proposals. Limits are configurable. |
 
 ### Running it
 

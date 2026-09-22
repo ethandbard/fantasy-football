@@ -128,6 +128,8 @@ def test_owner_asking_gets_the_private_record():
     names = [n for g in groups_for("ask", spec, True) for n in tool_names(g)]
     assert "mcp__espn__read_briefs" in names and "mcp__espn__read_research" in names
     assert "mcp__espn__read_season_log" in names and "mcp__espn__get_rules" in names
+    assert "mcp__espn__get_agent_activity" in names and "mcp__espn__get_agent_activity" in tool_names("read")
+    assert "mcp__espn__get_agent_activity" not in tool_names("analyst")
     assert not any("execute" in n or "preview" in n or "write_" in n for n in names)
     # No other job changes with who triggered it, and the public analyst never sees the briefs.
     plan = jobs.get("plan")

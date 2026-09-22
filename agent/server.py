@@ -24,12 +24,14 @@ import logging
 
 from aiohttp import web
 
-from agent import approvals, jobs, rules as rules_mod, store
+from agent import approvals, jobs, ledger, rules as rules_mod, store
 
 logger = logging.getLogger(__name__)
 
 
 def build_app(cfg, queue, clock):
+    # Expiry is the one resolution nobody watches happen; the ledger writes it down and says so.
+    store.ask_expired_hook = lambda ask: ledger.record_ask(cfg, ask, "expired", announce=True)
     app = web.Application()
     routes = web.RouteTableDef()
 
@@ -103,6 +105,7 @@ def build_app(cfg, queue, clock):
             return web.json_response({"error": f"ask is {ask['status']}"}, status=409)
         body = await _json(request)
         store.resolve_ask(ask["id"], "rejected", f"rejected by {body.get('by')}")
+        ledger.record_ask(cfg, ask, "rejected", f"by {body.get('by')}")
         return web.json_response({"ok": True, "message": f"rejected ask {ask['id']}: {ask['description']}"})
 
     @routes.post("/ask")

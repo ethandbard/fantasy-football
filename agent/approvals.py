@@ -9,7 +9,7 @@ import json
 import logging
 
 import gamedaybot.espn.roster as roster
-from agent import store
+from agent import ledger, store
 from agent.espn_ctx import EspnContext
 
 logger = logging.getLogger(__name__)
@@ -47,12 +47,15 @@ def execute_ask(cfg, rules, ask):
     why = _still_valid(ctx, ask["kind"], payload)
     if why:
         store.resolve_ask(ask["id"], "failed", f"stale: {why}")
+        ledger.record_ask(cfg, ask, "failed", f"stale: {why}")
         return False, f"could not execute ask {ask['id']}: {why}"
     result = ctx.writer.post(payload)
     store.log_transaction(ask["kind"], payload, result, description=ask["description"],
                           reason=f"approved ask {ask['id']}", run_id=ask.get("run_id"))
     if result.ok:
         store.resolve_ask(ask["id"], "executed", result.summary())
+        ledger.record_ask(cfg, ask, "executed", result.summary())
         return True, f"executed ask {ask['id']}: {ask['description']} ({result.summary()})"
     store.resolve_ask(ask["id"], "failed", result.summary())
+    ledger.record_ask(cfg, ask, "failed", result.summary())
     return False, f"ESPN rejected ask {ask['id']}: {result.summary()}"

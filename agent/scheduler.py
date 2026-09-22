@@ -16,7 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 import gamedaybot.espn.roster as roster
 from gamedaybot.discord_bot.formatting import schedule_lines
-from agent import discord_out, rules as rules_mod, store
+from agent import discord_out, ledger, rules as rules_mod, store
 from agent.espn_ctx import EspnContext
 from agent.tools.state import schedule_week
 
@@ -165,6 +165,10 @@ class Clock:
                         f"Expires {offer['expires']}.")
                 self.queue.submit("trade_review", params={"trade": desc, "offer_id": offer["id"]}, trigger="offer")
                 logger.info("queued trade review for offer %s", offer["id"])
+            # Outgoing side: proposals the agent sent vanish from ESPN's pending
+            # list when answered, with no record of how. Write one down.
+            for tid, outcome in ledger.check_proposals(self.cfg, ctx):
+                logger.info("proposal %s %s", tid, outcome)
         except Exception:
             logger.exception("poll_offers failed")
 

@@ -16,9 +16,10 @@ NAMES = [
     "get_rules", "get_my_roster", "get_team_roster", "list_teams", "get_free_agents",
     "get_matchup", "get_standings", "get_pending_transactions", "get_recent_activity",
     "get_kickoffs", "get_player", "get_week_results", "read_research", "read_state",
-    "read_season_log", "read_briefs", "get_run_context",
+    "read_season_log", "read_briefs", "get_agent_activity", "get_run_context",
 ]
-PRIVATE = ["read_research", "read_state", "read_season_log", "read_briefs", "get_run_context", "get_rules"]
+PRIVATE = ["read_research", "read_state", "read_season_log", "read_briefs", "get_agent_activity",
+           "get_run_context", "get_rules"]
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
@@ -231,6 +232,34 @@ def build(ctx, run):
         parts = [f"## {r['job']} · {r['started_at']}\n\n{r['result']}" for r in rows]
         return text("\n\n---\n\n".join(parts)[:20000])
 
+    @tool("get_agent_activity",
+          "What the managing agent has done and what became of it, current as of now: recent asks with "
+          "their state (pending, executed, rejected, expired, failed) and recent ESPN writes with their "
+          "result, including whether trade proposals the agent sent were accepted, declined, or expired. "
+          "Briefs and the season log are snapshots; check this before calling anything still pending.",
+          {"limit": int}, READ_ONLY)
+    async def get_agent_activity(args):
+        n = int(args.get("limit") or 10)
+        lines = ["Asks (newest first):"]
+        asks = store.recent_asks(n)
+        for a in asks:
+            if a.get("resolved_at"):
+                tail = f"resolved {a['resolved_at']}: {a.get('resolution') or a['status']}"
+            else:
+                tail = f"expires {a['expires_at']}"
+            lines.append(f"- {a['id']} [{a['status']}] {a['description']} (created {a['created_at']}; {tail})")
+        if not asks:
+            lines.append("- none")
+        lines += ["", "ESPN writes (newest first):"]
+        writes = store.recent_transactions(n)
+        for t in writes:
+            head = "DRY RUN" if t.get("dry_run") else ("OK" if t.get("ok") else "REJECTED")
+            out = f"; outcome: {t['outcome']} at {t['outcome_at']}" if t.get("outcome") else ""
+            lines.append(f"- {t['at']} {t['kind']} {head}: {t.get('description') or ''} ({t.get('message') or ''}{out})")
+        if not writes:
+            lines.append("- none")
+        return text("\n".join(lines))
+
     @tool("read_season_log", "The tail of the season log (default last 12000 characters).", {"chars": int}, READ_ONLY)
     async def read_season_log(args):
         path = cfg.data_dir / "season-log.md"
@@ -242,4 +271,5 @@ def build(ctx, run):
 
     return [get_rules, get_run_context, get_my_roster, get_team_roster, list_teams, get_free_agents,
             get_matchup, get_standings, get_pending_transactions, get_recent_activity, get_kickoffs,
-            get_player, get_week_results, read_research, read_state, read_briefs, read_season_log]
+            get_player, get_week_results, read_research, read_state, read_briefs, get_agent_activity,
+            read_season_log]

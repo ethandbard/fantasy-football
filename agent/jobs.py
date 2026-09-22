@@ -108,6 +108,9 @@ OWNER_NOTE = (
     "The asker owns the agent that manages team {owner_team_id}, so its private record is open to them: "
     "read_briefs (the agent's recent briefs, trade reviews included), read_season_log, read_research, "
     "read_state, and get_rules. Use them for anything about that agent's decisions, research, or plans. "
+    "Briefs and the season log are snapshots of the moment they were written; get_agent_activity says "
+    "what happened since: which asks were approved, sent, rejected, or expired, and whether proposals "
+    "the agent sent were accepted or declined. Check it before saying anything is still pending. "
     "The rules below about not revealing that agent's reasoning do not apply to this asker."
 )
 

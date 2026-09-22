@@ -9,7 +9,9 @@ The trade to review: {trade}
 Do:
 
 1. get_my_roster, get_team_roster for the other team, get_standings,
-   read_state for week {week} if it exists.
+   read_state for week {week} if it exists, and get_agent_activity for
+   earlier offers involving this team and what became of them. Do not
+   re-send a proposal the other side already declined this week.
 2. Value both sides two ways. First, a public rest-of-season trade value
    chart. Fetch this week's FantasyPros chart directly before searching:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/

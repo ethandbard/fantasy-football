@@ -2,7 +2,9 @@ Job: roster plan for week {week} (scoring period {scoring_period}).
 
 The research job has already run this morning. Start with read_state and
 read_research for week {week}; only search again for something the research
-flagged as open.
+flagged as open. Then get_agent_activity: what became of last week's asks
+and proposals, so nothing approved, declined, or expired is treated as
+still open.
 
 Do:
 

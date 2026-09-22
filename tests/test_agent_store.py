@@ -3,7 +3,9 @@ The agent's SQLite tables: runs, wakeups, asks, the audit log, users, and
 the friends' question quota. A real temp database per test.
 """
 import importlib
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,3 +112,85 @@ def test_offers_and_notes(store):
     store.set_note("canary", {"ok": True})
     assert store.get_note("canary") == {"ok": True}
     assert store.get_note("missing", "d") == "d"
+
+
+class _Ctx:
+    """Just enough of EspnContext for the ledger: what ESPN lists as pending, and my roster."""
+
+    def __init__(self, pending, mine):
+        self._pending = pending
+        self._mine = mine
+
+    def pending_transactions(self):
+        return self._pending
+
+    def my_roster(self, refresh=False):
+        return [SimpleNamespace(player_id=p) for p in self._mine]
+
+
+def _proposal(store, tid, gives, description):
+    r = _Result()
+    r.transaction_id = tid
+    items = [{"playerId": p, "type": "TRADE", "fromTeamId": 11, "toTeamId": 8} for p in gives]
+    items.append({"playerId": 99, "type": "TRADE", "fromTeamId": 8, "toTeamId": 11})
+    store.log_transaction("trade_propose", {"type": "TRADE_PROPOSAL", "items": items}, r, description=description)
+
+
+def test_expired_asks_are_reported_through_the_hook(store):
+    seen = []
+    store.ask_expired_hook = seen.append
+    old = store.create_ask("drop", "drop Z", {}, expiry_hours=0)
+    rows = store.expire_asks(datetime.now(timezone.utc) + timedelta(seconds=1))
+    assert [r["id"] for r in rows] == [old] and seen[0]["id"] == old
+    assert store.expire_asks(datetime.now(timezone.utc) + timedelta(seconds=1)) == []
+    assert store.get_ask(old)["status"] == "expired"
+    assert [a["id"] for a in store.recent_asks()] == [old]
+
+
+@pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 35, 0), reason="needs DROP COLUMN")
+def test_init_adds_outcome_columns_to_an_older_table(store):
+    with db.get_connection() as conn:
+        conn.execute("ALTER TABLE agent_transactions DROP COLUMN outcome")
+        conn.execute("ALTER TABLE agent_transactions DROP COLUMN outcome_at")
+    store.init()
+    with db.get_connection() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_transactions)")}
+    assert {"outcome", "outcome_at"} <= cols
+
+
+def test_record_ask_writes_the_season_log(tmp_path):
+    from agent import ledger
+    cfg = SimpleNamespace(data_dir=tmp_path, webhook_url=None)
+    ledger.record_ask(cfg, {"id": "abc", "description": "offer X for Y"}, "executed", "OK TRADE_PROPOSAL HTTP 200")
+    ledger.record_ask(cfg, {"id": "def", "description": "drop Z"}, "expired", announce=True)
+    body = (tmp_path / "season-log.md").read_text(encoding="utf-8")
+    assert "Ask abc (offer X for Y) was approved and sent to ESPN: OK TRADE_PROPOSAL HTTP 200" in body
+    assert "Ask def (drop Z) expired unanswered." in body and "· approvals" in body
+
+
+def test_proposal_outcomes_are_told_apart(store, tmp_path):
+    from agent import ledger
+    cfg = SimpleNamespace(team_id=11, data_dir=tmp_path, webhook_url=None)
+    _proposal(store, "p-declined", [1], "offer A for Z")
+    _proposal(store, "p-accepted", [3], "offer C for Z")
+    _proposal(store, "p-expired", [4], "offer D for Z")
+    _proposal(store, "p-reversed", [6], "offer F for Z")
+    live = [{"id": "p-declined", "expires": "2099-01-01T00:00+00:00", "accepted": False},
+            {"id": "p-accepted", "expires": "2099-01-01T00:00+00:00", "accepted": False},
+            {"id": "p-expired", "expires": "2000-01-01T00:00+00:00", "accepted": False},
+            {"id": "p-reversed", "expires": "2099-01-01T00:00+00:00", "accepted": True}]
+    # All four still open: nothing is decided, their expiry and acceptance are remembered.
+    assert ledger.check_proposals(cfg, _Ctx(live, mine=[1, 3, 4, 6])) == []
+    assert len(store.unresolved_proposals()) == 4
+    # All four vanish. Player 3 left my roster, so that one went through.
+    got = dict(ledger.check_proposals(cfg, _Ctx([], mine=[1, 4, 6, 99])))
+    assert got == {"p-declined": "declined", "p-accepted": "accepted", "p-expired": "expired", "p-reversed": "reversed"}
+    assert store.unresolved_proposals() == []
+    outcomes = {t["transaction_id"]: t["outcome"] for t in store.recent_transactions(10)}
+    assert outcomes["p-accepted"] == "accepted" and outcomes["p-declined"] == "declined"
+    body = (tmp_path / "season-log.md").read_text(encoding="utf-8")
+    assert "p-declin was declined by the other side: offer A for Z." in body
+    assert "p-accept went through: offer C for Z." in body
+    assert "p-expire expired unanswered" in body and "vetoed or reversed" in body
+    # Nothing left to check, so nothing is written twice.
+    assert ledger.check_proposals(cfg, _Ctx([], mine=[1])) == []
