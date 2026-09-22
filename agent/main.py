@@ -33,6 +33,14 @@ def seed_files(cfg):
     if not rules_dst.exists() and rules_src.exists():
         shutil.copyfile(rules_src, rules_dst)
         logger.info("seeded RULES.md into %s", cfg.data_dir)
+    elif rules_src.exists() and rules_dst.exists():
+        # The data copy wins and is never overwritten, so a shipped change is
+        # invisible until someone copies it over. Say so rather than stay quiet.
+        shipped = rules_src.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+        live = rules_dst.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+        if shipped != live:
+            logger.warning("%s differs from the shipped RULES.md; the agents read the data copy. "
+                           "Copy the shipped file over it to pick up the new rules, or keep your edits.", rules_dst)
 
 
 async def main():

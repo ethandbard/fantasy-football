@@ -430,6 +430,17 @@ def mark_offer_seen(offer_id):
 
 # ------------------------------------------------------------------ notes
 
+def remember_undroppable(player_id):
+    """ESPN refused to drop this player (TRAN_ROSTER_PLAYER_NOT_DROPPABLE); treat him as undroppable from now on."""
+    set_note(f"undroppable:{int(player_id)}", now_iso())
+
+
+def undroppable_ids():
+    with db.get_connection() as conn:
+        cur = conn.execute("SELECT key FROM agent_notes WHERE key LIKE 'undroppable:%'")
+        return {int(r["key"].split(":", 1)[1]) for r in cur.fetchall()}
+
+
 def set_note(key, value):
     with db.get_connection() as conn:
         conn.execute("INSERT OR REPLACE INTO agent_notes (key, value, updated_at) VALUES (?, ?, ?)",

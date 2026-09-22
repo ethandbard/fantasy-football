@@ -282,3 +282,21 @@ def test_a_chained_ask_posts_each_claim(store, tmp_path, monkeypatch):
     assert {t["description"] for t in store.recent_transactions(5)} == {
         "add Tyler Shough (QB NO) via waiver claim, drop Jaxson Dart",
         "add Jared Goff (QB DET) via waiver claim, drop Jaxson Dart"}
+
+
+def test_espn_refusals_teach_the_undroppable_list(store):
+    assert store.undroppable_ids() == set()
+    store.remember_undroppable(4426348)
+    store.remember_undroppable("4426348")
+    assert store.undroppable_ids() == {4426348}
+
+
+def test_a_rejection_blocks_only_the_same_move():
+    from agent.tools.write import retry_of
+    failed = [{"code": "TRAN_ROSTER_PLAYER_NOT_DROPPABLE", "message": "undroppable",
+               "payload": json.dumps({"items": [{"playerId": 1, "type": "ADD"}, {"playerId": 9, "type": "DROP"}]})}]
+    same = {"items": [{"playerId": 9, "type": "DROP", "fromTeamId": 11}, {"playerId": 1, "type": "ADD", "toTeamId": 11}]}
+    other = {"items": [{"playerId": 1, "type": "ADD"}, {"playerId": 2, "type": "DROP"}]}
+    assert retry_of(failed, same) is not None
+    assert retry_of(failed, other) is None
+    assert retry_of([], same) is None

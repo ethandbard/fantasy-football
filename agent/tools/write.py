@@ -24,6 +24,26 @@ NAMES = [
 ]
 
 TOKEN_TTL = timedelta(minutes=30)
+UNDROPPABLE_CODE = "TRAN_ROSTER_PLAYER_NOT_DROPPABLE"
+
+
+def _item_keys(payload):
+    return {(i.get("type"), i.get("playerId")) for i in (payload or {}).get("items", [])}
+
+
+def retry_of(failed_rows, payload):
+    """
+    The earlier rejected write today that this payload repeats, or None. A
+    rejection blocks the same move for the day, not every move of its kind:
+    one undroppable player must not freeze every other waiver claim.
+    """
+    want = _item_keys(payload)
+    for row in failed_rows:
+        earlier = row.get("payload")
+        earlier = json.loads(earlier) if isinstance(earlier, str) else (earlier or {})
+        if _item_keys(earlier) == want:
+            return row
+    return None
 SLOT_ALIASES = {"FLEX": 23, "BENCH": 20, "BN": 20, "BE": 20, "IR": 21, "DST": 16, "DEF": 16}
 
 
@@ -92,11 +112,10 @@ def build(ctx, run):
                 return ask
         return None
 
-    def blocked_today(kind):
-        failed = store.failed_writes_today(kind)
-        if failed:
-            last = failed[-1]
-            return f"a {kind} write was rejected earlier today ({last['code'] or last['message']}); no retry until tomorrow"
+    def blocked_today(kind, payload):
+        row = retry_of(store.failed_writes_today(kind), payload)
+        if row:
+            return f"this same {kind} write was rejected earlier today ({row['code'] or row['message']}); no retry until tomorrow"
         return None
 
     def finish(preview, reason):
@@ -117,7 +136,7 @@ def build(ctx, run):
             return text(f"queued as ask {ask_id} for Ethan's approval ({preview.decision}). "
                         f"It executes only if he approves within {ctx.rules.get('ask_expiry_hours', 24)} hours. "
                         "Say so in the brief; do not describe it as done.")
-        block = blocked_today(preview.kind)
+        block = blocked_today(preview.kind, preview.payload)
         if block:
             return err(block)
         result = ctx.writer.post(preview.payload)
@@ -127,7 +146,17 @@ def build(ctx, run):
         ctx.rosters(refresh=True)
         if result.ok:
             return text(f"EXECUTED {preview.description}. {result.summary()}")
-        return err(f"ESPN rejected {preview.description}. {result.summary()}. Do not retry today.")
+        if result.code == UNDROPPABLE_CODE:
+            # ESPN's player data said droppable; its transaction endpoint disagreed. Trust the endpoint from now on.
+            names = []
+            for item in preview.payload.get("items", []):
+                if item.get("type") == "DROP":
+                    store.remember_undroppable(item["playerId"])
+                    e = ctx.entry(item["playerId"])
+                    names.append(e.name if e else str(item["playerId"]))
+            return err(f"ESPN rejected {preview.description}: {', '.join(names)} is on ESPN's undroppable list. "
+                       "That player is now never-tier for drops; pick a different drop. Other writes are unaffected.")
+        return err(f"ESPN rejected {preview.description}. {result.summary()}. Do not retry that move today.")
 
     # ------------------------------------------------------------ lineup
 
@@ -223,7 +252,9 @@ def build(ctx, run):
         payload = writes.add_drop_payload(cfg.team_id, cfg.swid, ctx.scoring_period, add_id,
                                           [e.player_id for e in drops], waiver=waiver,
                                           bid_amount=0 if waiver else None)
-        decision = policy.classify_add_drop(adds, [e.to_dict() for e in drops], [e.to_dict() for e in entries], ctx.rules)
+        learned = store.undroppable_ids()
+        drop_dicts = [dict(e.to_dict(), droppable=e.droppable and e.player_id not in learned) for e in drops]
+        decision = policy.classify_add_drop(adds, drop_dicts, [e.to_dict() for e in entries], ctx.rules)
         kind = "waiver" if waiver else ("add_drop" if add_id is not None else "drop")
         return Preview(kind, payload, desc, decision, {"add_id": add_id, "drop_ids": [e.player_id for e in drops], "waiver": waiver}), None
 

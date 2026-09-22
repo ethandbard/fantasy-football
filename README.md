@@ -226,7 +226,10 @@ it runs here and not in the cloud, is in
 The rules the agents work under are
 [fantasy-football-agents/RULES.md](fantasy-football-agents/RULES.md); a copy
 in `data/agent/RULES.md` and a `data/agent/rules.json` override the shipped
-versions without a redeploy.
+versions without a redeploy. The copy is seeded once and never overwritten,
+so a change to the shipped file reaches a running deployment only when you
+copy it over `data/agent/RULES.md`; the service logs a warning at startup
+while the two differ.
 
 Roster actions go through ESPN's own transaction endpoint with the same
 `ESPN_S2` and `SWID` cookies the bot uses. No browser is involved. Every write
@@ -262,8 +265,12 @@ claim's ask instead of opening another, so one approval posts the whole
 chain and ESPN skips any claim whose drop is already gone.
 
 Dropping a player who holds a starting slot but cannot play this week
-(tagged Out, Doubtful, IR, or Suspended, or on bye) is auto, not ask; ESPN's
-undroppable list is enforced as a never-tier rule before the write.
+(tagged Out, Doubtful, IR, or Suspended, or on bye) is auto, not ask. ESPN's
+undroppable list is enforced as a never-tier rule before the write, from the
+`droppable` flag in the roster data plus every player ESPN has refused to
+drop this season (its transaction endpoint refuses some players the flag
+calls droppable; the refusal is remembered in `agent_notes`). A rejected
+write blocks the same move for the day, not every move of its kind.
 
 Briefs are snapshots. What happens after one is written (an ask approved and
 sent, rejected, or expired; a proposal answered by the other manager) is
