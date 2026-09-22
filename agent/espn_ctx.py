@@ -23,6 +23,39 @@ def _dt(ms):
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat(timespec="minutes")
 
 
+def describe_pending(t, team_name):
+    """
+    One pending ESPN transaction's state, in words. ESPN keeps an accepted
+    trade at status PENDING through the league's review window, which reads
+    as "not accepted yet" unless teamActions and processDate are consulted.
+    `team_name` maps a team id to its name.
+    """
+    actions = t.get("teamActions") or {}
+    parties = set()
+    for k in actions:
+        parties.add(int(k))
+    for i in t.get("items") or []:
+        for key in ("fromTeamId", "toTeamId"):
+            if i.get(key) is not None:
+                parties.add(int(i[key]))
+    accepted_by = sorted(int(k) for k, v in actions.items() if v == "ACCEPTED")
+    accepted = bool(parties) and set(accepted_by) == parties
+    process_at = _dt(t.get("processDate"))
+    kind = str(t.get("type") or "")
+    if kind.startswith("TRADE"):
+        if accepted:
+            phase = (f"accepted by every side; in the league's review window until {process_at}, "
+                     "then it goes through unless vetoed")
+        else:
+            waiting = [team_name(p) for p in sorted(parties) if p not in accepted_by] or ["the other side"]
+            phase = f"offer awaiting a response from {', '.join(str(w) for w in waiting)}"
+    elif process_at:
+        phase = f"claim waiting for waivers to process at {process_at}"
+    else:
+        phase = "pending"
+    return {"accepted_by": accepted_by, "accepted": accepted, "process_at": process_at, "phase": phase}
+
+
 class EspnContext:
     def __init__(self, cfg, rules, write_enabled=True):
         self.cfg = cfg
@@ -195,6 +228,8 @@ class EspnContext:
                 items.append({
                     "type": i.get("type"), "player_id": i.get("playerId"), "player": name,
                     "from_team_id": i.get("fromTeamId"), "to_team_id": i.get("toTeamId"),
+                    "from_team": self.team_name(i["fromTeamId"]) if i.get("fromTeamId") is not None else None,
+                    "to_team": self.team_name(i["toTeamId"]) if i.get("toTeamId") is not None else None,
                 })
             out.append({
                 "id": t.get("id"), "type": t.get("type"), "status": t.get("status"),
@@ -205,6 +240,7 @@ class EspnContext:
                 "involves_me": any(
                     i.get("from_team_id") == self.cfg.team_id or i.get("to_team_id") == self.cfg.team_id for i in items
                 ) or t.get("teamId") == self.cfg.team_id,
+                **describe_pending(t, self.team_name),
             })
         return out
 

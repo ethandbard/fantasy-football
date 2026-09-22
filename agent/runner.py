@@ -102,7 +102,7 @@ async def run_job(cfg, name, params=None, trigger="schedule", run_id=None):
             ctx.league()
             server = tools.build_server(ctx, run)
             allowed = []
-            for group in spec.tool_groups:
+            for group in tools.groups_for(name, spec, jobs.is_owner(cfg, params)):
                 allowed.extend(tools.tool_names(group))
             builtins = ["WebSearch", "WebFetch"] if spec.web else []
             allowed.extend(builtins)

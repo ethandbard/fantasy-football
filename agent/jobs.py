@@ -102,6 +102,24 @@ def render(template, **values):
     return template.format_map(_Safe(values))
 
 
+# Rendered into the analyst prompt only when the person asking owns the
+# managed team. Everyone else gets "" and the public tools.
+OWNER_NOTE = (
+    "The asker owns the agent that manages team {owner_team_id}, so its private record is open to them: "
+    "read_briefs (the agent's recent briefs, trade reviews included), read_season_log, read_research, "
+    "read_state, and get_rules. Use them for anything about that agent's decisions, research, or plans. "
+    "The rules below about not revealing that agent's reasoning do not apply to this asker."
+)
+
+
+def is_owner(cfg, params):
+    """Whether the ask params name the managed team as the asker's."""
+    try:
+        return int((params or {}).get("asker_team_id")) == int(cfg.team_id)
+    except (TypeError, ValueError):
+        return False
+
+
 def system_prompt(spec, cfg, rules_prose):
     persona = read_prompt("persona.md")
     now = datetime.now(roster._eastern())
@@ -124,6 +142,7 @@ def user_prompt(spec, ctx, params):
         "now": now.strftime("%A %B %d, %Y %I:%M %p ET"),
         "team": ctx.team_name(cfg.team_id), "team_id": cfg.team_id, "owner_team_id": cfg.team_id,
         "search_cap": cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap,
+        "owner_note": "",
     }
     values.update({k: v for k, v in (params or {}).items() if isinstance(v, (str, int, float))})
     if "players" in (params or {}):

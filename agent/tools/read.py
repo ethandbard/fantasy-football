@@ -9,15 +9,16 @@ from datetime import datetime
 from claude_agent_sdk import ToolAnnotations, tool
 
 import gamedaybot.espn.roster as roster
+from agent import store
 from agent.tools.common import err, text
 
 NAMES = [
     "get_rules", "get_my_roster", "get_team_roster", "list_teams", "get_free_agents",
     "get_matchup", "get_standings", "get_pending_transactions", "get_recent_activity",
     "get_kickoffs", "get_player", "get_week_results", "read_research", "read_state",
-    "read_season_log", "get_run_context",
+    "read_season_log", "read_briefs", "get_run_context",
 ]
-PRIVATE = ["read_research", "read_state", "read_season_log", "get_run_context", "get_rules"]
+PRIVATE = ["read_research", "read_state", "read_season_log", "read_briefs", "get_run_context", "get_rules"]
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
@@ -132,7 +133,11 @@ def build(ctx, run):
                  for r in rows]
         return text("\n".join(lines))
 
-    @tool("get_pending_transactions", "Pending waiver claims and trade offers league-wide, with who is involved.", {}, READ_ONLY)
+    @tool("get_pending_transactions",
+          "Pending waiver claims and trade offers league-wide, with who is involved and team names on each "
+          "item. Read `phase` before calling a trade unaccepted: ESPN keeps an accepted trade at status "
+          "PENDING through the league's review window, and `phase` says so with the time it processes.",
+          {}, READ_ONLY)
     async def get_pending_transactions(args):
         return text(json.dumps(ctx.pending_transactions(), indent=2))
 
@@ -214,6 +219,18 @@ def build(ctx, run):
             return text(f"no state file for week {week}")
         return text(path.read_text(encoding="utf-8"))
 
+    @tool("read_briefs",
+          "Recent briefs the managing agent wrote, newest first: trade reviews, roster plans, research "
+          "digests, post-waiver, designation, and pre-game notes. Optional job filter (trade_review, plan, "
+          "research, postwaiver, designations, pregame, lineup) and limit (default 6).",
+          {"job": str, "limit": int}, READ_ONLY)
+    async def read_briefs(args):
+        rows = store.recent_briefs(limit=int(args.get("limit") or 6), job=args.get("job") or None)
+        if not rows:
+            return text("no briefs yet")
+        parts = [f"## {r['job']} · {r['started_at']}\n\n{r['result']}" for r in rows]
+        return text("\n\n---\n\n".join(parts)[:20000])
+
     @tool("read_season_log", "The tail of the season log (default last 12000 characters).", {"chars": int}, READ_ONLY)
     async def read_season_log(args):
         path = cfg.data_dir / "season-log.md"
@@ -225,4 +242,4 @@ def build(ctx, run):
 
     return [get_rules, get_run_context, get_my_roster, get_team_roster, list_teams, get_free_agents,
             get_matchup, get_standings, get_pending_transactions, get_recent_activity, get_kickoffs,
-            get_player, get_week_results, read_research, read_state, read_season_log]
+            get_player, get_week_results, read_research, read_state, read_briefs, read_season_log]

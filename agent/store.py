@@ -150,6 +150,24 @@ def recent_runs(limit=5):
         return _rows(cur)
 
 
+def recent_briefs(limit=6, job=None):
+    """
+    Finished runs that left a brief, newest first. League members' questions
+    (the ask job) are other people's, and the dashboard prose jobs are on the
+    site already, so both are left out.
+    """
+    sql = ("SELECT id, job, started_at, result FROM agent_runs WHERE status='done' AND result IS NOT NULL "
+           "AND result != '' AND job NOT IN ('ask', 'recap', 'power', 'preview', 'preview_site')")
+    args = []
+    if job:
+        sql += " AND job=?"
+        args.append(job)
+    sql += " ORDER BY started_at DESC LIMIT ?"
+    args.append(int(limit))
+    with db.get_connection() as conn:
+        return _rows(conn.execute(sql, args))
+
+
 def get_run(run_id):
     with db.get_connection() as conn:
         cur = conn.execute("SELECT * FROM agent_runs WHERE id=?", (run_id,))

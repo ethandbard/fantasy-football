@@ -110,8 +110,43 @@ def test_preview_and_power_jobs_are_league_facing_like_the_recap():
 def test_analyst_prompt_names_the_week_and_what_it_cannot_see():
     from agent import jobs
     out = jobs.render(jobs.read_prompt("analyst.md"), week=3, played_week=2, team_name="Yikes",
-                      asker_team_id=6, owner_team_id=11, question="q", history="", search_cap=8)
+                      asker_team_id=6, owner_team_id=11, question="q", history="", search_cap=8, owner_note="")
     assert "NFL week 3" in out and "week 2 is the one just played" in out
     assert "declined, withdrawn, or expired" in out
     assert "tagged with the speaker's team" in out
     assert "{" not in out
+
+
+def test_owner_asking_gets_the_private_record():
+    from types import SimpleNamespace
+    from agent.tools import groups_for
+    cfg = SimpleNamespace(team_id=11)
+    assert jobs.is_owner(cfg, {"asker_team_id": 11}) and jobs.is_owner(cfg, {"asker_team_id": "11"})
+    assert not jobs.is_owner(cfg, {"asker_team_id": 6}) and not jobs.is_owner(cfg, {}) and not jobs.is_owner(cfg, None)
+    spec = jobs.get("ask")
+    assert groups_for("ask", spec, False) == list(spec.tool_groups)
+    names = [n for g in groups_for("ask", spec, True) for n in tool_names(g)]
+    assert "mcp__espn__read_briefs" in names and "mcp__espn__read_research" in names
+    assert "mcp__espn__read_season_log" in names and "mcp__espn__get_rules" in names
+    assert not any("execute" in n or "preview" in n or "write_" in n for n in names)
+    # No other job changes with who triggered it, and the public analyst never sees the briefs.
+    plan = jobs.get("plan")
+    assert groups_for("plan", plan, True) == list(plan.tool_groups)
+    assert "mcp__espn__read_briefs" not in tool_names("analyst")
+    assert "read_briefs" in jobs.OWNER_NOTE.format(owner_team_id=11)
+
+
+def test_pending_trade_phase_reads_team_actions():
+    from agent.espn_ctx import describe_pending
+    names = {1: "Seemed like the thing to do", 4: "Half In, Half Hurts"}
+    accepted = {"type": "TRADE_ACCEPT", "status": "PENDING", "teamActions": {"4": "ACCEPTED", "1": "ACCEPTED"},
+                "processDate": 1790199788167, "items": [{"fromTeamId": 4, "toTeamId": 1}]}
+    d = describe_pending(accepted, names.get)
+    assert d["accepted"] and d["accepted_by"] == [1, 4]
+    assert "review window" in d["phase"] and d["process_at"].startswith("2026-09-23")
+    offer = {"type": "TRADE_PROPOSAL", "status": "PENDING", "teamActions": {"4": "ACCEPTED"},
+             "items": [{"fromTeamId": 4, "toTeamId": 1}]}
+    d = describe_pending(offer, names.get)
+    assert not d["accepted"] and d["phase"] == "offer awaiting a response from Seemed like the thing to do"
+    claim = {"type": "WAIVER", "status": "PENDING", "processDate": 1790199788167, "items": [{"toTeamId": 1}]}
+    assert describe_pending(claim, names.get)["phase"].startswith("claim waiting for waivers")

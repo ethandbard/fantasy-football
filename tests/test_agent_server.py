@@ -217,3 +217,19 @@ def test_history_lines_carry_the_speakers_team(app_env):
     assert "You: Allen went off." in text
     assert "Them (John Foot Ball): whose game is this?" in text
     assert "Them: untagged" in text
+
+
+def test_recent_briefs_skip_questions_and_site_prose(app_env):
+    app, queue, store = app_env
+    a = store.create_run("trade_review", trigger="offer")
+    store.finish_run(a, "done", result="Verdict: decline")
+    b = store.create_run("ask", trigger="ask")
+    store.finish_run(b, "done", result="someone else's answer")
+    c = store.create_run("recap", trigger="schedule")
+    store.finish_run(c, "done", result="site prose")
+    d = store.create_run("plan", trigger="schedule")
+    store.finish_run(d, "failed", error="boom")
+    rows = store.recent_briefs()
+    assert [r["job"] for r in rows] == ["trade_review"] and rows[0]["result"] == "Verdict: decline"
+    assert store.recent_briefs(job="plan") == []
+    assert store.recent_briefs(job="trade_review")[0]["id"] == a
