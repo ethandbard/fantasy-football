@@ -18,8 +18,13 @@ Do, in order:
    Cross-check the top candidates against usage and news.
 5. Trade market: for every other team (get_team_roster), one line on what
    they need and what they have in surplus. Name two or three realistic
-   targets and what I could offer, using the value guides you can find
-   online (a public rest-of-season trade value chart is enough).
+   targets and what I could offer, priced from a public rest-of-season
+   trade value chart. Fetch this week's FantasyPros chart directly first:
+   https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
+   where <year>/<month> is the publish date (this month first; if that is a
+   404 and the month just turned, last month). If the week {week} page is
+   not up yet, use the newest chart one search finds and say which week it
+   is.
 6. Streaming: the best D/ST and K available for this week's matchups.
 
 Then write two files and one brief:

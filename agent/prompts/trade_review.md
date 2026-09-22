@@ -10,10 +10,15 @@ Do:
 
 1. get_my_roster, get_team_roster for the other team, get_standings,
    read_state for week {week} if it exists.
-2. Value both sides two ways: a public rest-of-season trade value chart (one
-   search), and the lineup effect: which of my starters change and by how
-   many projected points per week, over the remaining schedule including
-   byes. Depth matters less in an 8-team league because the free-agent pool
+2. Value both sides two ways. First, a public rest-of-season trade value
+   chart. Fetch this week's FantasyPros chart directly before searching:
+   https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
+   where <year>/<month> is the publish date (this month first; if that is a
+   404 and the month just turned, last month). Only if the week {week} page
+   does not exist, run one search and use the newest chart it finds. Say in
+   the brief which week's chart you used. Second, the lineup effect: which
+   of my starters change and by how many projected points per week, over
+   the remaining schedule including byes. Depth matters less in an 8-team league because the free-agent pool
    is deep; a starter upgrade matters more.
 3. Consider the other manager: what he needs, why he is offering, and
    whether a counter exists that he would take and that is better for me.
