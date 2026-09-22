@@ -105,3 +105,13 @@ def test_preview_and_power_jobs_are_league_facing_like_the_recap():
         assert not any("execute" in n or "preview_" in n for n in names)
         for private in ("read_research", "read_state", "read_season_log", "get_rules"):
             assert f"mcp__espn__{private}" not in names
+
+
+def test_analyst_prompt_names_the_week_and_what_it_cannot_see():
+    from agent import jobs
+    out = jobs.render(jobs.read_prompt("analyst.md"), week=3, played_week=2, team_name="Yikes",
+                      asker_team_id=6, owner_team_id=11, question="q", history="", search_cap=8)
+    assert "NFL week 3" in out and "week 2 is the one just played" in out
+    assert "declined, withdrawn, or expired" in out
+    assert "tagged with the speaker's team" in out
+    assert "{" not in out

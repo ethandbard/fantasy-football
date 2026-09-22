@@ -203,3 +203,17 @@ def test_wakeups_route_replans_by_force_and_returns_the_pending_list(app_env):
             # Nothing queued: planning is not a model run.
             assert queue.submitted == []
     _run(go())
+
+
+def test_history_lines_carry_the_speakers_team(app_env):
+    from agent import server
+    text = server.render_history([
+        {"role": "user", "text": "why am I losing", "team": "First Down Syndrome"},
+        {"role": "analyst", "text": "Allen went off."},
+        {"role": "user", "text": "whose game is this?", "team": "John Foot Ball"},
+        {"role": "user", "text": "untagged"},
+    ])
+    assert "Them (First Down Syndrome): why am I losing" in text
+    assert "You: Allen went off." in text
+    assert "Them (John Foot Ball): whose game is this?" in text
+    assert "Them: untagged" in text

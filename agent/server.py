@@ -174,7 +174,9 @@ def build_app(cfg, queue, clock):
 def render_history(history, limit=6000):
     """
     Earlier turns of a Discord thread as prompt text, or "" when there are
-    none. Each entry is {"role": "user"|"analyst", "text": ...}. The text is
+    none. Each entry is {"role": "user"|"analyst", "text": ..., "team": ...};
+    a user line carries the speaker's team name when the bot knows it, so a
+    thread several managers type into stays readable. The text is
     league members' own words, so it is quoted as data, never as
     instructions; the analyst prompt says so.
     """
@@ -185,6 +187,9 @@ def render_history(history, limit=6000):
         if not isinstance(turn, dict):
             continue
         role = "Them" if turn.get("role") == "user" else "You"
+        team = str(turn.get("team") or "").strip()
+        if role == "Them" and team:
+            role = f"Them ({team})"
         text = str(turn.get("text") or "").strip()
         if text:
             lines.append(f"{role}: {text}")

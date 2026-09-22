@@ -216,15 +216,36 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         return starter.author.id == bot.user.id and starter.content.startswith(WORKING)
 
     async def thread_history(thread, before_message):
-        """The conversation so far, oldest first, as {role, text}. The thread name is the original question."""
-        history = [{"role": "user", "text": thread.name}]
+        """
+        The conversation so far, oldest first, as {role, text, team}. The
+        thread name is the original question; its asker comes from the
+        starter message's interaction. Each user line carries the speaker's
+        claimed team so the analyst can tell managers apart.
+        """
+        teams = {}
+
+        async def team_of(user_id):
+            if user_id not in teams:
+                status, row = await call(client.get, f"/users/{user_id}")
+                teams[user_id] = row.get("display_name") if status == 200 else None
+            return teams[user_id]
+
+        asker = None
+        try:
+            starter = await thread.parent.fetch_message(thread.id)
+            meta = getattr(starter, "interaction_metadata", None)
+            asker = meta.user.id if meta is not None and meta.user is not None else None
+        except (discord.HTTPException, AttributeError):
+            asker = None
+        history = [{"role": "user", "text": thread.name,
+                    "team": await team_of(asker) if asker else None}]
         async for m in thread.history(limit=30, oldest_first=True):
             if m.id == before_message.id or not m.content:
                 continue
             if m.author.id == bot.user.id:
                 history.append({"role": "analyst", "text": m.content})
             elif not m.author.bot:
-                history.append({"role": "user", "text": m.content})
+                history.append({"role": "user", "text": m.content, "team": await team_of(m.author.id)})
         return history
 
     @bot.event
