@@ -73,6 +73,25 @@ def build(ctx, run):
             return None, err("token expired; preview again")
         return p, None
 
+    def chain_target(preview):
+        """
+        A pending waiver ask from this run that shares this claim's drop, if
+        any. Fallback claims ride on the primary's ask so one approval covers
+        them; a second separate ask would expire or wait on its own.
+        """
+        if preview.kind != "waiver" or preview.extra.get("add_id") is None or not preview.extra.get("drop_ids"):
+            return None
+        drops = set(preview.extra["drop_ids"])
+        for ask_id in run.asks:
+            ask = store.get_ask(ask_id)
+            if not ask or ask["status"] != "pending" or ask["kind"] != "waiver":
+                continue
+            payload = json.loads(ask["payload"]) if isinstance(ask["payload"], str) else ask["payload"]
+            first = payload["chain"][0] if "chain" in payload else payload
+            if {i["playerId"] for i in first.get("items", []) if i.get("type") == "DROP"} == drops:
+                return ask
+        return None
+
     def blocked_today(kind):
         failed = store.failed_writes_today(kind)
         if failed:
@@ -85,6 +104,12 @@ def build(ctx, run):
         if preview.decision.tier == policy.NEVER:
             return err(f"refused: {preview.decision}")
         if preview.decision.tier == policy.ASK:
+            parent = chain_target(preview)
+            if parent is not None:
+                store.append_to_ask(parent["id"], preview.payload, preview.description)
+                return text(f"added to ask {parent['id']} as a fallback claim sharing the same drop; one approval "
+                            "covers the whole chain, and ESPN skips any claim whose drop is already gone. "
+                            "Say so in the brief.")
             ask_id = store.create_ask(preview.kind, preview.description, preview.payload,
                                       reason=reason or "; ".join(preview.decision.reasons), run_id=run.run_id,
                                       expiry_hours=ctx.rules.get("ask_expiry_hours", 24))

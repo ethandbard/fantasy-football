@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 import gamedaybot.espn.roster as roster
-from agent import discord_out, store
+from agent import deadlines, discord_out, store
 
 logger = logging.getLogger(__name__)
 
@@ -102,3 +102,22 @@ def check_proposals(cfg, ctx):
         discord_out.line(cfg, line, kind="info")
         outcomes.append((tid, outcome))
     return outcomes
+
+
+def remind_asks(cfg, rules, now=None):
+    """
+    One Discord reminder per pending ask once it is within ask_reminder_hours
+    of its deadline: the next ESPN waiver run for a claim, its expiry for
+    anything else. Returns the ids reminded on this call.
+    """
+    reminded = []
+    for ask in store.pending_asks():
+        key = f"reminded:{ask['id']}"
+        if store.get_note(key) or not deadlines.due_for_reminder(ask, rules, now):
+            continue
+        note = deadlines.describe(ask, rules)["deadline_note"]
+        discord_out.line(cfg, f"Reminder: ask {ask['id']} ({ask['description']}) needs an answer before {note}. "
+                              f"React ✅ or ❌ on its message, or `/agent approve {ask['id']}`.", kind="info")
+        store.set_note(key, datetime.now(timezone.utc).isoformat(timespec="minutes"))
+        reminded.append(ask["id"])
+    return reminded

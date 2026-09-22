@@ -24,7 +24,7 @@ import logging
 
 from aiohttp import web
 
-from agent import approvals, jobs, ledger, rules as rules_mod, store
+from agent import approvals, deadlines, jobs, ledger, rules as rules_mod, store
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,8 @@ def build_app(cfg, queue, clock):
 
     @routes.get("/asks/pending")
     async def asks_pending(request):
-        return web.json_response(store.pending_asks())
+        rules = rules_mod.load(cfg.data_dir)
+        return web.json_response([dict(a, **deadlines.describe(a, rules)) for a in store.pending_asks()])
 
     @routes.post("/asks/{ask_id}/posted")
     async def ask_posted(request):

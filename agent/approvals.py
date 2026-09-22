@@ -41,21 +41,33 @@ def _still_valid(ctx, kind, payload):
 
 
 def execute_ask(cfg, rules, ask):
-    """Returns (ok, message). Marks the ask executed or failed."""
+    """
+    Returns (ok, message). Marks the ask executed or failed. A chained ask
+    (a waiver claim with fallbacks sharing its drop) posts each claim in
+    order; it is executed when at least one posts.
+    """
     ctx = EspnContext(cfg, rules, write_enabled=True)
     payload = json.loads(ask["payload"]) if isinstance(ask["payload"], str) else ask["payload"]
-    why = _still_valid(ctx, ask["kind"], payload)
-    if why:
-        store.resolve_ask(ask["id"], "failed", f"stale: {why}")
-        ledger.record_ask(cfg, ask, "failed", f"stale: {why}")
-        return False, f"could not execute ask {ask['id']}: {why}"
-    result = ctx.writer.post(payload)
-    store.log_transaction(ask["kind"], payload, result, description=ask["description"],
-                          reason=f"approved ask {ask['id']}", run_id=ask.get("run_id"))
-    if result.ok:
-        store.resolve_ask(ask["id"], "executed", result.summary())
-        ledger.record_ask(cfg, ask, "executed", result.summary())
-        return True, f"executed ask {ask['id']}: {ask['description']} ({result.summary()})"
-    store.resolve_ask(ask["id"], "failed", result.summary())
-    ledger.record_ask(cfg, ask, "failed", result.summary())
-    return False, f"ESPN rejected ask {ask['id']}: {result.summary()}"
+    if isinstance(payload, dict) and "chain" in payload:
+        chain = list(payload["chain"])
+        descs = list(payload.get("descriptions") or [ask["description"]] * len(chain))
+    else:
+        chain, descs = [payload], [ask["description"]]
+    outcomes = []
+    for one, desc in zip(chain, descs):
+        why = _still_valid(ctx, ask["kind"], one)
+        if why:
+            outcomes.append((False, f"{desc}: stale, {why}"))
+            continue
+        result = ctx.writer.post(one)
+        store.log_transaction(ask["kind"], one, result, description=desc,
+                              reason=f"approved ask {ask['id']}", run_id=ask.get("run_id"))
+        outcomes.append((result.ok, f"{desc}: {result.summary()}"))
+    summary = "; ".join(text for _, text in outcomes)
+    if any(ok for ok, _ in outcomes):
+        store.resolve_ask(ask["id"], "executed", summary)
+        ledger.record_ask(cfg, ask, "executed", summary)
+        return True, f"executed ask {ask['id']}: {summary}"
+    store.resolve_ask(ask["id"], "failed", summary)
+    ledger.record_ask(cfg, ask, "failed", summary)
+    return False, f"could not execute ask {ask['id']}: {summary}"

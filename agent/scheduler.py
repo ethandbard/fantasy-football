@@ -50,6 +50,7 @@ class Clock:
             add(self.poll_offers, IntervalTrigger(minutes=15), id="poll_offers")
         add(self.tick, IntervalTrigger(seconds=60), id="tick")
         add(store.expire_asks, IntervalTrigger(minutes=30), id="expire_asks")
+        add(self.remind_asks, IntervalTrigger(minutes=30), id="remind_asks")
         self.sched.start()
         logger.info("scheduler started (fixed jobs %s)", "on" if cfg.enabled_schedule else "off")
 
@@ -149,6 +150,15 @@ class Clock:
                              "Every write and the bot's waiver and trade reports fail until ESPN_S2 and SWID are refreshed "
                              "from the browser and the containers restarted.", kind="alert")
             return False
+
+    # ------------------------------------------------------ reminders
+
+    async def remind_asks(self):
+        try:
+            for ask_id in ledger.remind_asks(self.cfg, rules_mod.load(self.cfg.data_dir)):
+                logger.info("reminded owner about ask %s", ask_id)
+        except Exception:
+            logger.exception("remind_asks failed")
 
     # -------------------------------------------------------- offers
 

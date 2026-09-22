@@ -101,3 +101,24 @@ def test_rules_json_override(tmp_path):
     assert r["core_players"] == ["Someone Else"] and r["max_qb"] == 1
     assert "someone else" in r["core_players_lower"]
     assert r["max_k"] == 1
+
+
+def test_undroppable_players_are_never_dropped():
+    d = policy.classify_add_drop([_p(99, "Jalen Coker", "WR")],
+                                 [dict(_p(11, "Jayden Daniels", "QB"), droppable=False)], ROSTER, _rules())
+    assert d.tier == policy.NEVER and "undroppable" in str(d)
+
+
+def test_a_starter_who_cannot_play_counts_as_bench():
+    dart_out = dict(_p(1, "Jaxson Dart", "QB", 0), injury_status="DOUBTFUL")
+    d = policy.classify_add_drop([_p(99, "Tyler Shough", "QB")], [dart_out], ROSTER, _rules())
+    assert d.tier == policy.AUTO and "cannot play this week" in str(d)
+    on_bye = dict(_p(6, "Harold Fannin Jr.", "TE", 6), bye=True)
+    assert policy.classify_add_drop([_p(99, "Jalen Coker", "WR")], [on_bye], ROSTER, _rules()).tier == policy.AUTO
+    # Questionable is not "cannot play": a questionable starter is still a starter.
+    q = dict(_p(6, "Harold Fannin Jr.", "TE", 6), injury_status="QUESTIONABLE")
+    assert policy.classify_add_drop([_p(99, "Jalen Coker", "WR")], [q], ROSTER, _rules()).tier == policy.ASK
+
+
+def test_ir_tags_no_longer_include_doubtful():
+    assert "DOUBTFUL" not in rules_mod.DEFAULTS["ir_tags"]

@@ -43,6 +43,22 @@ def _is_starter(entry):
     return _slot(entry) not in (BENCH_SLOT, IR_SLOT)
 
 
+def _get(entry, key, default=None):
+    return entry.get(key, default) if isinstance(entry, dict) else getattr(entry, key, default)
+
+
+def _can_play(entry, rules):
+    """A starter who is tagged out (or doubtful, or suspended) or on bye holds a slot but not a game."""
+    if _get(entry, "bye", False):
+        return False
+    tag = str(_get(entry, "injury_status", "") or "").upper()
+    return tag not in {t.upper() for t in rules.get("cannot_play_tags", [])}
+
+
+def _undroppable(entry):
+    return _get(entry, "droppable", True) is False
+
+
 def _count(roster, position):
     return sum(1 for e in roster if _pos(e) == position)
 
@@ -82,15 +98,19 @@ def classify_add_drop(adds, drops, roster, rules):
     for e in drops:
         if _is_core(e, rules):
             return Decision(NEVER, [f"{_name(e)} is on the core list"])
+        if _undroppable(e):
+            return Decision(NEVER, [f"{_name(e)} is on ESPN's undroppable list"])
     after = _composition_after(roster, adds, drops)
     if after.get("QB", 0) > rules.get("max_qb", 2):
         return Decision(NEVER, ["that would carry a third QB"])
     if after.get("K", 0) > rules.get("max_k", 1):
         return Decision(NEVER, ["that would carry a second kicker"])
     for e in drops:
-        if _is_starter(e):
+        if _is_starter(e) and _can_play(e, rules):
             tier = ASK
             reasons.append(f"{_name(e)} is a current starter")
+        elif _is_starter(e):
+            reasons.append(f"{_name(e)} holds a starting slot but cannot play this week")
     if _count(roster, "K") and after.get("K", 0) == 0:
         tier = ASK
         reasons.append("roster would have no kicker")
@@ -101,7 +121,7 @@ def classify_add_drop(adds, drops, roster, rules):
         tier = ASK
         reasons.append("more than two D/STs")
     if tier == AUTO:
-        reasons.append("every drop is a bench player outside the core list")
+        reasons.append("every drop is a bench player, or a starter who cannot play this week, outside the core list")
     return Decision(tier, reasons)
 
 

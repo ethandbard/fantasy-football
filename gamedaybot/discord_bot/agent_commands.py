@@ -329,7 +329,7 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
                             title=f"Approval needed · {a['kind']}",
                             description=f"**{a['description']}**\n\n{a.get('reason') or ''}\n\n"
                                         f"React {APPROVE} to approve or {REJECT} to reject, or `/agent approve {a['id']}`. "
-                                        f"Expires {a['expires_at']}.",
+                                        f"Answer before {a.get('deadline_note') or a['expires_at']}.",
                             color=0xF1C40F,
                         )
                         embed.set_footer(text=f"ask {a['id']}")

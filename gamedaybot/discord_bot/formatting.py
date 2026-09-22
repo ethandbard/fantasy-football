@@ -179,7 +179,7 @@ def init_embed(data, league=None):
 
 # Minute-level housekeeping. It always "fires next", so listing it pushes
 # every job anyone is waiting for off the bottom of the list.
-HOUSEKEEPING_JOBS = {"tick", "poll_offers", "expire_asks"}
+HOUSEKEEPING_JOBS = {"tick", "poll_offers", "expire_asks", "remind_asks"}
 
 # Scheduler ids that do not say what they are. "preview" is the Monday note,
 # not the dashboard's matchup preview, which has caught people out.

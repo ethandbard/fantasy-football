@@ -251,9 +251,19 @@ Times are in `TIMEZONE`.
 | Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
 | Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
 | Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
+| Every 30 min | Ask reminder | none | Pings once when a pending ask is within three hours of its deadline: the next 3:00 AM Eastern ESPN waiver run for a claim, its expiry for anything else. The ask message shows the same deadline. |
 | Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome (accepted, declined, expired, or reversed in review) is written to the season log and posted as one line. |
 
 Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
+
+A waiver claim that needs approval carries its fallbacks: when the plan
+queues a second claim sharing the same drop, it chains onto the first
+claim's ask instead of opening another, so one approval posts the whole
+chain and ESPN skips any claim whose drop is already gone.
+
+Dropping a player who holds a starting slot but cannot play this week
+(tagged Out, Doubtful, IR, or Suspended, or on bye) is auto, not ask; ESPN's
+undroppable list is enforced as a never-tier rule before the write.
 
 Briefs are snapshots. What happens after one is written (an ask approved and
 sent, rejected, or expired; a proposal answered by the other manager) is

@@ -28,8 +28,16 @@ DEFAULTS = {
     "max_open_proposals": 3,
     # Hours before a pending ask expires unanswered.
     "ask_expiry_hours": 24,
-    # Injury tags that make a player IR-eligible in this league.
-    "ir_tags": ["OUT", "INJURY_RESERVE", "SUSPENSION", "DOUBTFUL"],
+    # Injury tags that make a player IR-eligible. ESPN allows only Out or a
+    # formal IR/suspension designation; Doubtful and Questionable are not enough.
+    "ir_tags": ["OUT", "INJURY_RESERVE", "SUSPENSION"],
+    # Tags (and a bye) that mean a player in a starting slot cannot play this
+    # week. Dropping such a player is not "dropping a starter".
+    "cannot_play_tags": ["OUT", "DOUBTFUL", "INJURY_RESERVE", "SUSPENSION"],
+    # Hour (Eastern) at which ESPN processes waiver claims, every day but Tuesday.
+    "waiver_process_hour": 3,
+    # Hours before an ask's deadline at which the owner gets one reminder.
+    "ask_reminder_hours": 3,
 }
 
 

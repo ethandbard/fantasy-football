@@ -342,6 +342,28 @@ def failed_writes_today(kind=None):
         return _rows(cur)
 
 
+def append_to_ask(ask_id, payload, description):
+    """
+    Chain a fallback onto a pending ask that shares its drop, so one approval
+    covers the primary claim and its fallbacks. The payload becomes
+    {"chain": [...], "descriptions": [...]} and the description names them.
+    """
+    ask = get_ask(ask_id)
+    if not ask or ask["status"] != "pending":
+        return None
+    current = json.loads(ask["payload"]) if isinstance(ask["payload"], str) else ask["payload"]
+    chain = list(current["chain"]) if "chain" in current else [current]
+    descs = list(current.get("descriptions") or [ask["description"]])
+    chain.append(payload)
+    descs.append(description)
+    fallbacks = [d.split(", drop")[0].removeprefix("add ").replace(" via waiver claim", "") for d in descs[1:]]
+    full = f"{descs[0]}; fallbacks sharing the drop: {', '.join(fallbacks)}"
+    with db.get_connection() as conn:
+        conn.execute("UPDATE agent_asks SET payload=?, description=? WHERE id=?",
+                     (json.dumps({"chain": chain, "descriptions": descs}), full, ask_id))
+    return get_ask(ask_id)
+
+
 def unresolved_proposals():
     """Trade proposals the agent really sent that have no recorded outcome yet."""
     with db.get_connection() as conn:

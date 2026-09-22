@@ -3,6 +3,7 @@ The agent's SQLite tables: runs, wakeups, asks, the audit log, users, and
 the friends' question quota. A real temp database per test.
 """
 import importlib
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -30,6 +31,9 @@ class _Result:
     code = None
     message = "transaction EXECUTED"
     transaction_id = "tx1"
+
+    def summary(self):
+        return f"{'OK' if self.ok else 'REJECTED'} {self.message}"
 
 
 def test_runs_lifecycle(store):
@@ -194,3 +198,87 @@ def test_proposal_outcomes_are_told_apart(store, tmp_path):
     assert "p-expire expired unanswered" in body and "vetoed or reversed" in body
     # Nothing left to check, so nothing is written twice.
     assert ledger.check_proposals(cfg, _Ctx([], mine=[1])) == []
+
+
+def _claim(add_id, drop_id):
+    return {"type": "ROSTER", "items": [{"playerId": add_id, "type": "ADD", "toTeamId": 11},
+                                        {"playerId": drop_id, "type": "DROP", "fromTeamId": 11}]}
+
+
+def test_fallback_claims_chain_onto_the_primary_ask(store):
+    ask_id = store.create_ask("waiver", "add Tyler Shough (QB NO) via waiver claim, drop Jaxson Dart", _claim(1, 9))
+    store.append_to_ask(ask_id, _claim(2, 9), "add Jared Goff (QB DET) via waiver claim, drop Jaxson Dart")
+    ask = store.append_to_ask(ask_id, _claim(3, 9), "add Bryce Young (QB CAR) via waiver claim, drop Jaxson Dart")
+    payload = json.loads(ask["payload"])
+    assert [p["items"][0]["playerId"] for p in payload["chain"]] == [1, 2, 3]
+    assert ask["description"] == ("add Tyler Shough (QB NO) via waiver claim, drop Jaxson Dart; "
+                                  "fallbacks sharing the drop: Jared Goff (QB DET), Bryce Young (QB CAR)")
+    store.resolve_ask(ask_id, "rejected", "no")
+    assert store.append_to_ask(ask_id, _claim(4, 9), "late") is None
+
+
+def test_waiver_asks_get_the_next_espn_run_as_their_deadline():
+    from agent import deadlines, rules as rules_mod
+    r = dict(rules_mod.DEFAULTS)
+    # Created Tuesday 8:03 AM ET (12:03 UTC), expires 24h later: the deadline is Wednesday 3:00 AM ET.
+    ask = {"kind": "waiver", "created_at": "2026-09-22T12:03:17+00:00", "expires_at": "2026-09-23T12:03:17+00:00"}
+    d = deadlines.describe(ask, r)
+    assert d["deadline"] == "2026-09-23T03:00-04:00" and d["deadline_note"] == "Wed 03:00 AM ET, when ESPN runs waivers"
+    # Created Monday night: Tuesday has no run, so Wednesday.
+    monday = {"kind": "waiver", "created_at": "2026-09-22T01:00:00+00:00", "expires_at": "2026-09-25T01:00:00+00:00"}
+    assert deadlines.describe(monday, r)["deadline"].startswith("2026-09-23T03:00")
+    # Anything else keeps its expiry.
+    trade = {"kind": "trade_propose", "created_at": "2026-09-22T12:03:17+00:00", "expires_at": "2026-09-23T12:03:17+00:00"}
+    assert deadlines.describe(trade, r)["deadline_note"].endswith("when it expires")
+    # Reminder: due inside the window, not before.
+    assert not deadlines.due_for_reminder(ask, r, now=datetime(2026, 9, 22, 20, 0, tzinfo=timezone.utc))
+    assert deadlines.due_for_reminder(ask, r, now=datetime(2026, 9, 23, 4, 30, tzinfo=timezone.utc))
+
+
+def test_reminders_fire_once_per_ask(store, tmp_path, monkeypatch):
+    from agent import ledger, rules as rules_mod
+    from agent import discord_out
+    sent = []
+    monkeypatch.setattr(discord_out, "line", lambda cfg, text, kind="info": sent.append(text))
+    cfg = SimpleNamespace(data_dir=tmp_path, webhook_url=None)
+    ask_id = store.create_ask("lineup", "swap", {"type": "ROSTER", "items": []}, expiry_hours=2)
+    r = dict(rules_mod.DEFAULTS)
+    assert ledger.remind_asks(cfg, r) == [ask_id] and ask_id in sent[0] and "when it expires" in sent[0]
+    assert ledger.remind_asks(cfg, r) == [] and len(sent) == 1
+    far = store.create_ask("lineup", "later", {"type": "ROSTER", "items": []}, expiry_hours=48)
+    assert ledger.remind_asks(cfg, r) == []
+    assert far not in sent
+
+
+def test_a_chained_ask_posts_each_claim(store, tmp_path, monkeypatch):
+    from agent import approvals
+    posted = []
+
+    class _Writer:
+        def post(self, payload):
+            posted.append(payload["items"][0]["playerId"])
+            r = _Result()
+            r.transaction_id = f"tx{len(posted)}"
+            return r
+
+    class _FakeCtx:
+        scoring_period = 3
+        writer = _Writer()
+
+        def __init__(self, cfg, rules, write_enabled=True):
+            self.cfg = cfg
+
+        def my_roster(self, refresh=False):
+            return [SimpleNamespace(player_id=9, name="Jaxson Dart", slot_id=0, lineup_locked=False)]
+
+    monkeypatch.setattr(approvals, "EspnContext", _FakeCtx)
+    cfg = SimpleNamespace(team_id=11, data_dir=tmp_path, webhook_url=None)
+    ask_id = store.create_ask("waiver", "add Tyler Shough (QB NO) via waiver claim, drop Jaxson Dart",
+                              dict(_claim(1, 9), scoringPeriodId=3))
+    store.append_to_ask(ask_id, dict(_claim(2, 9), scoringPeriodId=3), "add Jared Goff (QB DET) via waiver claim, drop Jaxson Dart")
+    ok, message = approvals.execute_ask(cfg, {}, store.get_ask(ask_id))
+    assert ok and posted == [1, 2] and "Shough" in message and "Goff" in message
+    assert store.get_ask(ask_id)["status"] == "executed"
+    assert {t["description"] for t in store.recent_transactions(5)} == {
+        "add Tyler Shough (QB NO) via waiver claim, drop Jaxson Dart",
+        "add Jared Goff (QB DET) via waiver claim, drop Jaxson Dart"}
