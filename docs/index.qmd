@@ -153,6 +153,15 @@ Thu
 Matchups
 :::
 :::
+
+::: {.slot}
+::: {.when}
+7:31 PM ET
+:::
+::: {.what}
+Matchup polls
+:::
+:::
 :::
 
 ::: {.day}
@@ -197,7 +206,7 @@ Score updates
 ::::
 
 ::: {.note}
-Set `DAILY_WAIVER` to `True` to post the waiver report every day at 9:01 AM, not only Wednesday. The Tuesday snapshot waits until Monday night football is final. A trade check also runs every hour, every day: each trade is announced once, within the hour it clears.
+Set `DAILY_WAIVER` to `True` to post the waiver report every day at 9:01 AM, not only Wednesday. The matchup polls are native Discord polls, one per matchup, open for `MATCHUP_POLL_HOURS` (65 by default, closing before Sunday's early games); set `MATCHUP_POLLS` to `False` to skip them. The Tuesday snapshot waits until Monday night football is final. A trade check also runs every hour, every day: each trade is announced once, within the hour it clears.
 :::
 
 ## Slash commands

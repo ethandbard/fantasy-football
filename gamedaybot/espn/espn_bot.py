@@ -101,6 +101,27 @@ def check_trades(discord_bot, league):
             embed=discord_fmt.trade_embed(trades[trade_date], league=league))
 
 
+def send_matchup_polls(discord_bot, league, duration_hours, week=None):
+    """
+    Post one "who wins?" poll per matchup. Teams on a bye (playoff weeks)
+    have no opponent and get no poll. Returns the number of polls posted.
+    """
+    if week is None:
+        week = league.current_week
+    posted = 0
+    for box in league.box_scores(week=week):
+        if not box.away_team or not box.home_team:
+            continue
+        poll = discord_fmt.matchup_poll(
+            box.home_team.team_name, box.away_team.team_name,
+            duration_hours, week=week)
+        discord_bot.send_poll(poll)
+        posted += 1
+    if posted == 0:
+        logger.info("No matchups to poll for week %s", week)
+    return posted
+
+
 def _send_init(discord_bot, data, league=None):
     if data.get('init_webhook_urls'):
         discord_bot = Discord(data['init_webhook_urls'])
@@ -122,6 +143,7 @@ def espn_bot(function):
         Which report to send. One of:
 
         get_matchups              the week's matchups plus projected scores
+        send_matchup_polls        one who-wins poll per matchup (see MATCHUP_POLLS)
         get_monitor               injured/questionable starters to watch
         get_scoreboard_short      current scores plus projected scores
         get_projected_scoreboard  projected scores only
@@ -172,6 +194,10 @@ def espn_bot(function):
 
     if function == "collect_snapshot":
         collector.collect_weekly_snapshot(league)
+        return
+
+    if function == "send_matchup_polls":
+        send_matchup_polls(discord_bot, league, data['matchup_poll_hours'])
         return
 
     if function == "check_trades":

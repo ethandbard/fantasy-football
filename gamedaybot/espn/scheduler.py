@@ -56,6 +56,12 @@ def scheduler():
     sched.add_job(espn_bot, 'cron', ['get_matchups'], id='matchups',
                   day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=game_timezone, replace_existing=True)
+    # One poll per matchup, right after the matchups post. The polls close
+    # MATCHUP_POLL_HOURS later; the default lands before Sunday's early games.
+    if data['matchup_polls']:
+        sched.add_job(espn_bot, 'cron', ['send_matchup_polls'], id='matchup_polls',
+                      day_of_week='thu', hour=19, minute=31, start_date=ff_start_date, end_date=ff_end_date,
+                      timezone=game_timezone, replace_existing=True)
     sched.add_job(espn_bot, 'cron', ['get_scoreboard_short'], id='scoreboard1',
                   day_of_week='fri,mon', hour=9, minute=0, start_date=ff_start_date, end_date=ff_end_date,
                   timezone=my_timezone, replace_existing=True)

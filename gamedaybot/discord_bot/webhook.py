@@ -5,6 +5,7 @@ slash commands; both render through gamedaybot.discord_bot.formatting.
 """
 import json
 import logging
+import time
 
 import requests
 
@@ -15,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 class DiscordException(Exception):
     pass
+
+
+def _retry_after(response, default=2.0, cap=30.0):
+    """Seconds to wait after a 429, from the Retry-After header."""
+    try:
+        return min(float(response.headers.get("Retry-After", default)), cap)
+    except (TypeError, ValueError, AttributeError):
+        return default
 
 
 def webhook_label(url):
@@ -89,13 +98,55 @@ class Discord(object):
             template["content"] = "```{0}```".format(text)
         else:
             return None
+        return self._post(template)
 
+    def send_poll(self, poll, content=None):
+        """
+        Send a native Discord poll to every configured webhook.
+
+        Parameters
+        ----------
+        poll : dict
+            A poll create request object (see
+            gamedaybot.discord_bot.formatting.matchup_poll).
+        content : str, optional
+            Plain message text shown above the poll.
+
+        Returns
+        -------
+        r : requests.Response
+            The response from the last successful POST.
+
+        Raises
+        ------
+        DiscordException
+            If any POST is not a 204.
+        """
+        template = {"poll": poll}
+        if content:
+            template["content"] = content
+        return self._post(template)
+
+    def _post(self, template):
+        """
+        POST one message body to every webhook URL. Each URL is attempted
+        even if an earlier one failed, so one dead channel does not strand
+        the rest; a 429 is retried once after Discord's Retry-After.
+        """
         headers = {"content-type": "application/json"}
         payload = json.dumps(template)
         last_ok = None
         failures = []
         for url in self.webhook_urls:
             r = requests.post(url, data=payload, headers=headers)
+            if r.status_code == 429:
+                # Several polls go out back to back; the webhook limit is
+                # a handful of posts per few seconds.
+                wait = _retry_after(r)
+                logger.info("Webhook %s rate limited, retrying in %.1fs",
+                            webhook_label(url), wait)
+                time.sleep(wait)
+                r = requests.post(url, data=payload, headers=headers)
             if r.status_code == 204:
                 last_ok = r
                 continue

@@ -120,6 +120,8 @@ you edit it.
 | `DAILY_WAIVER` | No | `False` | Posts the waiver report every day, not only Wednesday. |
 | `MONITOR_REPORT` | No | `True` | Posts the Sunday injury report. |
 | `TOP_HALF_SCORING` | No | `False` | Adds top-half scoring to standings. |
+| `MATCHUP_POLLS` | No | `True` | Posts a who-wins poll for each matchup after the Thursday matchups post. |
+| `MATCHUP_POLL_HOURS` | No | `65` | How long each matchup poll stays open. The default closes it Sunday at 12:30 PM Eastern, before the early games. Discord allows 1 to 768. |
 | `INIT_MSG` | No | None | Replaces the generated startup message. |
 | `INIT_WEBHOOK_URL` | No | None | Webhook(s) that receive the startup message instead of every `DISCORD_WEBHOOK_URL`, so restarts stay out of the league channel. |
 | `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
@@ -175,6 +177,7 @@ times follow `TIMEZONE`.
 | Wednesday | 9:00 AM | Standings |
 | Wednesday | 9:01 AM | Waiver report |
 | Thursday | 7:30 PM Eastern | Matchups |
+| Thursday | 7:31 PM Eastern | Matchup polls |
 | Friday | 9:00 AM | Score update |
 | Sunday | 9:00 AM | Player monitor report |
 | Sunday | 4:00 PM and 8:00 PM Eastern | Score updates |
@@ -182,6 +185,11 @@ times follow `TIMEZONE`.
 
 When `DAILY_WAIVER` is `True`, the waiver report runs at 9:01 AM every day
 instead of only on Wednesday.
+
+The matchup polls are native Discord polls, one per matchup, with a team name
+as each answer. They stay open for `MATCHUP_POLL_HOURS` and then show the
+result. Set `MATCHUP_POLLS` to `False` to skip them. Teams on a bye get no
+poll.
 
 The hourly trade check stores every trade it sees in `data/fantasy.db` and
 posts a Trade Alert embed for each one it has never stored before, so a trade

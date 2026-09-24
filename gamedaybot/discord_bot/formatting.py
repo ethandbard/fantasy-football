@@ -41,6 +41,42 @@ TITLES = {
 }
 
 
+# Discord's limits for a poll create request object.
+POLL_QUESTION_MAX = 300
+POLL_ANSWER_MAX = 55
+POLL_HOURS_MIN = 1
+POLL_HOURS_MAX = 768  # 32 days
+
+
+def _clip(text, limit):
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit - 1].rstrip() + "…"
+
+
+def matchup_poll(home_name, away_name, duration_hours, week=None):
+    """
+    A Discord poll create request object asking who wins one matchup, one
+    answer per team. Usable directly in a webhook's "poll" field
+    (https://discord.com/developers/docs/resources/poll#poll-create-request-object).
+    """
+    question = f"{home_name} vs {away_name}"
+    if week:
+        question = f"Week {week}: {question}"
+    hours = max(POLL_HOURS_MIN, min(int(duration_hours), POLL_HOURS_MAX))
+    return {
+        "question": {"text": _clip(question, POLL_QUESTION_MAX)},
+        "answers": [
+            {"poll_media": {"text": _clip(home_name, POLL_ANSWER_MAX)}},
+            {"poll_media": {"text": _clip(away_name, POLL_ANSWER_MAX)}},
+        ],
+        "duration": hours,
+        "allow_multiselect": False,
+        "layout_type": 1,
+    }
+
+
 def _footer_for(league):
     if league is None:
         return None

@@ -51,6 +51,10 @@ def get_env_vars():
         'daily_waiver': _str_to_bool(os.environ.get("DAILY_WAIVER", "False")),
         'monitor_report': _str_to_bool(os.environ.get("MONITOR_REPORT", "True")),
         'top_half_scoring': _str_to_bool(os.environ.get("TOP_HALF_SCORING", "False")),
+        'matchup_polls': _str_to_bool(os.environ.get("MATCHUP_POLLS", "True")),
+        # Thursday 7:30 PM Eastern plus 65 hours is Sunday 12:30 PM Eastern,
+        # so voting closes before the early kickoffs.
+        'matchup_poll_hours': int(os.environ.get("MATCHUP_POLL_HOURS", 65)),
         'league_id': os.environ["LEAGUE_ID"],
         'year': int(os.environ.get("LEAGUE_YEAR", 2026)),
         'espn_s2': os.environ.get("ESPN_S2", NO_ESPN_S2),
