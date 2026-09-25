@@ -91,3 +91,18 @@ def test_matchup_poll_settings_come_from_the_environment(monkeypatch):
     data = get_env_vars()
     assert data["matchup_polls"] is False
     assert data["matchup_poll_hours"] == 24
+
+
+def test_matchup_polls_go_only_to_the_poll_webhook_when_set(monkeypatch):
+    from gamedaybot.espn import espn_bot as mod
+    monkeypatch.setenv("LEAGUE_ID", "1")
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL",
+                       "https://discord.com/api/webhooks/1/aaa,https://discord.com/api/webhooks/2/bbb")
+    monkeypatch.setenv("MATCHUP_POLL_WEBHOOK_URL", "https://discord.com/api/webhooks/1/aaa")
+    league = SimpleNamespace(current_week=3, scoringPeriodId=3,
+                             box_scores=lambda week: [_box(_team("Alpha"), _team("Bravo"))])
+    ok = Mock(status_code=204)
+    with patch.object(mod, "_build_league", return_value=league),             patch.object(mod.collector, "last_scoring_period", return_value=17),             patch("gamedaybot.discord_bot.webhook.requests.post", return_value=ok) as post:
+        mod.espn_bot("send_matchup_polls")
+
+    assert [c.args[0] for c in post.call_args_list] == ["https://discord.com/api/webhooks/1/aaa"]

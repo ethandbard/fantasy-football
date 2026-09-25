@@ -122,6 +122,7 @@ you edit it.
 | `TOP_HALF_SCORING` | No | `False` | Adds top-half scoring to standings. |
 | `MATCHUP_POLLS` | No | `True` | Posts a who-wins poll for each matchup after the Thursday matchups post. |
 | `MATCHUP_POLL_HOURS` | No | `65` | How long each matchup poll stays open. The default closes it Sunday at 12:30 PM Eastern, before the early games. Discord allows 1 to 768. |
+| `MATCHUP_POLL_WEBHOOK_URL` | No | None | Webhook(s) that receive the matchup polls instead of every `DISCORD_WEBHOOK_URL`, so a mirror channel gets the reports but not the polls. |
 | `INIT_MSG` | No | None | Replaces the generated startup message. |
 | `INIT_WEBHOOK_URL` | No | None | Webhook(s) that receive the startup message instead of every `DISCORD_WEBHOOK_URL`, so restarts stay out of the league channel. |
 | `DASHBOARD_PORT` | No | `8000` | Port the dashboard binds inside the container. |
@@ -189,7 +190,9 @@ instead of only on Wednesday.
 The matchup polls are native Discord polls, one per matchup, with a team name
 as each answer. They stay open for `MATCHUP_POLL_HOURS` and then show the
 result. Set `MATCHUP_POLLS` to `False` to skip them. Teams on a bye get no
-poll.
+poll. When `DISCORD_WEBHOOK_URL` lists more than one channel, set
+`MATCHUP_POLL_WEBHOOK_URL` to the league channel's webhook so only that
+channel gets the polls.
 
 The hourly trade check stores every trade it sees in `data/fantasy.db` and
 posts a Trade Alert embed for each one it has never stored before, so a trade

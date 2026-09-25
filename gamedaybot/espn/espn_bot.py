@@ -197,7 +197,10 @@ def espn_bot(function):
         return
 
     if function == "send_matchup_polls":
-        send_matchup_polls(discord_bot, league, data['matchup_poll_hours'])
+        poll_bot = discord_bot
+        if data.get('matchup_poll_webhook_urls'):
+            poll_bot = Discord(data['matchup_poll_webhook_urls'])
+        send_matchup_polls(poll_bot, league, data['matchup_poll_hours'])
         return
 
     if function == "check_trades":

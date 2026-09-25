@@ -85,4 +85,10 @@ def get_env_vars():
     # DISCORD_WEBHOOK_URL; set it to keep restarts out of the league channel.
     data['init_webhook_urls'] = parse_webhook_urls(os.environ.get("INIT_WEBHOOK_URL", "")) or None
 
+    # Where the matchup polls go. Unset means every URL in
+    # DISCORD_WEBHOOK_URL; set it to keep the polls to the league channel
+    # when a second webhook mirrors reports elsewhere.
+    data['matchup_poll_webhook_urls'] = parse_webhook_urls(
+        os.environ.get("MATCHUP_POLL_WEBHOOK_URL", "")) or None
+
     return data
