@@ -53,6 +53,9 @@ class AgentConfig:
     # Whether every /ask gets the managing agent's record (briefs, research,
     # state, season log, activity), or only the owner does.
     ask_share_record: bool
+    # Which credential the model runs bill to: "subscription" or "api".
+    # Set by select_claude_auth from AGENT_CLAUDE_AUTH.
+    claude_auth: str = "subscription"
 
     @property
     def has_cookies(self):
@@ -69,6 +72,34 @@ class AgentConfig:
     def ensure_dirs(self):
         for sub in ("research", "state", "runs"):
             (self.data_dir / sub).mkdir(parents=True, exist_ok=True)
+
+
+CLAUDE_AUTH_MODES = ("subscription", "api")
+
+
+def select_claude_auth(mode):
+    """
+    Leave only the credential that mode names in this process's environment.
+
+    config.env carries both CLAUDE_CODE_OAUTH_TOKEN (the Claude subscription)
+    and ANTHROPIC_API_KEY (for the dashboard chat), and the Claude Code CLI
+    picks the API key whenever both are set. So "subscription" hides the key
+    from the agent process, and "api" hides the token. If the named credential
+    is missing, the other one stays so runs still work. Returns the mode that
+    actually applies.
+    """
+    mode = (mode or "subscription").strip().lower()
+    if mode not in CLAUDE_AUTH_MODES:
+        mode = "subscription"
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if mode == "subscription" and token:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        return "subscription"
+    if mode == "api" and key:
+        os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        return "api"
+    return "api" if key else "subscription"
 
 
 def from_env():
@@ -108,4 +139,5 @@ def from_env():
         ask_expiry_hours=_int(os.environ.get("AGENT_ASK_EXPIRY_HOURS"), 24),
         enabled_schedule=_bool(os.environ.get("AGENT_SCHEDULE"), True),
         ask_share_record=_bool(os.environ.get("AGENT_ASK_SHARE_RECORD"), True),
+        claude_auth=select_claude_auth(os.environ.get("AGENT_CLAUDE_AUTH")),
     )

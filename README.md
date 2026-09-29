@@ -133,6 +133,7 @@ you edit it.
 | `AGENT_CHANNEL_ID` | Agents | None | Channel where the bot posts approval requests with reactions. |
 | `AGENT_WEBHOOK_URL` | Agents | None | Webhook the agent service posts briefs to (a `#team-agent` channel). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Agents | None | Long-lived token from `claude setup-token`. `ANTHROPIC_API_KEY` works instead. |
+| `AGENT_CLAUDE_AUTH` | No | `subscription` | What the agents' model runs bill to when both credentials are set: `subscription` uses `CLAUDE_CODE_OAUTH_TOKEN`, `api` uses `ANTHROPIC_API_KEY` (Console credits). The Claude CLI would otherwise pick the API key. The dashboard chat always uses the API key. |
 | `TEAM_ID` | No | `11` | The ESPN team the agents manage. |
 | `AGENT_ESPN_S2` / `AGENT_SWID` | If the bot's cookies are not the team owner's | falls back to `ESPN_S2` / `SWID` | Cookies from the account that owns `TEAM_ID`. Any league member's cookies can read the league, but ESPN refuses writes from anyone but the owner. |
 | `AGENT_DRY_RUN` | No | `False` | `True` previews every write and posts nothing to ESPN. |
@@ -310,7 +311,8 @@ as still open.
 
 The service starts with the stack (`docker compose up -d --build`). It needs
 `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in `config.env`, plus the
-three Discord values in the configuration table. Without a token it starts,
+three Discord values in the configuration table. With both set, runs bill to the
+subscription unless `AGENT_CLAUDE_AUTH=api`; the startup log names which one. Without a token it starts,
 serves `/agent status`, runs the canary, and fails every model run with a
 clear error in the agent channel.
 

@@ -50,6 +50,13 @@ async def main():
     seed_files(cfg)
     if not cfg.has_claude_auth:
         logger.warning("No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY set: every model run will fail until one is.")
+    else:
+        wanted = (os.environ.get("AGENT_CLAUDE_AUTH") or "subscription").strip().lower()
+        if cfg.claude_auth != wanted:
+            logger.warning("AGENT_CLAUDE_AUTH=%s, but that credential is not set; model runs use %s.",
+                           wanted, cfg.claude_auth)
+        logger.info("model runs bill to the %s (%s)", "Claude subscription" if cfg.claude_auth == "subscription"
+                    else "API key's Console credits", cfg.claude_auth)
     if not cfg.has_cookies:
         logger.warning("ESPN_S2 and SWID are not set: the league cannot be read.")
     if cfg.dry_run:

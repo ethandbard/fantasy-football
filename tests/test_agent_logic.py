@@ -2,6 +2,7 @@
 Pure pieces of the agent service: wakeup planning from a roster, Discord
 chunking, prompt rendering, and the tool-name groups the analyst may not see.
 """
+import os
 from datetime import datetime, timedelta, timezone
 
 import gamedaybot.espn.roster as roster
@@ -174,3 +175,29 @@ def test_record_opens_to_the_league_when_sharing_is_on():
     # The default is open.
     from agent import config
     assert config._bool(None, True) is True and config._bool("false", True) is False
+
+
+def test_claude_auth_defaults_to_the_subscription_and_hides_the_api_key(monkeypatch):
+    from agent import config
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+    assert config.select_claude_auth(None) == "subscription"
+    assert "ANTHROPIC_API_KEY" not in os.environ
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "token"
+
+
+def test_claude_auth_api_mode_hides_the_token(monkeypatch):
+    from agent import config
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+    assert config.select_claude_auth("API") == "api"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
+    assert os.environ["ANTHROPIC_API_KEY"] == "key"
+
+
+def test_claude_auth_falls_back_to_whichever_credential_exists(monkeypatch):
+    from agent import config
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+    assert config.select_claude_auth("subscription") == "api"
+    assert os.environ["ANTHROPIC_API_KEY"] == "key"
