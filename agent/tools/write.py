@@ -25,7 +25,6 @@ NAMES = [
 ]
 
 TOKEN_TTL = timedelta(minutes=30)
-ROSTER_LIMIT = 16
 UNDROPPABLE_CODE = "TRAN_ROSTER_PLAYER_NOT_DROPPABLE"
 
 
@@ -34,8 +33,8 @@ def _item_keys(payload):
 
 
 def roster_full(entries):
-    """True when an add needs a drop. The IR slot sits outside ESPN's limit, so a player there frees a spot."""
-    return sum(1 for e in entries if e.slot_id != roster.IR_SLOT) >= ROSTER_LIMIT
+    """True when an add needs a drop."""
+    return roster.open_spots(entries) <= 0
 
 
 def retry_of(failed_rows, payload):

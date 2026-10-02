@@ -52,6 +52,9 @@ def build(ctx, run):
         head = f"Team {ctx.team_name(cfg.team_id)} (id {cfg.team_id}), scoring period {ctx.scoring_period}\n"
         head += "Starting slots: " + ", ".join(f"{roster.slot_name(s)} x{n} (slot id {s})" for s, n in counts.items())
         head += "\nBench slot id 20, IR slot id 21\n"
+        spots = roster.open_spots(entries)
+        head += (f"Roster spots: {roster.ROSTER_LIMIT - spots} of {roster.ROSTER_LIMIT} used, {spots} open "
+                 "(the IR slot does not count; an add needs a drop only when 0 are open)\n")
         if problems:
             head += "Lineup problems: " + "; ".join(problems) + "\n"
         return text(head + "\n" + _fmt_entries(entries))

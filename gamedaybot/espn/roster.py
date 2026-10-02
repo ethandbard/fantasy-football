@@ -17,6 +17,13 @@ BENCH_SLOT = 20
 IR_SLOT = 21
 FLEX_SLOT = 23
 
+# ESPN's roster limit. The IR slot sits outside it, so a player there frees a spot.
+ROSTER_LIMIT = 16
+
+
+def open_spots(entries):
+    return ROSTER_LIMIT - sum(1 for e in entries if e.slot_id != IR_SLOT)
+
 # Slots a lineup can start players in, in the order ESPN lists them.
 STARTING_SLOT_ORDER = [0, 2, 4, 6, 23, 16, 17]
 
