@@ -25,11 +25,17 @@ NAMES = [
 ]
 
 TOKEN_TTL = timedelta(minutes=30)
+ROSTER_LIMIT = 16
 UNDROPPABLE_CODE = "TRAN_ROSTER_PLAYER_NOT_DROPPABLE"
 
 
 def _item_keys(payload):
     return {(i.get("type"), i.get("playerId")) for i in (payload or {}).get("items", [])}
+
+
+def roster_full(entries):
+    """True when an add needs a drop. The IR slot sits outside ESPN's limit, so a player there frees a spot."""
+    return sum(1 for e in entries if e.slot_id != roster.IR_SLOT) >= ROSTER_LIMIT
 
 
 def retry_of(failed_rows, payload):
@@ -245,9 +251,7 @@ def build(ctx, run):
                 return None, f"{fa['name']} is on waivers; preview again with waiver=true"
             adds.append(fa)
             add_desc = f"add {fa['name']} ({fa['position']} {fa['pro_team']})" + (" via waiver claim" if waiver else "")
-        slots = len(entries) - len(drops) + len(adds)
-        limit = len(entries) if add_id is None else len(entries)
-        if add_id is not None and not drops and len(entries) >= 16:
+        if add_id is not None and not drops and roster_full(entries):
             return None, "roster is full; include a drop"
         desc = ", ".join(filter(None, [add_desc] + [f"drop {e.name}" for e in drops]))
         payload = writes.add_drop_payload(cfg.team_id, cfg.swid, ctx.scoring_period, add_id,

@@ -300,3 +300,13 @@ def test_a_rejection_blocks_only_the_same_move():
     assert retry_of(failed, same) is not None
     assert retry_of(failed, other) is None
     assert retry_of([], same) is None
+
+
+def test_a_player_in_ir_does_not_count_toward_a_full_roster():
+    from types import SimpleNamespace
+    from agent.tools.write import roster_full
+    import gamedaybot.espn.roster as roster
+    sixteen = [SimpleNamespace(slot_id=roster.BENCH_SLOT) for _ in range(16)]
+    fifteen_plus_ir = sixteen[:15] + [SimpleNamespace(slot_id=roster.IR_SLOT)]
+    assert roster_full(sixteen)
+    assert not roster_full(fifteen_plus_ir)
