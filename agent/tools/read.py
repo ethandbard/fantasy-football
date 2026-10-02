@@ -16,10 +16,10 @@ NAMES = [
     "get_rules", "get_my_roster", "get_team_roster", "list_teams", "get_free_agents",
     "get_matchup", "get_standings", "get_pending_transactions", "get_recent_activity",
     "get_kickoffs", "get_player", "get_week_results", "read_research", "read_state",
-    "read_season_log", "read_briefs", "get_agent_activity", "get_run_context",
+    "read_season_log", "read_briefs", "get_agent_activity", "get_run_context", "read_analytics",
 ]
 PRIVATE = ["read_research", "read_state", "read_season_log", "read_briefs", "get_agent_activity",
-           "get_run_context", "get_rules"]
+           "get_run_context", "get_rules", "read_analytics"]
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
@@ -260,6 +260,38 @@ def build(ctx, run):
             lines.append("- none")
         return text("\n".join(lines))
 
+    @tool("read_analytics",
+          "The in-house data analyst's report for a week (default current): its written summary and the model's "
+          "numbers for my roster, the free-agent pool, trade targets, sell candidates, and where it disagrees "
+          "with ESPN. Forecasts come from usage (targets, carries, air yards, snaps) and Vegas lines, not from "
+          "consensus rankings. part: summary (default), roster, waiver, trades, divergences, matchup, or all.",
+          {"week": int, "part": str}, READ_ONLY)
+    async def read_analytics(args):
+        from agent.analytics import pipeline
+        week = int(args.get("week") or ctx.week)
+        folder = pipeline.analytics_dir(cfg.data_dir, week)
+        summary = folder / "summary.md"
+        data = folder / "analysis.json"
+        if not data.exists():
+            return text(f"no analytics for week {week}; the analytics job has not run")
+        part = (args.get("part") or "summary").lower()
+        body = json.loads(data.read_text(encoding="utf-8"))
+        tables = {"roster": ["my_roster"], "waiver": ["waiver"], "trades": ["trade_targets", "sell_candidates"],
+                  "divergences": ["divergences"], "matchup": ["opponent"]}
+        out = []
+        if part in ("summary", "all"):
+            out.append(summary.read_text(encoding="utf-8") if summary.exists()
+                       else "(the analyst built the numbers but has not written its summary)")
+        if part in ("matchup", "all"):
+            out.append("Matchup: " + json.dumps(body.get("matchup"), default=str))
+        names = [t for p, ts in tables.items() if part in (p, "all") for t in ts]
+        for name in names:
+            rows = body["tables"].get(name) or []
+            out.append(f"## {name}\n" + ("\n".join(json.dumps(r, default=str) for r in rows) or "(none)"))
+        meta = body.get("meta") or {}
+        out.append(f"(built {meta.get('generated_at')}, data through NFL week {meta.get('data_through')})")
+        return text("\n\n".join(out)[:24000])
+
     @tool("read_season_log", "The tail of the season log (default last 12000 characters).", {"chars": int}, READ_ONLY)
     async def read_season_log(args):
         path = cfg.data_dir / "season-log.md"
@@ -272,4 +304,4 @@ def build(ctx, run):
     return [get_rules, get_run_context, get_my_roster, get_team_roster, list_teams, get_free_agents,
             get_matchup, get_standings, get_pending_transactions, get_recent_activity, get_kickoffs,
             get_player, get_week_results, read_research, read_state, read_briefs, get_agent_activity,
-            read_season_log]
+            read_analytics, read_season_log]

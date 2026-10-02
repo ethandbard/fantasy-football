@@ -5,6 +5,12 @@ that follows, so be thorough and structured, not chatty.
 
 Do, in order:
 
+0. read_analytics for week {week}. The in-house data analyst ran just before
+   you and built its own forecasts from usage data and Vegas lines. Treat its
+   flags (role growing, buy-low, sell-high, model above or below ESPN) as
+   leads: check the biggest ones against news in your searches and say in
+   the report which you believe. Its section in the research file is kept
+   when you write_research; do not copy its tables.
 1. Review last week: get_week_results for the week just played. Note who
    beat or missed projection and why, per starter. Read the season log tail
    and get_agent_activity for what was tried and what became of it.

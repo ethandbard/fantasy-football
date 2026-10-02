@@ -38,6 +38,9 @@ class Clock:
             # run, so the dashboard's recap is up first thing Tuesday.
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=30, timezone=tz), args=["recap"], id="recap")
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=40, timezone=tz), args=["power"], id="power")
+            # The data analyst goes just before research, which reads its section.
+            # The queue is first in, first out, so research waits for it.
+            add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=50, timezone=tz), args=["analytics"], id="analytics")
             add(self._submit, CronTrigger(day_of_week="tue", hour=7, minute=0, timezone=tz), args=["research"], id="research")
             # After the post-waiver adjust, so the preview sees settled rosters.
             add(self._submit, CronTrigger(day_of_week="wed", hour=10, minute=30, timezone=tz), args=["preview"], id="preview_site")
@@ -114,7 +117,8 @@ class Clock:
         try:
             rows = store.pending_wakeups()
             body = "\n".join(schedule_lines(rows)) or "No pending wakeups."
-            body += "\n\nTuesday: research at 7:00 AM, roster plan at 8:00 AM, pre-game checks re-planned after."
+            body += ("\n\nTuesday: data analyst at 6:50 AM, research at 7:00 AM, roster plan at 8:00 AM, "
+                     "pre-game checks re-planned after.")
             discord_out.post(self.cfg, "Week ahead", body, kind="info")
         except Exception:
             logger.exception("preview failed")

@@ -24,19 +24,21 @@ Do:
    is deep; a starter upgrade matters more.
 3. Consider the other manager: what he needs, why he is offering, and
    whether a counter exists that he would take and that is better for me.
-4. Check the tiers: core players cannot go out; nothing within 24 hours of
-   the deadline; more than one backup QB is wasted space.
+4. A third valuation: read_analytics for the in-house rest-of-season
+   forecast of every player in the deal, if it has them. Where it and the
+   chart disagree, say which you trust. Core players and more than one
+   backup QB are judgment calls, not limits; name them if they apply.
 
 Then act:
 
 - Incoming offer, bad for me: preview_trade_response with accept=false and
   execute it (declining is auto). If a one-for-one change would make it
-  good, propose the counter with preview_trade and execute_trade (queues an
-  ask).
+  good, propose the counter with preview_trade and execute_trade.
 - Incoming offer, good for me: preview_trade_response with accept=true and
-  execute it, which queues the acceptance for the owner with your case.
-- A proposal the plan wants to send: preview_trade and execute_trade, which
-  queues it.
+  execute it.
+- A proposal the plan wants to send: preview_trade and execute_trade.
+- Read each preview's permission line: under full autonomy these execute at
+  once; if it says ask, executing queues the move for the owner instead.
 - A question with no action: give the verdict and stop.
 
 Brief: verdict in the first line (accept, decline, counter, or send), the

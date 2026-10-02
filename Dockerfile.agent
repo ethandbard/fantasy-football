@@ -7,6 +7,18 @@ WORKDIR /app
 COPY requirements.txt requirements-agent.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-agent.txt
 
+# Quarto renders the data analyst's PDF report through Typst, which it
+# bundles, so no LaTeX. The slim image has no curl; Python fetches it.
+ARG QUARTO_VERSION=1.10.18
+RUN arch="$(dpkg --print-architecture)" \
+    && python -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], '/tmp/quarto.tar.gz')" \
+       "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-${arch}.tar.gz" \
+    && mkdir -p /opt/quarto \
+    && tar -xzf /tmp/quarto.tar.gz -C /opt/quarto --strip-components=1 \
+    && rm /tmp/quarto.tar.gz \
+    && ln -s /opt/quarto/bin/quarto /usr/local/bin/quarto \
+    && quarto --version
+
 COPY gamedaybot/ ./gamedaybot/
 COPY agent/ ./agent/
 COPY fantasy-football-agents/RULES.md fantasy-football-agents/fantasy-season-log.md ./fantasy-football-agents/

@@ -6,28 +6,30 @@ prompts under agent/prompts refer to them.
 """
 from claude_agent_sdk import create_sdk_mcp_server
 
-from agent.tools import history, read, site, state, write
+from agent.tools import analytics, history, read, site, state, write
 
 SERVER_NAME = "espn"
 
 
 def build_server(ctx, run):
     tools = (read.build(ctx, run) + history.build(ctx, run) + write.build(ctx, run)
-             + state.build(ctx, run) + site.build(ctx, run))
+             + state.build(ctx, run) + site.build(ctx, run) + analytics.build(ctx, run))
     return create_sdk_mcp_server(name=SERVER_NAME, version="1.0.0", tools=tools)
 
 
 def tool_names(group):
     """
     Tool names for a group: 'read' (with league history), 'write', 'state',
-    'site' (dashboard prose), 'analyst' (read minus private state), or
-    'owner' (just the private state, for the analyst when the owner asks).
+    'site' (dashboard prose), 'analytics' (the data analyst's model and
+    report), 'analyst' (read minus private state), or 'owner' (just the
+    private state, for the analyst when the owner asks).
     """
     groups = {
         "read": read.NAMES + history.NAMES,
         "write": write.NAMES,
         "state": state.NAMES,
         "site": site.NAMES,
+        "analytics": analytics.NAMES,
         "analyst": [n for n in read.NAMES if n not in read.PRIVATE] + history.NAMES,
         "owner": list(read.PRIVATE),
     }

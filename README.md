@@ -245,9 +245,17 @@ while the two differ.
 
 Roster actions go through ESPN's own transaction endpoint with the same
 `ESPN_S2` and `SWID` cookies the bot uses. No browser is involved. Every write
-is a preview followed by an execute, and a permission tier decides what
-happens: auto moves post at once, "ask" moves wait for the owner in Discord,
-and "never" moves are refused.
+is a preview followed by an execute.
+
+The agents run with full autonomy by default (`"autonomy": "full"` in
+`rules.json`): every lineup change, add, drop, waiver claim, trade proposal,
+and trade acceptance posts to ESPN at once, with no approval step and no core
+list, roster ceilings, deadline buffer, or per-run caps. Three things stay
+refused: dropping a player ESPN calls undroppable, retrying a write ESPN
+rejected earlier that day, and withdrawing a trade proposal the owner sent.
+Set `"autonomy": "tiered"` in `data/agent/rules.json` to bring back the tiers
+without a redeploy: auto moves post at once, "ask" moves wait for the owner in
+Discord, and "never" moves are refused.
 
 ### Schedule
 
@@ -258,8 +266,9 @@ Times are in `TIMEZONE`.
 | Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only — this season from ESPN, past seasons and each pairing's all-time history from the dashboard database — no web, no Discord post. |
 | Tuesday 6:40 AM | Power rankings | light | Ranks the league 1–8 after last week, for the dashboard's League page. Same rules as the recap. |
 | Wednesday 10:30 AM | Matchup preview | light | Previews this week's four matchups after waivers clear, for the dashboard's Next up page. Same rules as the recap. |
-| Tuesday 7:00 AM | Research | heavy | Reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` and `state/week-NN.json`. |
-| Tuesday 8:00 AM | Roster plan | heavy | Queues waiver claims with fallbacks, sets the lineup, proposes at most one trade, schedules the pre-game checks. |
+| Tuesday 6:50 AM | Data analyst | heavy | Builds the in-house model from nflverse usage data and Vegas lines, writes the narrative, and posts a PDF report with the brief. Adds its section to `data/agent/research/week-NN.md`. No web. See [Data analyst](#data-analyst). |
+| Tuesday 7:00 AM | Research | heavy | Reads the analyst's section, then reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` (keeping the analyst's section) and `state/week-NN.json`. |
+| Tuesday 8:00 AM | Roster plan | heavy | Claims waivers with fallbacks, sets the lineup, sends the trades it judges worth sending, schedules the pre-game checks. |
 | Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
 | Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
 | Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
@@ -270,6 +279,42 @@ Times are in `TIMEZONE`.
 | Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome (accepted, declined, expired, or reversed in review) is written to the season log and posted as one line. |
 
 Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
+
+### Data analyst
+
+The `analytics` job is the agents' own model, built to see what consensus
+rankings miss. It has no web access. It reads public play data instead:
+nflverse weekly player stats and snap counts for this season and last, and
+the schedule with Vegas lines. Every run downloads them again, cached under
+`data/agent/analytics/cache/`.
+
+- **Expected points (xFP).** A least-squares fit per position of PPR points
+  on opportunity alone: targets and air yards for receivers, carries and
+  targets for backs, attempts, air yards, and carries for quarterbacks.
+  Points over expectation (actual minus xFP) separate usage from luck.
+- **Forecasts.** A recency-weighted xFP, blended with last season while the
+  sample is small, plus a heavily shrunk share of points over expectation.
+  The result is scaled by the Vegas implied team total and by the opponent's
+  points allowed to the position. Each forecast has a 10–90% range from a
+  lognormal, and a rest-of-season rate with byes counted.
+- **League view.** Every rostered player and the top 150 free agents are
+  joined to the forecasts by ESPN id. That gives value over replacement (the
+  second-best free agent at each position), trade targets whose usage
+  outruns their production, sell candidates, the model's best lineup, a
+  win probability for this week's matchup, and the biggest disagreements
+  with ESPN's projections. Kickers and D/STs use ESPN's projection.
+
+The model then writes the narrative, checks its claims week by week, and
+calls `publish_analytics`. That renders `report.qmd` to `report.pdf` with
+Quarto (Typst, so no LaTeX) under `data/agent/analytics/week-NN/`, next to
+`analysis.json`, the charts, and `summary.md`. The PDF posts to the agent
+channel under the brief. If Quarto fails, the charts post instead. The
+summary and two compact tables go into the week's research file between
+`<!-- in-house-analytics -->` markers. The research job keeps that block
+when it rewrites the file, and research, plan, trade review, and owner-mode
+`/ask` read the full numbers with `read_analytics`. To re-render a report by
+hand after editing it: `quarto render report.qmd --to typst` in that week's
+folder.
 
 A waiver claim that needs approval carries its fallbacks: when the plan
 queues a second claim sharing the same drop, it chains onto the first
@@ -298,6 +343,7 @@ as still open.
 | --- | --- | --- |
 | `/agent status` | owner | What runs next, recent runs with cost, pending approvals, canary. Planned pre-game checks and the fixed jobs come as one list in Eastern time, soonest first; the every-minute housekeeping jobs (`tick`, `poll_offers`, `expire_asks`) are left out. |
 | `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
+| `/agent analytics` | owner | Runs the data analyst now. The brief and the PDF report post to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
 | `/agent preview` | owner | Writes this week's matchup preview for the dashboard now. |
 | `/agent power [week]` | owner | Writes the power rankings for the dashboard now. |

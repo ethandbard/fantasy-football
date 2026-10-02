@@ -3,6 +3,7 @@ Posts agent output to the #team-agent webhook. Long briefs are split into
 embed-sized chunks at paragraph boundaries. Without a webhook configured,
 everything is logged instead, which is what local dry runs want.
 """
+import json
 import logging
 
 import requests
@@ -24,6 +25,7 @@ COLORS = {
     "info": 0x95A5A6,
     "ask": 0xF1C40F,
     "answer": 0x1ABC9C,
+    "analytics": 0x2A78D6,
 }
 EMBED_LIMIT = 3900
 
@@ -90,3 +92,42 @@ def line(cfg, text, kind="info"):
                 logger.error("Discord webhook returned %s: %s", r.status_code, r.text[:200])
         except requests.RequestException as e:
             logger.error("Discord line failed: %s", e)
+
+
+# Discord's upload ceiling for a webhook without a server boost.
+FILE_LIMIT = 10 * 1024 * 1024
+
+
+def post_files(cfg, paths, content=""):
+    """Upload files (a PDF report, charts) in one message per webhook; oversized files are skipped and logged."""
+    from pathlib import Path
+    files = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        if p.stat().st_size > FILE_LIMIT:
+            logger.error("not posting %s: %d bytes is over Discord's limit", p.name, p.stat().st_size)
+            continue
+        files.append(p)
+    files = files[:10]
+    urls = webhook_urls(cfg)
+    if not files:
+        return
+    if not urls:
+        logger.info("DISCORD (no webhook) files %s: %s", ", ".join(f.name for f in files), content)
+        return
+    for url in urls:
+        handles = []
+        try:
+            handles = [open(f, "rb") for f in files]
+            multipart = {f"files[{i}]": (f.name, h) for i, (f, h) in enumerate(zip(files, handles))}
+            r = requests.post(url, data={"payload_json": json.dumps({"content": content[:1990]})},
+                              files=multipart, timeout=60)
+            if r.status_code not in (200, 204):
+                logger.error("Discord file upload returned %s: %s", r.status_code, r.text[:200])
+        except (OSError, requests.RequestException) as e:
+            logger.error("Discord file upload failed: %s", e)
+        finally:
+            for h in handles:
+                h.close()

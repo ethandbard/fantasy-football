@@ -13,7 +13,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULTS = {
-    # Players the agent may never drop or trade away on its own. Names are
+    # "full": the agent executes any move it judges right, and the tiers below
+    # are advice it reads, not gates. Only ESPN's own refusals and undoing the
+    # owner's own trade proposal stay blocked. "tiered": the ask and never
+    # tiers, the core list, the roster ceilings, and the caps all apply.
+    "autonomy": "full",
+    # Players the agent may never drop or trade away on its own (tiered mode). Names are
     # matched case-insensitively on the full ESPN name.
     "core_players": ["Jahmyr Gibbs", "Bucky Irving", "Emeka Egbuka", "Rashee Rice", "Zay Flowers"],
     # ISO date of the league's trade deadline; no trade action within 24 hours of it.
@@ -22,9 +27,9 @@ DEFAULTS = {
     "max_qb": 2,
     "max_k": 1,
     "max_dst": 2,
-    # A run may execute at most this many adds (free-agent or waiver) by itself.
+    # A run may execute at most this many adds (free-agent or waiver) by itself (tiered mode).
     "max_adds_per_run": 3,
-    # Trade proposals the agent may have open at once.
+    # Trade proposals the agent may have open at once (tiered mode).
     "max_open_proposals": 3,
     # Hours before a pending ask expires unanswered.
     "ask_expiry_hours": 24,

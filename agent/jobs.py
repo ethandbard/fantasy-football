@@ -38,6 +38,12 @@ JOBS = {
         "research", "Week review and research", "brief", "heavy",
         ["read", "state"], web=True, writes=False, max_turns_key="heavy", search_cap_key="heavy",
         prompt_file="research.md", effort="high"),
+    # The in-house data analyst: its own model from usage data, no web, so it
+    # sees what the consensus does not. Runs before research, which reads it.
+    "analytics": JobSpec(
+        "analytics", "Data analyst report", "analytics", "heavy",
+        ["read", "analytics"], web=False, writes=False, max_turns_key="light", search_cap_key="light",
+        prompt_file="analytics.md", effort="high"),
     "plan": JobSpec(
         "plan", "Roster plan", "brief", "heavy",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="heavy", search_cap_key="light",

@@ -34,6 +34,8 @@ class RunState:
     adds_executed: int = 0
     asks: List[str] = field(default_factory=list)
     transactions: List[dict] = field(default_factory=list)
+    # Files to post to Discord after the brief, such as the analyst's PDF.
+    attachments: List[str] = field(default_factory=list)
     log_path: Any = None
 
     def log(self, event, **data):
@@ -138,6 +140,8 @@ async def run_job(cfg, name, params=None, trigger="schedule", run_id=None):
             if spec.post_brief and not params.get("silent"):
                 title = f"{spec.title} · week {ctx.week}"
                 discord_out.post(cfg, title, brief or "(the run produced no brief)", kind=spec.kind)
+                if run.attachments:
+                    discord_out.post_files(cfg, run.attachments, f"**{title}**: full report attached.")
             store.finish_run(run_id, "done", result=brief, model=_model_name(cfg, spec),
                              num_turns=result.num_turns if result else None, searches=run.searches, **usage)
             outcome.update(status="done", brief=brief, usage=usage,

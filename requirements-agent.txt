@@ -2,3 +2,6 @@
 # bundles the Claude Code CLI, so the image needs no Node.
 claude-agent-sdk>=0.2.150,<0.3
 aiohttp>=3.9,<4
+# The data analyst's charts. Quarto, which renders its PDF, is installed in
+# Dockerfile.agent because it is not a Python package.
+matplotlib>=3.9,<4

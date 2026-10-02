@@ -4,6 +4,12 @@ Classifies a proposed roster move into a permission tier: auto, ask, or never.
 The model plans; this decides. It sees the move and the roster it would act
 on and returns a Decision the write tools obey. Every rule here mirrors a
 line in fantasy-football-agents/RULES.md.
+
+Two modes, chosen by the "autonomy" rule. "full" (the default) lets the
+agent execute anything it judges right: every ask and every rule-based never
+becomes auto, and only a hard never stands, meaning a move ESPN itself
+refuses or one that undoes the owner's own action. "tiered" applies every
+tier below as written.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -12,15 +18,31 @@ from typing import List
 from gamedaybot.espn.roster import BENCH_SLOT, IR_SLOT
 
 AUTO, ASK, NEVER = "auto", "ask", "never"
+FULL, TIERED = "full", "tiered"
 
 
 @dataclass
 class Decision:
     tier: str
     reasons: List[str] = field(default_factory=list)
+    # A never that full autonomy does not lift: ESPN refuses the move anyway,
+    # or it would undo something the owner did himself.
+    hard: bool = False
 
     def __str__(self):
         return f"{self.tier}: " + ("; ".join(self.reasons) if self.reasons else "no rule triggered")
+
+
+def full_autonomy(rules):
+    return str(rules.get("autonomy", FULL)).strip().lower() != TIERED
+
+
+def settle(decision, rules):
+    """Apply the autonomy mode: under full autonomy everything but a hard never runs as auto."""
+    if not full_autonomy(rules) or decision.tier == AUTO or decision.hard:
+        return decision
+    lifted = f"would be {decision.tier} under the tiered rules ({'; '.join(decision.reasons)}); full autonomy is on"
+    return Decision(AUTO, [lifted])
 
 
 def _name(entry):
@@ -87,19 +109,21 @@ def _near_deadline(rules, now=None):
     return now >= deadline - timedelta(hours=24)
 
 
-def classify_lineup(moves, roster, rules):
+def _classify_lineup(moves, roster, rules):
     """Lineup moves are auto. The legality check happens in the write tool."""
     return Decision(AUTO, ["lineup changes are always auto"])
 
 
-def classify_add_drop(adds, drops, roster, rules):
+def _classify_add_drop(adds, drops, roster, rules):
     reasons = []
     tier = AUTO
+    # ESPN's own refusal first: it is the one never that full autonomy keeps.
+    for e in drops:
+        if _undroppable(e):
+            return Decision(NEVER, [f"{_name(e)} is on ESPN's undroppable list"], hard=True)
     for e in drops:
         if _is_core(e, rules):
             return Decision(NEVER, [f"{_name(e)} is on the core list"])
-        if _undroppable(e):
-            return Decision(NEVER, [f"{_name(e)} is on ESPN's undroppable list"])
     after = _composition_after(roster, adds, drops)
     if after.get("QB", 0) > rules.get("max_qb", 2):
         return Decision(NEVER, ["that would carry a third QB"])
@@ -125,7 +149,7 @@ def classify_add_drop(adds, drops, roster, rules):
     return Decision(tier, reasons)
 
 
-def classify_trade_propose(gives, gets, roster, rules, now=None):
+def _classify_trade_propose(gives, gets, roster, rules, now=None):
     if _near_deadline(rules, now):
         return Decision(NEVER, ["within 24 hours of the trade deadline"])
     for e in gives:
@@ -139,7 +163,7 @@ def classify_trade_propose(gives, gets, roster, rules, now=None):
     return Decision(ASK, ["trade proposals always need approval"])
 
 
-def classify_trade_respond(accept, gives, gets, roster, rules, now=None):
+def _classify_trade_respond(accept, gives, gets, roster, rules, now=None):
     if _near_deadline(rules, now):
         return Decision(NEVER, ["within 24 hours of the trade deadline"])
     if not accept:
@@ -150,11 +174,38 @@ def classify_trade_respond(accept, gives, gets, roster, rules, now=None):
     return Decision(ASK, ["accepting a trade always needs approval"])
 
 
-def classify_withdraw(offer_id, agent_proposed_ids, rules, now=None):
+def _classify_withdraw(offer_id, agent_proposed_ids, rules, now=None):
     if str(offer_id) not in {str(i) for i in agent_proposed_ids}:
-        return Decision(NEVER, ["that proposal was not sent by the agent"])
+        return Decision(NEVER, ["that proposal was not sent by the agent"], hard=True)
     return Decision(AUTO, ["withdrawing the agent's own proposal"])
 
 
-def classify_cancel_waiver(rules):
+def _classify_cancel_waiver(rules):
     return Decision(AUTO, ["cancelling a queued claim is auto"])
+
+
+# ------------------------------------------------------------ public entry points
+
+
+def classify_lineup(moves, roster, rules):
+    return settle(_classify_lineup(moves, roster, rules), rules)
+
+
+def classify_add_drop(adds, drops, roster, rules):
+    return settle(_classify_add_drop(adds, drops, roster, rules), rules)
+
+
+def classify_trade_propose(gives, gets, roster, rules, now=None):
+    return settle(_classify_trade_propose(gives, gets, roster, rules, now), rules)
+
+
+def classify_trade_respond(accept, gives, gets, roster, rules, now=None):
+    return settle(_classify_trade_respond(accept, gives, gets, roster, rules, now), rules)
+
+
+def classify_withdraw(offer_id, agent_proposed_ids, rules, now=None):
+    return settle(_classify_withdraw(offer_id, agent_proposed_ids, rules, now), rules)
+
+
+def classify_cancel_waiver(rules):
+    return settle(_classify_cancel_waiver(rules), rules)

@@ -5,7 +5,8 @@ preview_* builds the exact ESPN payload, checks legality against a fresh
 roster read, classifies the move with agent.policy, and returns a one-time
 token. execute_* refuses anything but a live token, re-reads the roster,
 re-validates, and then either posts (auto), queues an ask for Ethan (ask), or
-refuses (never). Every execution is written to the audit log.
+refuses (never). Under full autonomy (the default) nearly everything is auto;
+see agent.policy. Every execution is written to the audit log.
 """
 import json
 import uuid
@@ -279,7 +280,8 @@ def build(ctx, run):
         preview, problem = take(args.get("token"))
         if problem:
             return problem
-        if run.adds_executed >= ctx.rules.get("max_adds_per_run", 3) and preview.extra.get("add_id") is not None:
+        if (not policy.full_autonomy(ctx.rules) and preview.extra.get("add_id") is not None
+                and run.adds_executed >= ctx.rules.get("max_adds_per_run", 3)):
             return err(f"this run already executed {run.adds_executed} adds; the cap is {ctx.rules.get('max_adds_per_run', 3)}")
         fresh, why = build_add_drop_preview(preview.extra["add_id"], preview.extra["drop_ids"], preview.extra["waiver"])
         if why:
@@ -328,7 +330,7 @@ def build(ctx, run):
         open_ids = store.agent_proposed_trade_ids()
         pending = [t for t in ctx.pending_transactions() if t["type"] == "TRADE_PROPOSAL" and t["status"] == "PENDING"
                    and t["team_id"] == cfg.team_id]
-        if len(pending) >= ctx.rules.get("max_open_proposals", 3):
+        if not policy.full_autonomy(ctx.rules) and len(pending) >= ctx.rules.get("max_open_proposals", 3):
             return err(f"already {len(pending)} open proposals; the cap is {ctx.rules.get('max_open_proposals', 3)}")
         payload = writes.trade_propose_payload(cfg.team_id, cfg.swid, ctx.scoring_period, other,
                                                [e.player_id for e in gives], [e.player_id for e in gets])
@@ -339,7 +341,8 @@ def build(ctx, run):
         previews[preview.token] = preview
         return text(preview.to_text())
 
-    @tool("execute_trade", "Send a previewed trade proposal by token (queues for approval). reason: the case for it.",
+    @tool("execute_trade", "Send a previewed trade proposal by token. The preview's permission line says whether it "
+          "sends now or queues for approval. reason: the case for it.",
           {"token": str, "reason": str})
     async def execute_trade(args):
         preview, problem = take(args.get("token"))
@@ -371,7 +374,8 @@ def build(ctx, run):
         previews[preview.token] = preview
         return text(preview.to_text())
 
-    @tool("execute_trade_response", "Execute a previewed accept (queues for approval) or decline (auto) by token.",
+    @tool("execute_trade_response", "Execute a previewed accept or decline by token. The preview's permission line "
+          "says whether it executes now or queues for approval.",
           {"token": str, "reason": str})
     async def execute_trade_response(args):
         preview, problem = take(args.get("token"))

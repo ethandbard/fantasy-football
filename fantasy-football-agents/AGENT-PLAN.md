@@ -372,3 +372,29 @@ are left out, and nothing about pending asks or plans is shown.
    `/agent status` should answer in Discord.
 5. `/agent lineup` is the cheapest live test; `/ask` from a friend's account
    after `/claim-team` tests the analyst.
+
+## 12. Full autonomy and the data analyst (2026-10-01)
+
+**Autonomy.** Ethan found the tiers arbitrary in practice and asked for the
+agents to act on their own judgment. `rules.json` now has an `autonomy` key,
+`"full"` by default: `agent.policy.settle` turns every ask and every
+rule-based never into auto, and the write tools skip the per-run add cap and
+the open-proposal cap. Three things stay refused because they are not
+judgment calls: dropping a player ESPN calls undroppable (ESPN refuses it
+anyway), retrying a write ESPN rejected that day, and withdrawing a proposal
+Ethan sent himself. `"autonomy": "tiered"` restores section 3's tiers with no
+redeploy. RULES.md now presents the old limits as advice.
+
+**Data analyst.** A new Tuesday 6:50 AM job, `analytics`, runs before
+research. It models from public usage data rather than consensus: nflverse
+weekly stats and snap counts, last season as a prior, and Vegas implied team
+totals. It fits expected points from opportunity, forecasts every rostered
+and free-agent player with a 10-90% range and a rest-of-season rate, and
+computes value over replacement, trade and sell candidates, the matchup win
+probability, and where it disagrees with ESPN. The model writes the
+narrative and the job renders a Quarto PDF (Typst, no LaTeX). The PDF posts
+to `#team-agent` under the brief. A summary goes into the week's research
+file between markers, which `write_research` preserves, and `read_analytics`
+gives research, plan, and trade review the numbers. No web access, by
+design. Code: `agent/analytics/`, `agent/tools/analytics.py`,
+`agent/prompts/analytics.md`.

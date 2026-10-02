@@ -18,7 +18,7 @@ Do:
    minutes). The pre-game check reads this from the state file, so update it
    with write_state (read_state first and preserve the other keys).
 4. If the best replacement is a free agent rather than a bench player, add
-   him now (preview_add_drop, execute_add_drop) within the tiers.
+   him now (preview_add_drop, execute_add_drop).
 5. append_season_log with the designations and any moves.
 
 Brief: designations for my players, lineup changes, contingencies for

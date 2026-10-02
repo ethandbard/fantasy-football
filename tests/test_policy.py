@@ -1,5 +1,8 @@
 """
 The permission tiers, one case per rule in fantasy-football-agents/RULES.md.
+
+Most cases pin autonomy to "tiered" so each tier is checked as written; the
+full-autonomy cases at the end check what that mode lifts and what it keeps.
 """
 from datetime import datetime, timezone
 
@@ -7,7 +10,7 @@ from agent import policy, rules as rules_mod
 
 
 def _rules(**over):
-    r = dict(rules_mod.DEFAULTS)
+    r = dict(rules_mod.DEFAULTS, autonomy="tiered")
     r.update(over)
     r["core_players_lower"] = {n.lower() for n in r["core_players"]}
     return r
@@ -122,3 +125,48 @@ def test_a_starter_who_cannot_play_counts_as_bench():
 
 def test_ir_tags_no_longer_include_doubtful():
     assert "DOUBTFUL" not in rules_mod.DEFAULTS["ir_tags"]
+
+
+# ------------------------------------------------------------ full autonomy
+
+
+def _full():
+    return _rules(autonomy="full")
+
+
+def test_full_autonomy_is_the_default():
+    assert rules_mod.DEFAULTS["autonomy"] == "full"
+    assert policy.full_autonomy(dict(rules_mod.DEFAULTS))
+    assert not policy.full_autonomy(_rules())
+
+
+def test_full_autonomy_lifts_asks_and_rule_based_nevers():
+    late = datetime(2026, 12, 2, 12, 0, tzinfo=timezone.utc)
+    cases = [
+        policy.classify_add_drop([_p(99, "Jalen Coker", "WR")], [_p(6, "Harold Fannin Jr.", "TE", 6)], ROSTER, _full()),
+        policy.classify_add_drop([], [_p(2, "Jahmyr Gibbs", "RB", 2)], ROSTER, _full()),
+        policy.classify_add_drop([_p(99, "Josh Allen", "QB")], [_p(15, "Caleb Douglas", "WR")], ROSTER, _full()),
+        policy.classify_add_drop([_p(99, "Jalen Coker", "WR")], [_p(10, "Cameron Dicker", "K", 17)], ROSTER, _full()),
+        policy.classify_trade_propose([_p(2, "Jahmyr Gibbs", "RB", 2)], [_p(50, "Breece Hall", "RB")], ROSTER, _full()),
+        policy.classify_trade_propose([_p(13, "Brian Thomas Jr.", "WR")], [_p(50, "Breece Hall", "RB")], ROSTER,
+                                      _full(), now=late),
+        policy.classify_trade_respond(True, [_p(3, "Bucky Irving", "RB", 2)], [], ROSTER, _full()),
+    ]
+    for d in cases:
+        assert d.tier == policy.AUTO, str(d)
+        assert "full autonomy" in str(d)
+
+
+def test_full_autonomy_keeps_espn_refusals_and_the_owners_proposals():
+    d = policy.classify_add_drop([_p(99, "Jalen Coker", "WR")],
+                                 [dict(_p(2, "Jahmyr Gibbs", "RB", 2), droppable=False)], ROSTER, _full())
+    assert d.tier == policy.NEVER and "undroppable" in str(d)
+    assert policy.classify_withdraw("xyz", {"abc"}, _full()).tier == policy.NEVER
+    assert policy.classify_withdraw("abc", {"abc"}, _full()).tier == policy.AUTO
+
+
+def test_rules_json_can_switch_back_to_tiered(tmp_path):
+    (tmp_path / "rules.json").write_text('{"autonomy": "tiered"}', encoding="utf-8")
+    r = rules_mod.load(tmp_path)
+    d = policy.classify_trade_propose([_p(13, "Brian Thomas Jr.", "WR")], [_p(50, "Breece Hall", "RB")], ROSTER, r)
+    assert d.tier == policy.ASK
