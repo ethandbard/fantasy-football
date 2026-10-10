@@ -138,14 +138,14 @@ you edit it.
 | `AGENT_ESPN_S2` / `AGENT_SWID` | If the bot's cookies are not the team owner's | falls back to `ESPN_S2` / `SWID` | Cookies from the account that owns `TEAM_ID`. Any league member's cookies can read the league, but ESPN refuses writes from anyone but the owner. |
 | `AGENT_DRY_RUN` | No | `False` | `True` previews every write and posts nothing to ESPN. |
 | `AGENT_SCHEDULE` | No | `True` | `False` disables the fixed weekly jobs (wakeups and on-demand runs still work). |
-| `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `opus` / `sonnet` | Models for the Tuesday and trade jobs, and for everything else. |
+| `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `claude-opus-5-5` / `claude-sonnet-5-5` | Models for the Tuesday and trade jobs, and for everything else. |
 | `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. `0` means no limit. |
 | `AGENT_ASK_SHARE_RECORD` | No | `True` | Every `/ask` can read the managing agent's briefs, research, state, season log, and activity. `False` limits that to the owner. |
 | `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
 | `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
 | `ANTHROPIC_API_KEY` | Dashboard chat | None | Pays for the dashboard's data chat by the token. Without it the Chat page says it is not configured. |
 | `CHAT_PASSPHRASE` | Dashboard chat | None | Shared league passphrase that opens the Chat page. Unset disables the chat. |
-| `CHAT_MODEL` | No | `claude-haiku-4-5-20251001` | Model behind the data chat. |
+| `CHAT_MODEL` | No | `claude-haiku-5-5` | Model behind the data chat. |
 | `CHAT_DAILY_LIMIT` / `CHAT_LEAGUE_DAILY_LIMIT` | No | `20` / `200` | Chat questions per browser and per league per day. |
 
 Each running copy of the container is one league. Scheduled posts go to every

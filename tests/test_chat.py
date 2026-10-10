@@ -312,7 +312,7 @@ def test_tool_output_is_capped(monkeypatch):
 
 def test_make_client_registers_every_tool(fresh_db, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
-    monkeypatch.setenv("CHAT_MODEL", "claude-haiku-4-5-20251001")
+    monkeypatch.setenv("CHAT_MODEL", "claude-haiku-5-5")
     client = chat.make_client(today="Monday, September 1, 2025")
     names = {t.name for t in client.get_tools()}
     assert names == {t.__name__ for t in chat.TOOLS}

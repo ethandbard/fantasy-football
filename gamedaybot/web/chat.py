@@ -12,7 +12,7 @@ time, so a container can be started before the secrets are mounted and the
 tests can flip settings with monkeypatch.
 
     ANTHROPIC_API_KEY       required for the chat to work
-    CHAT_MODEL              default claude-haiku-4-5-20251001
+    CHAT_MODEL              default claude-haiku-5-5
     CHAT_PASSPHRASE         the league's shared passphrase; unset disables chat
     CHAT_DAILY_LIMIT        questions per viewer per UTC day (default 20)
     CHAT_LEAGUE_DAILY_LIMIT questions for everyone per UTC day (default 200)
@@ -29,7 +29,7 @@ import pandas as pd
 import gamedaybot.storage.db as db
 import gamedaybot.web.stats as stats
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = "claude-haiku-5-5"
 DEFAULT_DAILY_LIMIT = 20
 DEFAULT_LEAGUE_DAILY_LIMIT = 200
 
