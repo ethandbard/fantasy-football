@@ -21,6 +21,7 @@ from agent.tools.common import err, text
 
 NAMES = [
     "preview_lineup", "execute_lineup", "preview_add_drop", "execute_add_drop", "cancel_waiver",
+    "preview_activate", "execute_activate",
     "preview_trade", "execute_trade", "preview_trade_response", "execute_trade_response", "withdraw_trade",
 ]
 
@@ -62,6 +63,116 @@ def slot_id_from(value):
     if s in SLOT_ALIASES:
         return SLOT_ALIASES[s]
     return roster.SLOT_ID_BY_NAME.get(s)
+
+
+def plan_activate(entries, player_id, to_slot_id, drop_ids, slot_counts, extra_moves=()):
+    """Plan moving a player out of the IR slot.
+
+    Pure function (no I/O) so it can be unit tested. `entries` are
+    roster.RosterEntry objects; `slot_counts` maps starting slot id to count;
+    `extra_moves` is a list of (player_id, to_slot_id) applied alongside, e.g.
+    benching the starter who currently holds the target slot.
+
+    Returns (plan, problems). plan is a dict with the player entry, target
+    slot, the drops needed (empty when the roster has room), the extra moves,
+    and a move description. problems is a list of plain-language blockers;
+    empty means the plan is good.
+
+    Why this exists: ESPN rejects a lone IR->active move when the roster is
+    full (TRAN_ROSTER_LIMIT_EXCEEDED_ONE), and a healthy player sitting in IR
+    can also block other transactions. The safe sequence is: drop first (only
+    when full), then move — which is what the activate tools execute.
+    """
+    by_id = {}
+    for e in entries:
+        try:
+            by_id[int(e.player_id)] = e
+        except (TypeError, ValueError):
+            continue
+    try:
+        player_id = int(player_id)
+    except (TypeError, ValueError):
+        return None, ["unknown player"]
+    entry = by_id.get(player_id)
+    if entry is None:
+        return None, [f"player {player_id} is not on my roster"]
+    if int(entry.slot_id) != roster.IR_SLOT:
+        return None, [f"{entry.name} is not in the IR slot (currently {entry.slot}); "
+                       "use preview_lineup for normal lineup moves"]
+    if to_slot_id is None:
+        return None, ["unknown target slot"]
+    to_slot_id = int(to_slot_id)
+    if to_slot_id == roster.IR_SLOT:
+        return None, ["the target slot cannot be IR"]
+    if to_slot_id not in [int(s) for s in (entry.eligible_slot_ids or [])]:
+        return None, [f"{entry.name} is not eligible for {roster.slot_name(to_slot_id)}"]
+
+    drop_ids = [int(d) for d in (drop_ids or [])]
+    if player_id in drop_ids:
+        return None, ["cannot drop the player being activated"]
+    need_drop = roster.open_spots(entries) <= 0
+    if need_drop and not drop_ids:
+        return None, ["roster is full; pass drop_player_ids with a bench player to drop first"]
+    drops = []
+    for did in drop_ids:
+        d = by_id.get(did)
+        if d is None:
+            return None, [f"player {did} is not on my roster"]
+        if d.roster_locked:
+            return None, [f"{d.name} is roster-locked right now"]
+        drops.append(d)
+
+    moves = []
+    for m_pid, m_slot in (extra_moves or ()):
+        try:
+            m_pid, m_slot = int(m_pid), int(m_slot)
+        except (TypeError, ValueError):
+            return None, [f"bad extra move {m_pid}->{m_slot}"]
+        if m_pid == player_id or m_pid in drop_ids:
+            return None, ["an extra move cannot touch the activated player or a dropped player"]
+        m_entry = by_id.get(m_pid)
+        if m_entry is None:
+            return None, [f"player {m_pid} is not on my roster"]
+        if m_slot not in [int(s) for s in (m_entry.eligible_slot_ids or [])]:
+            return None, [f"{m_entry.name} is not eligible for {roster.slot_name(m_slot)}"]
+        if int(m_entry.slot_id) == m_slot:
+            continue
+        moves.append((m_entry, m_slot))
+
+    # The move must not introduce NEW lineup problems. Problems that already
+    # exist (like this player sitting in IR while healthy) don't block it.
+    drop_set = {int(d.player_id) for d in drops}
+    simulated = []
+    for e in entries:
+        if int(e.player_id) in drop_set:
+            continue
+        if int(e.player_id) == player_id:
+            moved = dict(e.__dict__)
+            moved["slot_id"] = to_slot_id
+            moved["slot"] = roster.slot_name(to_slot_id)
+            simulated.append(roster.RosterEntry(**moved))
+            continue
+        replaced = False
+        for m_entry, m_slot in moves:
+            if int(e.player_id) == int(m_entry.player_id):
+                moved = dict(e.__dict__)
+                moved["slot_id"] = m_slot
+                moved["slot"] = roster.slot_name(m_slot)
+                simulated.append(roster.RosterEntry(**moved))
+                replaced = True
+                break
+        if not replaced:
+            simulated.append(e)
+    before = set(roster.lineup_problems(entries, slot_counts or {}))
+    new_problems = [p for p in roster.lineup_problems(simulated, slot_counts or {}) if p not in before]
+    if new_problems:
+        return None, ["resulting lineup would be illegal: " + "; ".join(new_problems)]
+    move_desc = f"{entry.name} {entry.slot}->{roster.slot_name(to_slot_id)}"
+    for m_entry, m_slot in moves:
+        move_desc += f", {m_entry.name} {m_entry.slot}->{roster.slot_name(m_slot)}"
+    return {"entry": entry, "to_slot_id": to_slot_id,
+            "drop_ids": [int(d.player_id) for d in drops], "drop_entries": drops,
+            "need_drop": need_drop, "moves": moves, "move_desc": move_desc}, []
 
 
 class Preview:
@@ -205,7 +316,9 @@ def build(ctx, run):
     @tool("preview_lineup",
           "Preview lineup moves. moves: list of {player_id, to_slot} where to_slot is a slot name "
           "(QB, RB, WR, TE, FLEX, D/ST, K, BE, IR) or id. Include every player whose slot changes, "
-          "including the one going to the bench. Returns a token for execute_lineup.",
+          "including the one going to the bench. Returns a token for execute_lineup. "
+          "To bring a healthy player OUT of IR when the roster is full, use preview_activate "
+          "instead — ESPN rejects that as a lone lineup move.",
           {"moves": list})
     async def preview_lineup(args):
         preview, problem = build_lineup_preview(args.get("moves") or [])
@@ -305,6 +418,129 @@ def build(ctx, run):
         preview = Preview("cancel_waiver", payload, f"cancel waiver claim {args['transaction_id']}", policy.classify_cancel_waiver(ctx.rules))
         return finish(preview, args.get("reason"))
 
+    # ---------------------------------------------------------- IR activation
+
+    def build_activate_preview(player_id, to_slot, drop_ids, extra_moves):
+        """Validate an IR activation against a fresh roster.
+
+        Shared by preview_activate and by execute_activate's recheck, mirroring
+        how execute_lineup re-validates. Returns (built, problem).
+        """
+        entries = ctx.my_roster(refresh=True)
+        plan, problems = plan_activate(
+            entries, player_id, slot_id_from(to_slot),
+            [int(x) for x in (drop_ids or [])], ctx.slot_counts(),
+            [(int(m.get("player_id")), slot_id_from(m.get("to_slot")))
+             for m in (extra_moves or [])])
+        if problems:
+            return None, "; ".join(problems)
+        drop_payload, drop_desc, decision = None, "", None
+        if plan["need_drop"]:
+            drop_payload = writes.add_drop_payload(cfg.team_id, cfg.swid, ctx.scoring_period,
+                                                   None, plan["drop_ids"], waiver=False)
+            drop_desc = "drop " + ", ".join(e.name for e in plan["drop_entries"])
+            learned = store.undroppable_ids()
+            drop_dicts = [dict(e.to_dict(), droppable=e.droppable and e.player_id not in learned)
+                          for e in plan["drop_entries"]]
+            decision = policy.settle(policy.classify_add_drop([], drop_dicts,
+                                      [e.to_dict() for e in entries], ctx.rules), ctx.rules)
+            if decision.tier != policy.AUTO:
+                return None, (f"the drop step is {decision.tier} ({decision}); this tool only runs "
+                               "automatic moves — use preview_add_drop to queue it for approval instead")
+        move_items = [{"player_id": int(plan["entry"].player_id),
+                       "from_slot": roster.IR_SLOT, "to_slot": plan["to_slot_id"]}]
+        for m_entry, m_slot in plan["moves"]:
+            move_items.append({"player_id": int(m_entry.player_id),
+                               "from_slot": int(m_entry.slot_id), "to_slot": m_slot})
+        move_payload = writes.lineup_payload(cfg.team_id, cfg.swid, ctx.scoring_period, move_items)
+        desc = plan["move_desc"]
+        if plan["need_drop"]:
+            desc += f" (drops {', '.join(e.name for e in plan['drop_entries'])} first; roster is full)"
+        if decision is None:
+            decision = policy.Decision(policy.AUTO, ["lineup changes are always auto"])
+        return {"plan": plan, "drop_payload": drop_payload, "drop_desc": drop_desc,
+                "move_payload": move_payload, "description": desc, "decision": decision,
+                "player_id": int(plan["entry"].player_id), "to_slot": to_slot,
+                "drop_ids": plan["drop_ids"],
+                "extra_moves": [{"player_id": int(m[0].player_id), "to_slot": m[1]}
+                                for m in plan["moves"]]}, None
+
+    @tool("preview_activate",
+          "Move a player OUT of the IR slot to an active slot (use when they are healthy again). "
+          "When the roster is full, pass drop_player_ids: this drops them first, then moves the "
+          "player, under one token. extra_moves optionally benches whoever holds the target slot, "
+          "as {player_id, to_slot} pairs. Use this instead of preview_lineup for IR activations on "
+          "a full roster — ESPN rejects a lone IR->active move.",
+          {"player_id": int, "to_slot": str, "drop_player_ids": list, "extra_moves": list})
+    async def preview_activate(args):
+        if args.get("player_id") is None:
+            return err("give the player_id of the player in the IR slot")
+        built, problem = build_activate_preview(args.get("player_id"), args.get("to_slot"),
+                                                args.get("drop_player_ids"), args.get("extra_moves"))
+        if problem:
+            return err(problem)
+        preview = Preview("activate", built["move_payload"], built["description"], built["decision"],
+                          {"player_id": built["player_id"], "to_slot": built["to_slot"],
+                           "drop_ids": built["drop_ids"], "extra_moves": built["extra_moves"],
+                           "drop_payload": built["drop_payload"], "drop_desc": built["drop_desc"]})
+        previews[preview.token] = preview
+        lines = [f"PREVIEW activate: {built['description']}",
+                 f"Permission: {built['decision']}",
+                 f"Token: {preview.token} (expires in 30 minutes)"]
+        if built["drop_payload"] is not None:
+            dropped = {k: v for k, v in built["drop_payload"].items() if k != "memberId"}
+            lines.append("Step 1 posts first: " + json.dumps(dropped))
+        moved = {k: v for k, v in built["move_payload"].items() if k != "memberId"}
+        lines.append("Step 2 posts next: " + json.dumps(moved))
+        return text("\n".join(lines))
+
+    @tool("execute_activate", "Execute a previewed IR activation by token. reason: one line for the log.",
+          {"token": str, "reason": str})
+    async def execute_activate(args):
+        preview, problem = take(args.get("token"))
+        if problem:
+            return problem
+        reason = args.get("reason")
+        extra = preview.extra
+        # Re-validate against a fresh roster, like execute_lineup does.
+        built, problem = build_activate_preview(extra["player_id"], extra["to_slot"],
+                                                extra["drop_ids"], extra["extra_moves"])
+        if problem:
+            return err(f"roster changed since preview: {problem}")
+        drop_desc = built["drop_desc"]
+        if built["plan"]["need_drop"]:
+            block = blocked_today("drop", built["drop_payload"])
+            if block:
+                return err(block)
+            result = ctx.writer.post(built["drop_payload"])
+            store.log_transaction("drop", built["drop_payload"], result,
+                                  description=drop_desc, reason=reason, run_id=run.run_id)
+            run.transactions.append({"kind": "drop", "description": drop_desc,
+                                     "result": result.summary()})
+            ctx.rosters(refresh=True)
+            if not result.ok:
+                return err(f"ESPN rejected {drop_desc}: {result.summary()}. "
+                           "Activation aborted; the IR player stays put.")
+            # Rebuild the move against the post-drop roster.
+            rebuilt, problem = build_activate_preview(extra["player_id"], extra["to_slot"], [], [])
+            if problem:
+                return err(f"Dropped {drop_desc}, but the activation move now fails: {problem}. "
+                           "The roster is still legal; finish the move by hand with preview_lineup.")
+            built = rebuilt
+        # No blocked_today check on the move: an earlier same-day rejection of this exact move
+        # failed on a full roster, and the drop above just changed that precondition. The fresh
+        # legality check above is the guard now.
+        result = ctx.writer.post(built["move_payload"])
+        store.log_transaction("lineup", built["move_payload"], result,
+                              description=built["description"], reason=reason, run_id=run.run_id)
+        run.transactions.append({"kind": "lineup", "description": built["description"],
+                                 "result": result.summary()})
+        ctx.rosters(refresh=True)
+        if not result.ok:
+            return err(f"ESPN rejected {built['description']}: {result.summary()}. "
+                       "Do not retry that move today.")
+        return text(f"EXECUTED {built['description']}. {result.summary()}")
+
     # ------------------------------------------------------------- trades
 
     def resolve_players(team_id, ids):
@@ -394,4 +630,5 @@ def build(ctx, run):
         return finish(preview, args.get("reason"))
 
     return [preview_lineup, execute_lineup, preview_add_drop, execute_add_drop, cancel_waiver,
+            preview_activate, execute_activate,
             preview_trade, execute_trade, preview_trade_response, execute_trade_response, withdraw_trade]
