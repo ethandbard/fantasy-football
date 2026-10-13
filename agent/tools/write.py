@@ -106,6 +106,8 @@ def plan_activate(entries, player_id, to_slot_id, drop_ids, slot_counts, extra_m
         return None, ["the target slot cannot be IR"]
     if to_slot_id not in [int(s) for s in (entry.eligible_slot_ids or [])]:
         return None, [f"{entry.name} is not eligible for {roster.slot_name(to_slot_id)}"]
+    if entry.lineup_locked:
+        return None, [f"{entry.name} is locked (game has started)"]
 
     drop_ids = [int(d) for d in (drop_ids or [])]
     if player_id in drop_ids:
@@ -137,6 +139,8 @@ def plan_activate(entries, player_id, to_slot_id, drop_ids, slot_counts, extra_m
             return None, [f"{m_entry.name} is not eligible for {roster.slot_name(m_slot)}"]
         if int(m_entry.slot_id) == m_slot:
             continue
+        if m_entry.lineup_locked:
+            return None, [f"{m_entry.name} is locked (game has started)"]
         moves.append((m_entry, m_slot))
 
     # The move must not introduce NEW lineup problems. Problems that already
@@ -521,8 +525,11 @@ def build(ctx, run):
             if not result.ok:
                 return err(f"ESPN rejected {drop_desc}: {result.summary()}. "
                            "Activation aborted; the IR player stays put.")
-            # Rebuild the move against the post-drop roster.
-            rebuilt, problem = build_activate_preview(extra["player_id"], extra["to_slot"], [], [])
+            # Rebuild the move against the post-drop roster. The extra moves must ride along:
+            # without them the displaced starter still holds the target slot and the move
+            # reads as illegal, after the drop has already gone through.
+            rebuilt, problem = build_activate_preview(extra["player_id"], extra["to_slot"], [],
+                                                      extra["extra_moves"])
             if problem:
                 return err(f"Dropped {drop_desc}, but the activation move now fails: {problem}. "
                            "The roster is still legal; finish the move by hand with preview_lineup.")
