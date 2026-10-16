@@ -28,7 +28,6 @@ class JobSpec:
     max_turns_key: str             # "heavy" or "light"
     search_cap_key: str            # "heavy" or "light"
     prompt_file: str
-    search_cap_extra: int = 0      # searches on top of the key's cap
     effort: str = "medium"
     owner_job: bool = True         # gets RULES.md and private state
     post_brief: bool = True
@@ -56,9 +55,7 @@ JOBS = {
     "designations": JobSpec(
         "designations", "Friday designations", "brief", "light",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
-        # The Friday report check covers every starter's team, not only the
-        # tagged players, so it needs more than the light cap.
-        prompt_file="designations.md", search_cap_extra=4),
+        prompt_file="designations.md"),
     "pregame": JobSpec(
         "pregame", "Pre-game check", "pregame", "light",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
@@ -99,8 +96,7 @@ def get(name):
 
 
 def search_cap(cfg, spec):
-    base = cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap
-    return base + spec.search_cap_extra
+    return cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap
 
 
 def read_prompt(filename):
@@ -163,12 +159,25 @@ def record_note(cfg, params):
     return ""
 
 
+# Appended to every owner job's system prompt. The runner's audit checks the
+# brief carries this section.
+STEPS_SKIPPED = (
+    'End the brief with a section titled "Steps skipped", after the '
+    "disagreements section: each numbered step of the job you did not do, or "
+    "did only in part, and why, one line each. Write \"none\" when you did "
+    "every step. A step whose condition did not apply (no open bench spot, no "
+    "game-time decision) counts as done. The section does not count toward the "
+    "brief's length limit."
+)
+
+
 def system_prompt(spec, cfg, rules_prose):
     persona = read_prompt("persona.md")
     now = datetime.now(roster._eastern())
     body = render(persona, team_id=cfg.team_id, now=now.strftime("%A %B %d, %Y %I:%M %p ET"),
                   writes="enabled" if not cfg.dry_run else "DISABLED (dry run: previews only, nothing posts)")
     if spec.owner_job:
+        body += "\n\n# Steps skipped\n\n" + STEPS_SKIPPED
         body += "\n\n# Rules\n\n" + rules_prose
     return body
 

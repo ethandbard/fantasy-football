@@ -11,8 +11,12 @@ Do:
    preview_add_drop and execute_add_drop if the plan's drop still makes
    sense. Do not chase a lesser player just to make a move.
 3. Re-set the lineup if the roster changed: preview_lineup, execute_lineup.
-4. Note anything for Friday: new injury tags, a role change from the
-   Wednesday reports (one search per flagged player, no more).
+4. Wednesday reports. One search per player with a new or worse injury
+   tag. Then the team-level check for each starter's team, tagged or not,
+   two or three teams per query: a QB who missed practice, a teammate
+   injury that moves targets or carries, a depth chart change. Note what
+   Friday must recheck with write_state (read_state first and keep the
+   other keys), and say which teams you checked.
 5. append_season_log with the waiver outcome and the moves made.
 
 Brief: claims won and lost, adds made, lineup as it stands, what to watch

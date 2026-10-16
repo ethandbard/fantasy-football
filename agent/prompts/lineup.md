@@ -4,8 +4,9 @@ Do:
 
 1. get_my_roster and get_matchup. Identify the best starting nine by
    expected points for this week, with injury tags, byes, and locks
-   respected. Read read_state for week {week} if it exists; the research may
-   hold usage notes projections miss.
+   respected. Read read_state for week {week}; the research may hold usage
+   notes projections miss, and "owner_overrides" holds lineup calls the
+   owner made, which stand unless the condition in their note has happened.
 2. One search each for players with a non-ACTIVE tag. Then one search for
    this week's league-wide injury news, plus a search per two or three of my
    starters' teams it did not cover, for a QB who is Out or Doubtful or a

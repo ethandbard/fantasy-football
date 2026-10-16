@@ -17,7 +17,10 @@ Do, in order:
 2. League state: list_teams, get_standings, get_recent_activity (size 40),
    get_pending_transactions. Note the waiver order and who is chasing what.
 3. My roster: get_my_roster. For each player, a one-line verdict: hold,
-   start, sit, watch, drop candidate. Injury tags get a search each.
+   start, sit, watch, drop candidate. Injury tags get a search each. Then
+   check every starter's team, tagged or not, two or three teams per query:
+   QB health, injuries ahead of or beside my player, depth chart and snap
+   changes. Say which teams you checked.
 4. Free agents: get_free_agents for RB, WR, TE, QB, D/ST, K (size 12 each,
    sort last_week then projected). Identify the real adds: players who would
    start for me or are worth a bench spot, with the drop that makes room.
@@ -29,8 +32,8 @@ Do, in order:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
    where <year>/<month> is the publish date (this month first; if that is a
    404 and the month just turned, last month). If the week {week} page is
-   not up yet, use the newest chart one search finds and say which week it
-   is.
+   not up yet, use the newest chart one search finds, say which week it
+   is, and add a "watch" entry so the plan reprices with this week's chart.
 6. Streaming: the best D/ST and K available for this week's matchups.
 
 Then write two files and one brief:

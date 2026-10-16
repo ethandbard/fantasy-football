@@ -12,7 +12,12 @@ Do:
    read_state for week {week} if it exists, and get_agent_activity for
    earlier offers involving this team and what became of them. Do not
    re-send a proposal the other side already declined this week.
-2. Value both sides two ways. First, a public rest-of-season trade value
+2. Research every player coming to me, and every player in a counter you
+   build, before you value him: one search each for his current role,
+   health, and his team's QB situation (two players in one query when they
+   share a team). Do this even when the player is tagged ACTIVE. A counter
+   is not sent for a player you have not researched.
+3. Value both sides two ways. First, a public rest-of-season trade value
    chart. Fetch this week's FantasyPros chart directly before searching:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
    where <year>/<month> is the publish date (this month first; if that is a
@@ -20,11 +25,15 @@ Do:
    does not exist, run one search and use the newest chart it finds. Say in
    the brief which week's chart you used. Second, the lineup effect: which
    of my starters change and by how many projected points per week, over
-   the remaining schedule including byes. Depth matters less in an 8-team league because the free-agent pool
-   is deep; a starter upgrade matters more.
-3. Consider the other manager: what he needs, why he is offering, and
+   the remaining schedule. Depth matters less in an 8-team league because
+   the free-agent pool is deep; a starter upgrade matters more.
+   Byes are required. No tool lists bye weeks, so run one search for this
+   season's NFL bye schedule; it covers every player in the deal. Put every
+   player in the deal in the brief's table with his bye, and name the weeks
+   where the trade leaves me short at a position.
+4. Consider the other manager: what he needs, why he is offering, and
    whether a counter exists that he would take and that is better for me.
-4. A third valuation: read_analytics for the in-house rest-of-season
+5. A third valuation: read_analytics for the in-house rest-of-season
    forecast of every player in the deal, if it has them. Where it and the
    chart disagree, say which you trust. Core players and more than one
    backup QB are judgment calls, not limits; name them if they apply.

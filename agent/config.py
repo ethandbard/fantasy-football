@@ -133,7 +133,7 @@ def from_env():
         ask_daily_limit=_int(os.environ.get("AGENT_ASK_DAILY_LIMIT"), 3),
         ask_league_daily_limit=_int(os.environ.get("AGENT_ASK_LEAGUE_DAILY_LIMIT"), 20),
         heavy_search_cap=_int(os.environ.get("AGENT_HEAVY_SEARCH_CAP"), 40),
-        light_search_cap=_int(os.environ.get("AGENT_LIGHT_SEARCH_CAP"), 8),
+        light_search_cap=_int(os.environ.get("AGENT_LIGHT_SEARCH_CAP"), 16),
         heavy_max_turns=_int(os.environ.get("AGENT_HEAVY_MAX_TURNS"), 200),
         light_max_turns=_int(os.environ.get("AGENT_LIGHT_MAX_TURNS"), 60),
         ask_expiry_hours=_int(os.environ.get("AGENT_ASK_EXPIRY_HOURS"), 24),

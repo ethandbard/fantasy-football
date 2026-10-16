@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import traceback
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -16,7 +17,7 @@ from typing import Any, Dict, List
 from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, HookMatcher, ResultMessage,
                               TextBlock, query)
 
-from agent import discord_out, jobs, rules as rules_mod, store, tools
+from agent import audit, discord_out, jobs, rules as rules_mod, store, tools
 from agent.espn_ctx import EspnContext
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class RunState:
     adds_executed: int = 0
     asks: List[str] = field(default_factory=list)
     transactions: List[dict] = field(default_factory=list)
+    # Tool calls by short name, denied ones included, for the post-run audit.
+    calls: Counter = field(default_factory=Counter)
     # Files to post to Discord after the brief, such as the analyst's PDF.
     attachments: List[str] = field(default_factory=list)
     log_path: Any = None
@@ -54,6 +57,7 @@ def _hooks(run):
     async def pre_tool(hook_input, tool_use_id, context):
         name = hook_input.get("tool_name", "")
         args = hook_input.get("tool_input", {})
+        run.calls[audit.short_name(name)] += 1
         if name in ("WebSearch", "WebFetch"):
             run.searches += 1
             if run.searches > run.search_cap:
@@ -142,11 +146,16 @@ async def run_job(cfg, name, params=None, trigger="schedule", run_id=None):
                 discord_out.post(cfg, title, brief or "(the run produced no brief)", kind=spec.kind)
                 if run.attachments:
                     discord_out.post_files(cfg, run.attachments, f"**{title}**: full report attached.")
+            problems = audit.check(name, run.calls, brief, owner_job=spec.owner_job)
+            if problems:
+                run.log("audit", problems=problems)
+                if spec.post_brief and not params.get("silent"):
+                    discord_out.line(cfg, audit.warning(spec.title, run_id, problems), kind="alert")
             store.finish_run(run_id, "done", result=brief, model=_model_name(cfg, spec),
                              num_turns=result.num_turns if result else None, searches=run.searches, **usage)
             outcome.update(status="done", brief=brief, usage=usage,
                            num_turns=result.num_turns if result else None, asks=run.asks,
-                           transactions=run.transactions)
+                           transactions=run.transactions, audit=problems)
             run.log("done", **usage)
         except Exception as e:
             err = f"{type(e).__name__}: {e}"

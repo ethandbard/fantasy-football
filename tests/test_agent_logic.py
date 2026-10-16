@@ -203,17 +203,78 @@ def test_claude_auth_falls_back_to_whichever_credential_exists(monkeypatch):
     assert os.environ["ANTHROPIC_API_KEY"] == "key"
 
 
-def test_designations_checks_every_starters_team_within_its_cap():
+def test_designations_checks_every_starters_team():
     from types import SimpleNamespace
-    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=8)
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=16)
     ctx = SimpleNamespace(cfg=cfg, week=6, scoring_period=6, team_name=lambda _id: "Mine")
-    spec = jobs.get("designations")
-    # The team check costs more than the tagged-player searches the light cap was sized for.
-    assert jobs.search_cap(cfg, spec) == 12
-    assert jobs.search_cap(cfg, jobs.get("pregame")) == 8
-    out = jobs.user_prompt(spec, ctx, {})
-    assert "You have 12 web searches" in out
+    out = jobs.user_prompt(jobs.get("designations"), ctx, {})
+    assert "You have 16 web searches" in out
     assert "Team check, mandatory" in out and "required for every starter" in out
     assert "starting QB's status" in out
     assert "starter ahead of him" in out
     assert "{" not in out
+
+
+def test_light_search_cap_fits_a_team_by_team_check(monkeypatch):
+    # About eight starter teams plus the tagged players did not fit in the old cap of 8.
+    from agent import config
+    monkeypatch.delenv("AGENT_LIGHT_SEARCH_CAP", raising=False)
+    monkeypatch.setenv("LEAGUE_ID", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+    cfg = config.from_env()
+    assert cfg.light_search_cap == 16
+
+
+def test_persona_no_longer_skips_healthy_starters():
+    persona = jobs.read_prompt("persona.md")
+    assert "Do not search about healthy players" not in persona
+    assert "ESPN injury tags lag the news" in persona
+    assert "owner_overrides" in persona
+
+
+def test_pregame_reads_state_and_checks_inactives_for_every_team():
+    out = " ".join(jobs.read_prompt("pregame.md").split())
+    assert "read_state" in out.split(" 2. ")[0]
+    assert "required even when every player is ACTIVE" in out
+    assert "owner override" in out
+
+
+def test_owner_jobs_must_report_skipped_steps():
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(team_id=11, dry_run=False)
+    owner = jobs.system_prompt(jobs.get("designations"), cfg, "rules")
+    assert "# Steps skipped" in owner and "# Rules" in owner
+    assert 'Write "none"' in owner
+    league = jobs.system_prompt(jobs.get("ask"), cfg, "rules")
+    assert "Steps skipped" not in league
+
+
+def test_audit_flags_the_week_6_designations_run():
+    from agent import audit
+    # What run 9bef151875a3 did: one search, about Allgeier, and no team check.
+    calls = {"get_run_context": 1, "get_my_roster": 1, "preview_lineup": 1, "read_state": 1,
+             "get_free_agents": 1, "execute_lineup": 1, "WebSearch": 1, "append_season_log": 1}
+    problems = audit.check("designations", calls, "Lineup set.\n\nDecisions you might disagree with\n- x")
+    assert problems == ["1 web searches, needs at least 2", 'brief has no "Steps skipped" section']
+
+
+def test_audit_passes_a_complete_run_and_names_missing_calls():
+    from agent import audit
+    calls = {"get_my_roster": 1, "read_state": 1, "WebSearch": 2}
+    assert audit.check("pregame", calls, "No change.\nSteps skipped: none") == []
+    problems = audit.check("pregame", {"get_my_roster": 1}, "No change.\nSteps skipped: none")
+    assert problems == ["never called read_state", "0 web searches, needs at least 1"]
+    # WebFetch counts toward the web minimum.
+    assert audit.check("trade_review", {"get_my_roster": 1, "get_team_roster": 1, "read_analytics": 1,
+                                        "WebSearch": 1, "WebFetch": 1}, "## Steps skipped\nnone") == []
+    # A job outside the table needs only the section; a league-facing job needs nothing.
+    assert audit.check("analytics", {}, "report\nSteps skipped: none") == []
+    assert audit.check("ask", {}, "answer", owner_job=False) == []
+
+
+def test_audit_counts_tools_by_short_name():
+    from agent import audit
+    assert audit.short_name("mcp__espn__get_my_roster") == "get_my_roster"
+    assert audit.short_name("WebSearch") == "WebSearch"
+    line = audit.warning("Pre-game check", "abc123", ["never called read_state"])
+    assert "Pre-game check" in line and "abc123" in line and "never called read_state" in line

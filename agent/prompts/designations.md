@@ -8,9 +8,7 @@ game-time call is handed to the pre-game check with a plan.
 A starter's ACTIVE tag says nothing about his quarterback or the teammates
 around him. A starter can be fully healthy and still lose value because his
 QB was ruled out, or gain it because the back ahead of him was. So the team
-check in step 2 is required for every starter, tagged or not. It is not a
-search about a healthy player and the rule against searching healthy
-starters does not apply to it.
+check in step 2 is required for every starter, tagged or not.
 
 You have {search_cap} web searches (WebFetch counts as one). Spend them in
 the order below and save one for the handcuff check in step 7.
