@@ -28,6 +28,7 @@ class JobSpec:
     max_turns_key: str             # "heavy" or "light"
     search_cap_key: str            # "heavy" or "light"
     prompt_file: str
+    search_cap_extra: int = 0      # searches on top of the key's cap
     effort: str = "medium"
     owner_job: bool = True         # gets RULES.md and private state
     post_brief: bool = True
@@ -55,7 +56,9 @@ JOBS = {
     "designations": JobSpec(
         "designations", "Friday designations", "brief", "light",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
-        prompt_file="designations.md"),
+        # The Friday report check covers every starter's team, not only the
+        # tagged players, so it needs more than the light cap.
+        prompt_file="designations.md", search_cap_extra=4),
     "pregame": JobSpec(
         "pregame", "Pre-game check", "pregame", "light",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
@@ -93,6 +96,11 @@ def get(name):
     if name not in JOBS:
         raise KeyError(f"unknown job {name}; known: {', '.join(JOBS)}")
     return JOBS[name]
+
+
+def search_cap(cfg, spec):
+    base = cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap
+    return base + spec.search_cap_extra
 
 
 def read_prompt(filename):
@@ -176,7 +184,7 @@ def user_prompt(spec, ctx, params):
         "played_week": int((params or {}).get("week") or max(1, ctx.week - 1)),
         "now": now.strftime("%A %B %d, %Y %I:%M %p ET"),
         "team": ctx.team_name(cfg.team_id), "team_id": cfg.team_id, "owner_team_id": cfg.team_id,
-        "search_cap": cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap,
+        "search_cap": search_cap(cfg, spec),
         "owner_note": "",
     }
     values.update({k: v for k, v in (params or {}).items() if isinstance(v, (str, int, float))})

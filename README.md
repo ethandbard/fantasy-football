@@ -141,7 +141,7 @@ you edit it.
 | `AGENT_MODEL_HEAVY` / `AGENT_MODEL_LIGHT` | No | `claude-opus-5-5` / `claude-sonnet-5-5` | Models for the Tuesday and trade jobs, and for everything else. |
 | `AGENT_ASK_DAILY_LIMIT` / `AGENT_ASK_LEAGUE_DAILY_LIMIT` | No | `3` / `20` | `/ask` questions per person and per league per day. `0` means no limit. |
 | `AGENT_ASK_SHARE_RECORD` | No | `True` | Every `/ask` can read the managing agent's briefs, research, state, season log, and activity. `False` limits that to the owner. |
-| `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. |
+| `AGENT_HEAVY_SEARCH_CAP` / `AGENT_LIGHT_SEARCH_CAP` | No | `40` / `8` | Web searches a run may spend. Friday designations gets 4 more than the light cap for its team-by-team report check. |
 | `AGENT_HEAVY_MAX_TURNS` / `AGENT_LIGHT_MAX_TURNS` | No | `200` / `60` | Turn caps per run. |
 | `ANTHROPIC_API_KEY` | Dashboard chat | None | Pays for the dashboard's data chat by the token. Without it the Chat page says it is not configured. |
 | `CHAT_PASSPHRASE` | Dashboard chat | None | Shared league passphrase that opens the Chat page. Unset disables the chat. |

@@ -6,7 +6,12 @@ Do:
    expected points for this week, with injury tags, byes, and locks
    respected. Read read_state for week {week} if it exists; the research may
    hold usage notes projections miss.
-2. One search each only for players with a non-ACTIVE tag.
+2. One search each for players with a non-ACTIVE tag. Then one search for
+   this week's league-wide injury news, plus a search per two or three of my
+   starters' teams it did not cover, for a QB who is Out or Doubtful or a
+   teammate injury that changes a starter's role. An ACTIVE tag does not
+   cover either. Skip this team check before Wednesday's first practice
+   report, when there is nothing new to find.
 3. If the current lineup differs from the best one, make the change with
    preview_lineup and execute_lineup and explain each swap in one line.
 

@@ -94,7 +94,7 @@ async def run_job(cfg, name, params=None, trigger="schedule", run_id=None):
             store.start_run(run_id)
         cfg.ensure_dirs()
         run = RunState(run_id=run_id, job=name, params=params,
-                       search_cap=cfg.heavy_search_cap if spec.search_cap_key == "heavy" else cfg.light_search_cap,
+                       search_cap=jobs.search_cap(cfg, spec),
                        log_path=cfg.data_dir / "runs" / f"{run_id}.jsonl")
         run.log("start", job=name, trigger=trigger, params=params)
         rules = rules_mod.load(cfg.data_dir)

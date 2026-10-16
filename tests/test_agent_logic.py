@@ -201,3 +201,19 @@ def test_claude_auth_falls_back_to_whichever_credential_exists(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
     assert config.select_claude_auth("subscription") == "api"
     assert os.environ["ANTHROPIC_API_KEY"] == "key"
+
+
+def test_designations_checks_every_starters_team_within_its_cap():
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=8)
+    ctx = SimpleNamespace(cfg=cfg, week=6, scoring_period=6, team_name=lambda _id: "Mine")
+    spec = jobs.get("designations")
+    # The team check costs more than the tagged-player searches the light cap was sized for.
+    assert jobs.search_cap(cfg, spec) == 12
+    assert jobs.search_cap(cfg, jobs.get("pregame")) == 8
+    out = jobs.user_prompt(spec, ctx, {})
+    assert "You have 12 web searches" in out
+    assert "Team check, mandatory" in out and "required for every starter" in out
+    assert "starting QB's status" in out
+    assert "starter ahead of him" in out
+    assert "{" not in out
