@@ -12,8 +12,9 @@ Do, in order:
    the report which you believe. Its section in the research file is kept
    when you write_research; do not copy its tables.
 1. Review last week: get_week_results for the week just played. Note who
-   beat or missed projection and why, per starter. Read the season log tail
-   and get_agent_activity for what was tried and what became of it.
+   beat or missed projection and why, per starter. Read the season log tail,
+   read_strategy (the general manager's season plan and trade target
+   board), and get_agent_activity for what was tried and what became of it.
 2. League state: list_teams, get_standings, get_recent_activity (size 40),
    get_pending_transactions. Note the waiver order and who is chasing what.
 3. My roster: get_my_roster. For each player, a one-line verdict: hold,
@@ -23,12 +24,20 @@ Do, in order:
    changes. Say which teams you checked.
 4. Free agents: get_free_agents for RB, WR, TE, QB, D/ST, K (size 12 each,
    sort last_week then projected). Identify the real adds: players who would
-   start for me or are worth a bench spot, with the drop that makes room.
-   Cross-check the top candidates against usage and news.
-5. Trade market: for every other team (get_team_roster), one line on what
-   they need and what they have in surplus. Name two or three realistic
-   targets and what I could offer, priced from a public rest-of-season
-   trade value chart. Fetch this week's FantasyPros chart directly first:
+   start for me, and upside stashes (a back one injury from the lead role, a
+   receiver whose targets rose two weeks running) worth more than my worst
+   bench player, with the drop that makes room. Cross-check the top
+   candidates against usage and news. Aim for at least two adds; a week with
+   none needs a line on why my worst bench player beats every one of them.
+5. Trade market: first name my two or three weakest starting slots and how
+   many points a week each trails the league's typical starter there. Then,
+   for every other team (get_team_roster), one line on what they need and
+   what they have in surplus. Name at least one target per weak slot, and
+   for each an offer the other manager has a reason to accept: built around
+   what he is short at, two-for-one consolidations of my depth welcome,
+   priced so his side looks good on the chart while my lineup gains. Price
+   from a public rest-of-season trade value chart. Fetch this week's
+   FantasyPros chart directly first:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
    where <year>/<month> is the publish date (this month first; if that is a
    404 and the month just turned, last month). If the week {week} page is

@@ -48,6 +48,10 @@ class Clock:
             add(self.ensure_wakeups, CronTrigger(day_of_week="tue", hour=9, minute=15, timezone=tz), id="ensure_wakeups")
             add(self._submit, CronTrigger(day_of_week="wed", hour=9, minute=30, timezone=tz), args=["postwaiver"], id="postwaiver")
             add(self._submit, CronTrigger(day_of_week="fri", hour=17, minute=30, timezone=tz), args=["designations"], id="designations")
+            # The general manager: Monday once Sunday's games have moved values,
+            # Thursday once Tuesday's offers have had time for an answer.
+            add(self._submit, CronTrigger(day_of_week="mon", hour=10, minute=0, timezone=tz), args=["gm"], id="gm_monday")
+            add(self._submit, CronTrigger(day_of_week="thu", hour=11, minute=0, timezone=tz), args=["gm"], id="gm_thursday")
             add(self.preview, CronTrigger(day_of_week="mon", hour=21, minute=0, timezone=tz), id="preview")
             add(self.canary, CronTrigger(hour=6, minute=45, timezone=tz), id="canary")
             add(self.poll_offers, IntervalTrigger(minutes=15), id="poll_offers")
@@ -118,7 +122,7 @@ class Clock:
             rows = store.pending_wakeups()
             body = "\n".join(schedule_lines(rows)) or "No pending wakeups."
             body += ("\n\nTuesday: data analyst at 6:50 AM, research at 7:00 AM, roster plan at 8:00 AM, "
-                     "pre-game checks re-planned after.")
+                     "pre-game checks re-planned after. General manager Thursday 11:00 AM and next Monday 10:00 AM.")
             discord_out.post(self.cfg, "Week ahead", body, kind="info")
         except Exception:
             logger.exception("preview failed")

@@ -9,8 +9,10 @@ The trade to review: {trade}
 Do:
 
 1. get_my_roster, get_team_roster for the other team, get_standings,
-   read_state for week {week} if it exists, and get_agent_activity for
-   earlier offers involving this team and what became of them. Do not
+   read_state for week {week} if it exists, read_strategy (the season plan:
+   my holes, the target board, and this manager's history), and
+   get_agent_activity for earlier offers involving this team and what
+   became of them. Do not
    re-send a proposal the other side already declined this week.
 2. Research every player coming to me, and every player in a counter you
    build, before you value him: one search each for his current role,
@@ -33,6 +35,10 @@ Do:
    where the trade leaves me short at a position.
 4. Consider the other manager: what he needs, why he is offering, and
    whether a counter exists that he would take and that is better for me.
+   An incoming offer means he wants to deal, which is the best opening the
+   week will give. Look for the counter in any shape: ask for a target
+   from the strategy's board instead of what he offered, add or remove a
+   piece, or turn it into a two-for-one.
 5. A third valuation: read_analytics for the in-house rest-of-season
    forecast of every player in the deal, if it has them. Where it and the
    chart disagree, say which you trust. Core players and more than one
@@ -41,14 +47,20 @@ Do:
 Then act:
 
 - Incoming offer, bad for me: preview_trade_response with accept=false and
-  execute it (declining is auto). If a one-for-one change would make it
-  good, propose the counter with preview_trade and execute_trade.
+  execute it (declining is auto). Then send the counter from step 4 with
+  preview_trade and execute_trade, unless no counter he would take helps
+  my lineup; say which in the brief. A bare decline with no counter needs
+  a reason.
 - Incoming offer, good for me: preview_trade_response with accept=true and
   execute it.
 - A proposal the plan wants to send: preview_trade and execute_trade.
 - Read each preview's permission line: under full autonomy these execute at
   once; if it says ask, executing queues the move for the owner instead.
 - A question with no action: give the verdict and stop.
+
+After acting, read_strategy and write_strategy with the offer, its outcome,
+and what it says about this manager added to the attempts log and managers
+sections, keeping the rest.
 
 Brief: verdict in the first line (accept, decline, counter, or send), the
 value comparison as a short table, the lineup effect, the other manager's

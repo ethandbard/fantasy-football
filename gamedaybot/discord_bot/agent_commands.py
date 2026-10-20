@@ -105,6 +105,10 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
     async def agent_plan(interaction: discord.Interaction):
         await _run_job(interaction, "plan", {})
 
+    @agent.command(name="gm", description="Run the general manager now: strategy, trade offers, and pickups")
+    async def agent_gm(interaction: discord.Interaction):
+        await _run_job(interaction, "gm", {})
+
     @agent.command(name="lineup", description="Run a lineup check now")
     async def agent_lineup(interaction: discord.Interaction):
         await _run_job(interaction, "lineup", {})

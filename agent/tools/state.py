@@ -11,7 +11,14 @@ import gamedaybot.espn.roster as roster
 from agent import ledger, store
 from agent.tools.common import err, text
 
-NAMES = ["write_research", "write_state", "append_season_log", "schedule_pregame_checks", "list_wakeups"]
+NAMES = ["write_research", "write_state", "append_season_log", "schedule_pregame_checks", "list_wakeups",
+         "read_strategy", "write_strategy"]
+
+# The season strategy: one living file, not one per week, so the target
+# board and what each manager has said to past offers carry from week to
+# week. The general manager job owns it; the other owner jobs read it and
+# may update it.
+STRATEGY_FILE = "strategy.md"
 
 PREGAME_LEAD = timedelta(minutes=60)
 
@@ -127,4 +134,23 @@ def build(ctx, run):
         rows = store.pending_wakeups()
         return text("\n".join(f"{r['run_at']}  {r['job']:<10} {r['label'] or ''}" for r in rows) or "none pending")
 
-    return [write_research, write_state, append_season_log, schedule_pregame_checks, list_wakeups]
+    @tool("read_strategy", "The season strategy file: playoff outlook, roster needs, the trade target board with "
+          "every attempt so far, sell candidates, each manager's trading tendencies, and the next moves.", {})
+    async def read_strategy(args):
+        path = cfg.data_dir / STRATEGY_FILE
+        if not path.exists():
+            return text("no strategy file yet; the general manager job writes the first one")
+        return text(path.read_text(encoding="utf-8"))
+
+    @tool("write_strategy", "Replace the season strategy file (markdown). Read it first and carry forward what still "
+          "holds: the target board, the attempts log, and manager tendencies.", {"markdown": str})
+    async def write_strategy(args):
+        body = (args.get("markdown") or "").strip()
+        if not body:
+            return err("the strategy is empty; nothing written")
+        path = cfg.data_dir / STRATEGY_FILE
+        path.write_text(body + "\n", encoding="utf-8")
+        return text(f"wrote {path.name} ({len(body)} chars)")
+
+    return [write_research, write_state, append_season_log, schedule_pregame_checks, list_wakeups,
+            read_strategy, write_strategy]

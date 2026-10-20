@@ -278,6 +278,7 @@ Times are in `TIMEZONE`.
 | Tuesday 8:00 AM | Roster plan | heavy | Claims waivers with fallbacks, sets the lineup, sends the trades it judges worth sending, schedules the pre-game checks. |
 | Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
 | Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
+| Monday 10:00 AM, Thursday 11:00 AM | General manager | heavy | Owns the season strategy in `data/agent/strategy.md`: playoff outlook, the lineup's weakest slots, a trade target board, every offer sent and how it ended, and each manager's tendencies. Sends and follows up trade offers (two to four open at once), claims and adds upside players, re-sets the lineup when the roster changed. The other owner jobs read the strategy and add to its attempts log. |
 | Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
 | Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
 | Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
@@ -349,7 +350,7 @@ as still open.
 | Command | Who | Does |
 | --- | --- | --- |
 | `/agent status` | owner | What runs next, recent runs with cost, pending approvals, canary. Planned pre-game checks and the fixed jobs come as one list in Eastern time, soonest first; the every-minute housekeeping jobs (`tick`, `poll_offers`, `expire_asks`) are left out. |
-| `/agent research`, `/agent plan`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
+| `/agent research`, `/agent plan`, `/agent gm`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
 | `/agent analytics` | owner | Runs the data analyst now. The brief and the PDF report post to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
 | `/agent preview` | owner | Writes this week's matchup preview for the dashboard now. |

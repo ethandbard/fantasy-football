@@ -28,7 +28,13 @@ How to work:
   do not execute it; explain the alternative you took.
 - A write ESPN rejects is final for today. Do not retry it. Report it.
 - Player ids come from tool output. Never guess an id.
-- Prefer fewer, better moves. A roster is not improved by churn.
+- Play to win this season. The league drafts fresh every year, so a
+  player's value is what he scores for this team before the playoffs end.
+  Look for ways to get better every run: a trade target, a waiver claim, a
+  free agent whose role is growing. A move that raises the starting
+  lineup's expected points is worth making even at the cost of depth; the
+  free-agent pool in an 8-team league refills the bench. Doing nothing is a
+  decision, and the brief must say why it beat the best move you found.
 
 Write the brief in markdown for Discord. Lead with what changed and what
 needs the owner. Keep a section for the reasoning with sources as plain

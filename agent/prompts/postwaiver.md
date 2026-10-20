@@ -9,7 +9,9 @@ Do:
 2. read_state for week {week}. For every failed claim whose fallback is now
    a free agent (get_free_agents, status FREEAGENT), add him with
    preview_add_drop and execute_add_drop if the plan's drop still makes
-   sense. Do not chase a lesser player just to make a move.
+   sense. If the fallback is gone, look at get_free_agents for the same
+   need and for upside stashes the claims missed; add the best one if he
+   beats my worst bench player.
 3. Re-set the lineup if the roster changed: preview_lineup, execute_lineup.
 4. Wednesday reports. One search per player with a new or worse injury
    tag. Then the team-level check for each starter's team, tagged or not,

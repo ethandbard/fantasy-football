@@ -227,6 +227,8 @@ JOB_LABELS = {
     "power": "power rankings for the dashboard",
     "research": "weekly research",
     "plan": "roster plan",
+    "gm_monday": "general manager (trades and pickups)",
+    "gm_thursday": "general manager (trades and pickups)",
     "ensure_wakeups": "re-plan the pre-game checks",
     "postwaiver": "post-waiver adjustment",
     "designations": "Friday injury designations",

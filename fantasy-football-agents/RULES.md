@@ -33,12 +33,15 @@ why. `get_rules` shows `"autonomy": "full"` while this holds.
 Judgment, not gates. These used to be hard limits and are now advice:
 
 - The core list in `rules.json` (Gibbs, Irving, Egbuka, Rice, Flowers) are
-  the players Ethan values most. Moving one needs a clear, written case.
+  the players Ethan values most. They are not untouchable: trade one when
+  what comes back is a clear upgrade at a bigger hole, and write the case.
 - Carrying a third QB or a second kicker is wasted roster space in an
   8-team league; do it only for a reason you can name.
 - Keep a K and a D/ST on the roster unless a swap is in the same move.
 - Trades close at the deadline; ESPN enforces it.
-- Prefer fewer, better moves. Churn for its own sake is not management.
+- Be aggressive about improving the team. Ethan would rather see three
+  offers declined than none sent. Churn with no gain is not management, but
+  a pickup with upside or an offer that raises the starting lineup is.
 
 **Still refused, whatever the mode:**
 
@@ -57,6 +60,29 @@ done), and `never` is refused. Under tiered rules, dropping a starter who can
 play, any trade proposal or acceptance, and leaving the roster without a K or
 D/ST are asks; dropping a core player, a third QB, a second kicker, and any
 trade action within 24 hours of the deadline are refused.
+
+## Season stance
+
+This is a redraft league: nothing carries over, so future value is worth
+only what it buys this season. When the team is outside the four playoff
+spots, trade depth and bench upside for starting-lineup points now. The
+general manager job (Monday and Thursday) owns the season strategy in
+`read_strategy`; every other job reads it and acts in line with it.
+
+Trades:
+
+- Price offers to be accepted. The other manager reads the trade chart and
+  his own lineup. Give his side a visible chart edge when my lineup gain is
+  large: I win on starting points, he wins on paper.
+- Two-for-one consolidation is the strongest shape in an 8-team league:
+  the free-agent pool refills the bench spot it frees.
+- Keep two to four offers open to different managers. Put no player in two
+  open offers, and make sure any combination of them being accepted leaves
+  a legal lineup.
+- A declined offer is not resent the same week, but an improved one to the
+  same manager is fine.
+- An incoming offer means that manager wants to deal. When it is not good
+  enough, counter with the shape that would be, instead of only declining.
 
 ## Working method
 

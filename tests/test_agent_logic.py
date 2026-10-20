@@ -278,3 +278,54 @@ def test_audit_counts_tools_by_short_name():
     assert audit.short_name("WebSearch") == "WebSearch"
     line = audit.warning("Pre-game check", "abc123", ["never called read_state"])
     assert "Pre-game check" in line and "abc123" in line and "never called read_state" in line
+
+
+def test_strategy_file_round_trips_and_refuses_empty(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+    ctx = SimpleNamespace(cfg=SimpleNamespace(data_dir=tmp_path), week=7)
+    run = SimpleNamespace(job="gm")
+    handlers = {t.name: t.handler for t in state.build(ctx, run)}
+
+    def call(name, args):
+        out = asyncio.run(handlers[name](args))
+        return out["content"][0]["text"], out.get("is_error", False)
+
+    assert "no strategy file yet" in call("read_strategy", {})[0]
+    assert call("write_strategy", {"markdown": "  "})[1]
+    call("write_strategy", {"markdown": "## Target board\n- Hubbard"})
+    assert call("read_strategy", {})[0].startswith("## Target board")
+    assert (tmp_path / "strategy.md").exists()
+
+
+def test_gm_job_is_an_owner_writer_that_hunts_trades():
+    from types import SimpleNamespace
+    spec = jobs.get("gm")
+    assert spec.owner_job and spec.writes and spec.web and spec.model == "heavy"
+    assert "mcp__espn__write_strategy" in tool_names("state")
+    assert "mcp__espn__read_strategy" not in tool_names("analyst")
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=16)
+    ctx = SimpleNamespace(cfg=cfg, week=7, scoring_period=7, team_name=lambda _id: "John Foot Ball")
+    out = " ".join(jobs.user_prompt(spec, ctx, {}).split())
+    assert "general manager of John Foot Ball" in out and "You have 40 web searches" in out
+    assert "two to four offers open" in out and "withdraw_trade" in out
+    assert "{" not in out.replace("{week}", "")
+
+
+def test_audit_requires_the_gm_to_scout_and_keep_the_strategy():
+    from agent import audit
+    calls = {"read_strategy": 1, "get_standings": 1, "get_agent_activity": 1, "get_team_roster": 7,
+             "get_free_agents": 4, "write_strategy": 1, "append_season_log": 1, "WebSearch": 3}
+    assert audit.check("gm", calls, "Offers sent.\nSteps skipped: none") == []
+    calls.pop("write_strategy")
+    assert audit.check("gm", calls, "Steps skipped: none") == ["never called write_strategy"]
+
+
+def test_prompts_no_longer_tell_the_agents_to_sit_still():
+    persona = jobs.read_prompt("persona.md")
+    assert "A roster is not improved by churn" not in persona
+    assert "Doing nothing is a decision" in " ".join(persona.split())
+    plan = " ".join(jobs.read_prompt("plan.md").split())
+    assert "read_strategy" in plan and "If you send nothing, say per target why not" in plan
+    review = " ".join(jobs.read_prompt("trade_review.md").split())
+    assert "A bare decline with no counter needs a reason" in review

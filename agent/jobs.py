@@ -64,6 +64,13 @@ JOBS = {
         "lineup", "Lineup check", "pregame", "light",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
         prompt_file="lineup.md"),
+    # The general manager: owns the season strategy and goes after players.
+    # Monday after the Sunday games and Thursday after Tuesday's offers have
+    # had two days, so trades and pickups get pushed three times a week.
+    "gm": JobSpec(
+        "gm", "General manager", "trade", "heavy",
+        ["read", "write", "state"], web=True, writes=True, max_turns_key="heavy", search_cap_key="heavy",
+        prompt_file="gm.md", effort="high"),
     "trade_review": JobSpec(
         "trade_review", "Trade review", "trade", "heavy",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
