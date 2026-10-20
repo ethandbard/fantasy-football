@@ -71,6 +71,11 @@ JOBS = {
         "gm", "General manager", "trade", "heavy",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="heavy", search_cap_key="heavy",
         prompt_file="gm.md", effort="high"),
+    # Started by the nightly wire watch only when another team dropped someone.
+    "wire": JobSpec(
+        "wire", "Waiver wire watch", "brief", "light",
+        ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",
+        prompt_file="wire.md"),
     "trade_review": JobSpec(
         "trade_review", "Trade review", "trade", "heavy",
         ["read", "write", "state"], web=True, writes=True, max_turns_key="light", search_cap_key="light",

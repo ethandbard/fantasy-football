@@ -43,7 +43,10 @@ Do, in order:
    404 and the month just turned, last month). If the week {week} page is
    not up yet, use the newest chart one search finds, say which week it
    is, and add a "watch" entry so the plan reprices with this week's chart.
-6. Streaming: the best D/ST and K available for this week's matchups.
+6. Streaming: the best D/ST and K available for this week's matchups,
+   ranked against mine on the opponent's offense, the Vegas implied total,
+   and (for kickers) dome or weather. Say plainly whether each beats mine
+   by two projected points or more; the plan claims him if so.
 
 Then write two files and one brief:
 

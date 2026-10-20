@@ -8,7 +8,7 @@ here if that run failed) and fired by the tick, so a container restart
 loses nothing.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,7 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 import gamedaybot.espn.roster as roster
 from gamedaybot.discord_bot.formatting import schedule_lines
-from agent import discord_out, ledger, rules as rules_mod, store
+from agent import discord_out, ledger, rules as rules_mod, store, wire
 from agent.espn_ctx import EspnContext
 from agent.tools.state import schedule_week
 
@@ -54,6 +54,9 @@ class Clock:
             add(self._submit, CronTrigger(day_of_week="thu", hour=11, minute=0, timezone=tz), args=["gm"], id="gm_thursday")
             add(self.preview, CronTrigger(day_of_week="mon", hour=21, minute=0, timezone=tz), id="preview")
             add(self.canary, CronTrigger(hour=6, minute=45, timezone=tz), id="canary")
+            # Nightly, so a player another team drops is claimed before the
+            # 3:00 AM waiver run that would give him to someone else.
+            add(self.wire_watch, CronTrigger(hour=20, minute=30, timezone=tz), id="wire_watch")
             add(self.poll_offers, IntervalTrigger(minutes=15), id="poll_offers")
         add(self.tick, IntervalTrigger(seconds=60), id="tick")
         add(store.expire_asks, IntervalTrigger(minutes=30), id="expire_asks")
@@ -126,6 +129,26 @@ class Clock:
             discord_out.post(self.cfg, "Week ahead", body, kind="info")
         except Exception:
             logger.exception("preview failed")
+
+    # -------------------------------------------------------- wire watch
+
+    async def wire_watch(self):
+        """Start the wire job when another team has dropped someone since the last look."""
+        try:
+            ctx = self._ctx()
+            # The first look covers the last day: anything older is off waivers.
+            since = store.get_note("wire_watch_since") or (
+                datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="minutes")
+            drops = wire.new_drops(ctx.recent_activity(size=50), self.cfg.team_id, since)
+            store.set_note("wire_watch_since", datetime.now(timezone.utc).isoformat(timespec="minutes"))
+            if not drops:
+                logger.info("wire watch: no new drops since %s", since)
+                return None
+            run_id = self.queue.submit("wire", params={"drops": wire.describe(drops)}, trigger="schedule")
+            logger.info("wire watch: %d new drops -> %s", len(drops), run_id)
+            return run_id
+        except Exception:
+            logger.exception("wire watch failed")
 
     # ------------------------------------------------------------ canary
 

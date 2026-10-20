@@ -56,7 +56,11 @@ Do:
    2 or with one search if his team was not on the list. If that starter is
    Out or Doubtful, the handcuff is a starter this week: go back to step 4
    and rank him for the lineup.
-8. append_season_log with the designations, the team-check findings that
+8. D/ST and K: if a free agent (status FREEAGENT) has a clearly better
+   matchup this week than my D/ST or K, by about two projected points or
+   more, add him and drop mine with preview_add_drop and execute_add_drop,
+   then start him.
+9. append_season_log with the designations, the team-check findings that
    changed a role, and any moves.
 
 Brief: designations for my players, the teams checked and any QB or role

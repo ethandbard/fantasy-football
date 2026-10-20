@@ -233,6 +233,7 @@ JOB_LABELS = {
     "postwaiver": "post-waiver adjustment",
     "designations": "Friday injury designations",
     "canary": "ESPN login check",
+    "wire_watch": "waiver wire watch (runs only when a team dropped someone)",
 }
 
 

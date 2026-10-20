@@ -20,6 +20,11 @@ Do:
    free agents (status FREEAGENT) can be added immediately; do those only if
    they are clearly worth a spot today rather than after Wednesday's run.
    Any drop is yours to make, a starter included, if the case is clear.
+   Stream D/ST and K every week. Compare mine with the research's
+   streamers for this week's matchup (opponent's offense, Vegas implied
+   total, weather for a kicker). Claim the better one whenever he projects
+   about two points or more above mine, dropping mine; holding a D/ST or K
+   out of habit costs points. Queue a fallback for each.
 2. Lineup. Set the provisional lineup for this week with preview_lineup and
    execute_lineup: highest expected points at every slot, byes and Out or
    Doubtful players on the bench, IR-eligible players into IR if it frees a

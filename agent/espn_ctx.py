@@ -267,7 +267,10 @@ class EspnContext:
                 rows.append({
                     "when": when,
                     "team": getattr(team, "team_name", str(team)),
+                    "team_id": getattr(team, "team_id", None),
                     "action": verb,
                     "player": getattr(player, "name", str(player)),
+                    "player_id": getattr(player, "playerId", None),
+                    "position": getattr(player, "position", ""),
                 })
         return rows

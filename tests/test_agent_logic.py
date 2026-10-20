@@ -329,3 +329,48 @@ def test_prompts_no_longer_tell_the_agents_to_sit_still():
     assert "read_strategy" in plan and "If you send nothing, say per target why not" in plan
     review = " ".join(jobs.read_prompt("trade_review.md").split())
     assert "A bare decline with no counter needs a reason" in review
+
+
+def test_new_drops_keeps_other_teams_drops_after_the_last_look():
+    from agent import wire
+    rows = [
+        {"when": "2026-10-20T01:00+00:00", "team": "Mine", "team_id": 11, "action": "DROPPED", "player": "Ours"},
+        {"when": "2026-10-20T02:00+00:00", "team": "FDS", "team_id": 6, "action": "DROPPED", "player": "Pollard",
+         "position": "RB", "player_id": 1},
+        {"when": "2026-10-20T02:00+00:00", "team": "FDS", "team_id": 6, "action": "FA ADDED", "player": "Brown"},
+        {"when": "2026-10-19T02:00+00:00", "team": "Dak", "team_id": 10, "action": "DROPPED", "player": "Old"},
+    ]
+    drops = wire.new_drops(rows, 11, since="2026-10-19T12:00+00:00")
+    assert [r["player"] for r in drops] == ["Pollard"]
+    assert "Pollard (RB, player_id 1) dropped by FDS" in wire.describe(drops)
+
+
+def test_wire_watch_starts_a_run_only_for_new_drops(monkeypatch):
+    from types import SimpleNamespace
+    from agent import scheduler as sched_mod
+    notes = {}
+    monkeypatch.setattr(sched_mod.store, "get_note", lambda k, d=None: notes.get(k, d))
+    monkeypatch.setattr(sched_mod.store, "set_note", lambda k, v: notes.__setitem__(k, v))
+    submitted = []
+    queue = SimpleNamespace(submit=lambda job, params=None, trigger=None: submitted.append((job, params)) or "r1")
+    clock = sched_mod.Clock(SimpleNamespace(team_id=11, timezone="America/New_York"), queue)
+    rows = []
+    clock._ctx = lambda: SimpleNamespace(recent_activity=lambda size=50: rows)
+    import asyncio
+    assert asyncio.run(clock.wire_watch()) is None and not submitted
+    from datetime import datetime, timezone
+    rows.append({"when": datetime.now(timezone.utc).isoformat(timespec="minutes").replace("+00:00", "+00:01"),
+                 "team": "FDS", "team_id": 6, "action": "DROPPED", "player": "Pollard"})
+    notes["wire_watch_since"] = "2000-01-01T00:00+00:00"
+    assert asyncio.run(clock.wire_watch()) == "r1"
+    assert submitted[0][0] == "wire" and "Pollard" in submitted[0][1]["drops"]
+
+
+def test_pregame_can_add_a_free_agent_and_plan_streams_dst_and_k():
+    pregame = " ".join(jobs.read_prompt("pregame.md").split())
+    assert "only status FREEAGENT can be added before the lock" in pregame
+    plan = " ".join(jobs.read_prompt("plan.md").split())
+    assert "Stream D/ST and K every week" in plan
+    from agent import audit
+    assert audit.check("wire", {"get_my_roster": 1, "read_strategy": 1, "get_player": 2},
+                       "Pollard: pass.\nSteps skipped: none") == []

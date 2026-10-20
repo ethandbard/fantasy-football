@@ -27,6 +27,7 @@ REQUIRED = {
     "lineup": (["get_my_roster", "read_state"], 0),
     # Incoming-player research plus the bye schedule.
     "trade_review": (["get_my_roster", "get_team_roster", "read_analytics"], 2),
+    "wire": (["get_my_roster", "read_strategy", "get_player"], 0),
     # The general manager scouts every roster, prices targets, and keeps the
     # strategy file. Sending an offer depends on what it finds, so it is not here.
     "gm": (["read_strategy", "get_standings", "get_agent_activity", "get_team_roster", "get_free_agents",

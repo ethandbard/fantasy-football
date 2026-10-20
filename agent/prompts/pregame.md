@@ -24,7 +24,16 @@ Do:
    projections are close. Use preview_lineup and execute_lineup. Follow a
    contingency written earlier if it fits. Do not undo an owner override
    unless the condition its note names has happened.
-4. If a later-kickoff starter has a fresh downgrade, handle him now too;
+4. If no unlocked bench player can fill the slot, or the best one projects
+   far below a free agent, add a free agent instead. get_free_agents for
+   the slot's position: only status FREEAGENT can be added before the lock
+   (a waiver claim would come too late), and his game must kick off at or
+   after this one. Drop the player least likely to help me after this
+   week: usually the inactive player if he is out long-term, otherwise my
+   worst bench player. Use preview_add_drop and execute_add_drop, then
+   start him with preview_lineup and execute_lineup. A dead slot scores
+   zero; any healthy starter beats it.
+5. If a later-kickoff starter has a fresh downgrade, handle him now too;
    there may not be another check before his lock.
 
 Brief: at most five lines plus the steps-skipped line. Say "no change" if

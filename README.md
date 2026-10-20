@@ -280,8 +280,9 @@ Times are in `TIMEZONE`.
 | Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
 | Monday 10:00 AM, Thursday 11:00 AM | General manager | heavy | Owns the season strategy in `data/agent/strategy.md`: playoff outlook, the lineup's weakest slots, a trade target board, every offer sent and how it ended, and each manager's tendencies. Sends and follows up trade offers (two to four open at once), claims and adds upside players, re-sets the lineup when the roster changed. The other owner jobs read the strategy and add to its attempts log. |
 | Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
-| Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out. |
+| Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out, and adds a free agent when no bench player can fill the slot. |
 | Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
+| Daily 8:30 PM | Waiver wire watch | light, only when needed | Reads league activity for players other teams dropped since the last look. With none, it stops there and costs nothing. Otherwise it starts the `wire` job, which claims any drop worth more than the worst bench player before the 3:00 AM waiver run. |
 | Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
 | Every 30 min | Ask reminder | none | Pings once when a pending ask is within three hours of its deadline: the next 3:00 AM Eastern ESPN waiver run for a claim, its expiry for anything else. The ask message shows the same deadline. |
 | Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome (accepted, declined, expired, or reversed in review) is written to the season log and posted as one line. |
