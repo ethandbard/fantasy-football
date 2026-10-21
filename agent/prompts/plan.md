@@ -33,18 +33,17 @@ Do:
    this week's chart before you send anything:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
    where <year>/<month> is the publish date. If it is still not up, say so
-   and price with the newest chart. Go after the targets the research and
-   the strategy name: build an offer for each with preview_trade and
-   execute_trade, to different managers, so two to four offers are open
-   when you finish (count the general manager's still-open ones). Build
-   each one so the other manager has a reason to say yes: give him what he
-   is short at, and a visible edge on the chart when my lineup gain is
-   large. Two-for-one consolidations of my depth are welcome. Under full
-   autonomy offers are sent at once, so send only offers you would be glad
-   to see accepted, and write the case in the brief. Put no player in two
-   open offers. Do not re-send an offer a manager already declined this
-   week; an improved one is fine. If you send nothing, say per target why
-   not.
+   and price with the newest chart. Trades follow the rules' trade section
+   and the strategy's buy targets and sell candidates. Send an offer only
+   when it swaps a sell candidate (or a bench player of mine who would
+   start for him) for a buy target at about an even chart price, outside
+   that team's two or three best players, with a one-line thesis from our
+   model and one sentence on why the other manager gains. Keep one to three
+   open in total, counting the general manager's, each to a different
+   manager, and put no player in two open offers. Do not re-ask a manager
+   for a player he declined in the last two weeks. Under full autonomy
+   offers are sent at once, so write the thesis in the brief. Sending none
+   is right when no offer passes; say why per target.
 4. Schedule this week's pre-game checks with schedule_pregame_checks.
 5. append_season_log with what was queued, set, and proposed, and why.
 

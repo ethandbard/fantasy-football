@@ -3,6 +3,7 @@ Pure pieces of the agent service: wakeup planning from a roster, Discord
 chunking, prompt rendering, and the tool-name groups the analyst may not see.
 """
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import gamedaybot.espn.roster as roster
@@ -308,7 +309,10 @@ def test_gm_job_is_an_owner_writer_that_hunts_trades():
     ctx = SimpleNamespace(cfg=cfg, week=7, scoring_period=7, team_name=lambda _id: "John Foot Ball")
     out = " ".join(jobs.user_prompt(spec, ctx, {}).split())
     assert "general manager of John Foot Ball" in out and "You have 40 web searches" in out
-    assert "two to four offers open" in out and "withdraw_trade" in out
+    assert "Trade on an edge" in out and "withdraw_trade" in out
+    assert "Leave other managers' cornerstones alone" in out
+    assert "Never offer three players for one" in out
+    assert "from the other manager's point of view" in out
     assert "{" not in out.replace("{week}", "")
 
 
@@ -326,9 +330,11 @@ def test_prompts_no_longer_tell_the_agents_to_sit_still():
     assert "A roster is not improved by churn" not in persona
     assert "Doing nothing is a decision" in " ".join(persona.split())
     plan = " ".join(jobs.read_prompt("plan.md").split())
-    assert "read_strategy" in plan and "If you send nothing, say per target why not" in plan
+    assert "read_strategy" in plan and "Sending none is right when no offer passes" in plan
+    assert "Give his side a visible chart edge" not in Path("fantasy-football-agents/RULES.md").read_text(encoding="utf-8")
     review = " ".join(jobs.read_prompt("trade_review.md").split())
-    assert "A bare decline with no counter needs a reason" in review
+    assert "Never counter by asking for his best players" in review
+    assert "Our in-house model comes first" in review
 
 
 def test_new_drops_keeps_other_teams_drops_after_the_last_look():

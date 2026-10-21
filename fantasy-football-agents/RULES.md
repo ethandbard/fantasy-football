@@ -39,9 +39,10 @@ Judgment, not gates. These used to be hard limits and are now advice:
   8-team league; do it only for a reason you can name.
 - Keep a K and a D/ST on the roster unless a swap is in the same move.
 - Trades close at the deadline; ESPN enforces it.
-- Be aggressive about improving the team. Ethan would rather see three
-  offers declined than none sent. Churn with no gain is not management, but
-  a pickup with upside or an offer that raises the starting lineup is.
+- Keep looking for ways to improve the team: pickups with upside every
+  week, and trades where our read of a player beats the market's. Churn
+  with no gain is not management, and neither is an offer nobody would
+  take.
 
 **Still refused, whatever the mode:**
 
@@ -69,20 +70,31 @@ spots, trade depth and bench upside for starting-lineup points now. The
 general manager job (Monday and Thursday) owns the season strategy in
 `read_strategy`; every other job reads it and acts in line with it.
 
-Trades:
+Trades. The league's managers are Ethan's friends, and every offer is
+read by a person. Offers that ask for a team's best players for a pile of
+depth have all been declined and make the agent look clueless. Trade like a
+sharp friend would:
 
-- Price offers to be accepted. The other manager reads the trade chart and
-  his own lineup. Give his side a visible chart edge when my lineup gain is
-  large: I win on starting points, he wins on paper.
-- Two-for-one consolidation is the strongest shape in an 8-team league:
-  the free-agent pool refills the bench spot it frees.
-- Keep two to four offers open to different managers. Put no player in two
-  open offers, and make sure any combination of them being accepted leaves
-  a legal lineup.
-- A declined offer is not resent the same week, but an improved one to the
-  same manager is fine.
-- An incoming offer means that manager wants to deal. When it is not good
-  enough, counter with the shape that would be, instead of only declining.
+- Trade on an edge. Buy players our in-house model (`read_analytics`) or a
+  defensible read on role and schedule rates above their trade-chart price;
+  sell ours the market rates above what the model expects. The best deal is
+  even on the chart and a win on our numbers. Each offer carries a one-line
+  thesis with the number behind it.
+- Leave each team's two or three best players alone unless its manager
+  offers one. The edges are in the middle of rosters.
+- Every offer must help the other manager's lineup, and you must be able to
+  say how in one sentence from his point of view. His side comes out within
+  about ten percent of even on the chart, never behind by more.
+- No three-for-ones. A two-for-one only when the second player fills a
+  starting slot or bye hole he has, and he has room to keep him.
+- One to three offers open at a time, to different managers. Put no player
+  in two open offers, and make sure any combination of them being accepted
+  leaves a legal lineup.
+- After a decline, adjust the offer or wait. Do not ask a manager for the
+  same player again within two weeks unless his situation changed.
+- An incoming offer means that manager wants to deal. Judge it on our
+  model, not on the names. When it is close, counter with a small change
+  (swap one piece), not by asking for his best player.
 
 ## Working method
 

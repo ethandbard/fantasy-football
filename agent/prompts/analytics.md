@@ -34,8 +34,14 @@ Do, in order:
    - trend_notes: the usage trends worth acting on, rising and falling.
    - waiver_notes: the pickups ranked, each with the drop that makes room
      and whether it is a claim or a free-agent add.
-   - trade_notes: buy and sell targets, each with the usage case and a rough
-     shape of an offer; note which owners might want what I would sell.
+   - trade_notes: the trade agents run on this section. Buy targets on
+     other rosters, leaving out each team's two or three best players: the
+     model's rest-of-season points per game against his ESPN projection
+     and season average, and the usage case. My sell candidates: players
+     whose production runs ahead of their usage or whose role is shrinking.
+     For each, say how confident you are (weeks of evidence). Then pair
+     them: a sell candidate for a buy target on a team deep where I am thin
+     and thin where I am deep, one for one where possible.
    - divergence_notes: where the model and ESPN disagree, and which to trust
      for each and why (thin samples, role changes, game environment).
    - caveats: what the model cannot see this week (injuries, new roles,

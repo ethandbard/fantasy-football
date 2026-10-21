@@ -29,14 +29,20 @@ Do, in order:
    bench player, with the drop that makes room. Cross-check the top
    candidates against usage and news. Aim for at least two adds; a week with
    none needs a line on why my worst bench player beats every one of them.
-5. Trade market: first name my two or three weakest starting slots and how
-   many points a week each trails the league's typical starter there. Then,
-   for every other team (get_team_roster), one line on what they need and
-   what they have in surplus. Name at least one target per weak slot, and
-   for each an offer the other manager has a reason to accept: built around
-   what he is short at, two-for-one consolidations of my depth welcome,
-   priced so his side looks good on the chart while my lineup gains. Price
-   from a public rest-of-season trade value chart. Fetch this week's
+5. Trade market, run on our own numbers. First name my two or three
+   weakest starting slots and how many points a week each trails the
+   league's typical starter there. Then, for every other team
+   (get_team_roster), one line on its lineup's weak slots and the positions
+   it is deep at. From the analytics, list buy targets (players on other
+   rosters, outside each team's two or three best, whom the model rates
+   well above their chart value, especially at my holes) and my sell
+   candidates (players the chart rates above what the model expects, and
+   bench players who would start elsewhere but not for me). Check the story
+   behind each: is the model's edge a real role change or a thin sample?
+   Pair them into one to three offers that swap a sell candidate for a buy
+   target at about an even chart price, each with a one-line thesis and a
+   sentence on why the other manager gains. Follow the rules' trade
+   section. Price from a public rest-of-season trade value chart. Fetch this week's
    FantasyPros chart directly first:
    https://www.fantasypros.com/<year>/<month>/fantasy-football-trade-value-chart-week-{week}-<year>/
    where <year>/<month> is the publish date (this month first; if that is a
