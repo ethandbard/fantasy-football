@@ -92,7 +92,7 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
                 lines.append(f"• `{a['id']}` {a['description']}")
         await interaction.followup.send("\n".join(lines)[:1990])
 
-    @agent.command(name="research", description="Run the week review and research job now")
+    @agent.command(name="research", description="Start the general manager's weekly session now (review, claims, lineup, trades)")
     async def agent_research(interaction: discord.Interaction):
         await _run_job(interaction, "research", {})
 
@@ -101,11 +101,11 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         await _run_job(interaction, "analytics", {},
                        done="The brief and the PDF report post here when it finishes.")
 
-    @agent.command(name="plan", description="Run the roster plan job now")
+    @agent.command(name="plan", description="Start the general manager's weekly session now (same as /agent research)")
     async def agent_plan(interaction: discord.Interaction):
         await _run_job(interaction, "plan", {})
 
-    @agent.command(name="gm", description="Run the general manager now: strategy, trade offers, and pickups")
+    @agent.command(name="gm", description="Start the general manager now: the weekly session if none ran this week, else the trade desk")
     async def agent_gm(interaction: discord.Interaction):
         await _run_job(interaction, "gm", {})
 
@@ -147,7 +147,7 @@ def register(tree, bot, agent_url, owner_id, ask_channel_id):
         await _run_job(interaction, "power", {"week": week} if week else {},
                        done="The rankings land on the dashboard's League page when it finishes; nothing posts here.")
 
-    @agent.command(name="trade", description="Ask the trade reviewer about an offer, in your own words")
+    @agent.command(name="trade", description="Ask the general manager about an offer, in your own words")
     @app_commands.describe(offer="Describe the trade, e.g. 'my Rice for Chris's Bucky Irving'")
     async def agent_trade(interaction: discord.Interaction, offer: str):
         await _run_job(interaction, "trade_review", {"trade": offer[:1000]})

@@ -12,7 +12,9 @@ from agent import ledger, store
 from agent.tools.common import err, text
 
 NAMES = ["write_research", "write_state", "append_season_log", "schedule_pregame_checks", "list_wakeups",
-         "read_strategy", "write_strategy"]
+         "read_strategy", "write_strategy", "note_for_gm", "read_scorecard"]
+
+SCORECARD_FILE = "gm/scorecard.md"
 
 # The season strategy: one living file, not one per week, so the target
 # board and what each manager has said to past offers carry from week to
@@ -134,16 +136,18 @@ def build(ctx, run):
         rows = store.pending_wakeups()
         return text("\n".join(f"{r['run_at']}  {r['job']:<10} {r['label'] or ''}" for r in rows) or "none pending")
 
-    @tool("read_strategy", "The season strategy file: playoff outlook, roster needs, the trade target board with "
-          "every attempt so far, sell candidates, each manager's trading tendencies, and the next moves.", {})
+    @tool("read_strategy", "The general manager's standing position: playoff outlook, the holes, the bets placed "
+          "and why, what to watch, and the owner's standing instructions. Rewritten each weekly session; the "
+          "per-manager threads live in read_negotiations.", {})
     async def read_strategy(args):
         path = cfg.data_dir / STRATEGY_FILE
         if not path.exists():
-            return text("no strategy file yet; the general manager job writes the first one")
+            return text("no strategy file yet; the general manager's weekly session writes the first one")
         return text(path.read_text(encoding="utf-8"))
 
-    @tool("write_strategy", "Replace the season strategy file (markdown). Read it first and carry forward what still "
-          "holds: the target board, the attempts log, and manager tendencies.", {"markdown": str})
+    @tool("write_strategy", "Replace the strategy file (markdown). Read it first and carry forward what still "
+          "holds. Sections: Outlook, Holes, Bets, Watch, Owner. Offer threads go in update_negotiation, "
+          "not here.", {"markdown": str})
     async def write_strategy(args):
         body = (args.get("markdown") or "").strip()
         if not body:
@@ -152,5 +156,24 @@ def build(ctx, run):
         path.write_text(body + "\n", encoding="utf-8")
         return text(f"wrote {path.name} ({len(body)} chars)")
 
+    @tool("note_for_gm", "Leave a note the general manager reads at the start of its next run: a game-time "
+          "call, a dropped player worth chasing, a claim that failed, anything a trade or an add should "
+          "answer. One or two lines.", {"text": str})
+    async def note_for_gm(args):
+        body = (args.get("text") or "").strip()
+        if not body:
+            return err("the note is empty")
+        store.add_inbox(run.job, body[:1000])
+        return text("noted for the general manager")
+
+    @tool("read_scorecard", "The weekly scorecard the service computes with no judgment in it: points left on "
+          "the bench per week, claims won and lost, what the players in every trade proposed or declined "
+          "scored afterward, and the model's edge against ESPN. Read it before deciding what to trust.", {})
+    async def read_scorecard(args):
+        path = cfg.data_dir / SCORECARD_FILE
+        if not path.exists():
+            return text("no scorecard yet; it is written Tuesday morning once a week has been played")
+        return text(path.read_text(encoding="utf-8"))
+
     return [write_research, write_state, append_season_log, schedule_pregame_checks, list_wakeups,
-            read_strategy, write_strategy]
+            read_strategy, write_strategy, note_for_gm, read_scorecard]

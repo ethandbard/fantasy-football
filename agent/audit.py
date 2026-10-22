@@ -16,22 +16,28 @@ WEB_TOOLS = ("WebSearch", "WebFetch")
 
 # job -> (tools that must be called at least once, minimum web calls)
 REQUIRED = {
-    "research": (["read_analytics", "get_week_results", "get_my_roster", "get_free_agents",
-                  "get_team_roster", "write_research", "write_state", "append_season_log"], 4),
-    "plan": (["read_state", "read_research", "read_strategy", "get_agent_activity", "schedule_pregame_checks",
-              "append_season_log"], 0),
     "postwaiver": (["get_recent_activity", "get_my_roster", "read_state", "append_season_log"], 1),
     # A league-wide roundup plus at least one team-level search.
     "designations": (["get_my_roster", "append_season_log"], 2),
     "pregame": (["get_my_roster", "read_state"], 1),
     "lineup": (["get_my_roster", "read_state"], 0),
-    # Incoming-player research plus the bye schedule.
-    "trade_review": (["get_my_roster", "get_team_roster", "read_analytics"], 2),
     "wire": (["get_my_roster", "read_strategy", "get_player"], 0),
-    # The general manager scouts every roster, prices targets, and keeps the
-    # strategy file. Sending an offer depends on what it finds, so it is not here.
-    "gm": (["read_strategy", "get_standings", "get_agent_activity", "get_team_roster", "get_free_agents",
-            "write_strategy", "append_season_log"], 3),
+}
+
+# The general manager's required calls depend on the situation. Every
+# situation starts from its memory and ends in the season log; the weekly
+# session also scouts and rewrites the strategy, and an offer review must
+# evaluate before it answers.
+GM_COMMON = ["read_strategy", "read_negotiations", "get_my_roster", "append_season_log"]
+REQUIRED_GM = {
+    "weekly": (GM_COMMON + ["read_analytics", "read_scorecard", "get_week_results", "get_team_roster",
+                            "get_free_agents", "market_map", "playoff_odds", "write_research", "write_state",
+                            "schedule_pregame_checks", "write_strategy"], 4),
+    "trade_desk": (GM_COMMON + ["get_agent_activity", "market_map"], 1),
+    "after_games": (GM_COMMON + ["get_week_results", "market_map"], 1),
+    "offer": (GM_COMMON + ["get_team_roster", "evaluate_trade"], 1),
+    "integrity": (["get_my_roster", "append_season_log"], 0),
+    "manual": (GM_COMMON, 0),
 }
 
 _SKIPPED_HEADING = re.compile(r"steps skipped", re.IGNORECASE)
@@ -42,14 +48,17 @@ def short_name(tool_name):
     return tool_name.rsplit("__", 1)[-1]
 
 
-def check(job, calls, brief, owner_job=True):
+def check(job, calls, brief, owner_job=True, situation=None):
     """The problems with a finished run, as short lines; [] when it did every required step.
 
     calls counts tool calls by short name, including denied ones.
     """
     calls = Counter(calls)
     problems = []
-    required, min_web = REQUIRED.get(job, ([], 0))
+    if job == "gm":
+        required, min_web = REQUIRED_GM.get(situation or "manual", REQUIRED_GM["manual"])
+    else:
+        required, min_web = REQUIRED.get(job, ([], 0))
     for name in required:
         if not calls.get(name):
             problems.append(f"never called {name}")

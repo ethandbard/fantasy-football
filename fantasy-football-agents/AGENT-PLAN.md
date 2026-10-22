@@ -398,3 +398,12 @@ file between markers, which `write_research` preserves, and `read_analytics`
 gives research, plan, and trade review the numbers. No web access, by
 design. Code: `agent/analytics/`, `agent/tools/analytics.py`,
 `agent/prompts/analytics.md`.
+
+## 13. One general manager (2026-10-21)
+
+The nine owner jobs, the policy tiers, and the trade rules in section 12
+gave way to one general manager with situation briefs, deterministic
+sentinels, and a trade evaluator built on a season simulation. The design
+and the reasons are in [REBUILD-PLAN.md](REBUILD-PLAN.md); the README's
+"Team agents" section describes what runs now. Sections 1 through 12 stay
+as the record of how the service got here.

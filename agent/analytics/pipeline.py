@@ -87,7 +87,7 @@ def _player_row(entry, team_id, team_name, fc, gsis_map):
         "status": d.get("status"), "last_week": d.get("last_week"),
         "modelled": False, "mean": None, "p10": None, "p90": None, "ros_pg": None, "ros": None, "ros_games": None,
         "xfp_pg": None, "fpoe_pg": None, "ppg": None, "share": None, "share_trend": None, "snap_pct": None,
-        "games": None, "opponent": None, "implied": None, "flags": [],
+        "games": None, "opponent": None, "implied": None, "flags": [], "by_week": None,
     }
     if gsis is not None and gsis in fc.index:
         f = fc.loc[gsis]
@@ -99,6 +99,7 @@ def _player_row(entry, team_id, team_name, fc, gsis_map):
             mean, p10, p90 = mean * DOUBTFUL_FACTOR, 0.0, p90 * DOUBTFUL_FACTOR
         row.update({
             "modelled": True, "mean": round(mean, 1), "p10": round(p10, 1), "p90": round(p90, 1),
+            "by_week": dict(f["by_week"]) if isinstance(f.get("by_week"), dict) else None,
             "ros_pg": float(f["ros_pg"]), "ros": float(f["ros"]), "ros_games": int(f["ros_games"]),
             "xfp_pg": float(f["xfp_pg"]), "fpoe_pg": float(f["fpoe_pg"]), "ppg": float(f["ppg"]),
             "share": None if pd.isna(f["share"]) else float(f["share"]),
@@ -260,9 +261,20 @@ def build(ctx, data_dir, cache_dir=None, draw=True):
     ].reset_index(drop=True)
     tables["opponent"] = opp_table.reset_index(drop=True)
 
+    # Every league player with the numbers the trade evaluator needs: the
+    # per-week means for the season simulation, ESPN's view for the other
+    # managers' side, and the roster facts to rebuild lineups from.
+    p_cols = ["player_id", "name", "position", "pro_team", "team_id", "slot", "is_starter", "eligible", "injury",
+              "bye", "espn_proj", "espn_avg", "status", "modelled", "mean", "ros_pg", "by_week"]
+    tables["players"] = league[p_cols].reset_index(drop=True)
+
     data_weeks = sorted(int(w) for w in weekly["week"].unique()) if not weekly.empty else []
+    sched = model.team_weeks(src["games"])
+    pro_teams = {t for t, _ in sched}
+    team_byes = {t: [w for w in range(target_week, end_week + 1) if (t, w) not in sched] for t in pro_teams}
     meta = {
         "year": year, "target_week": target_week, "end_week": end_week, "data_weeks": data_weeks,
+        "team_byes": {t: byes for t, byes in team_byes.items() if byes},
         "data_through": data_weeks[-1] if data_weeks else None,
         "teams_in_last_week": int(weekly[weekly["week"] == data_weeks[-1]]["team"].nunique()) if data_weeks else 0,
         "missing_sources": src["missing"], "coefs": coefs, "cv": cvs, "replacement_ros_pg": repl,

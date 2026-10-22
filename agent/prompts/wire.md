@@ -26,9 +26,10 @@ Do:
    worst bench player; read the preview and execute it. Claims for several
    players may share the same drop; ESPN processes them in order and skips
    one whose drop is gone, so list the best first.
-4. If you claimed anyone, add him to the strategy's target board as
-   "claimed" (read_strategy, then write_strategy with the rest kept), and
-   append_season_log with the claim and why.
+4. If you claimed anyone, append_season_log with the claim and why, and
+   leave a line with note_for_gm so the general manager knows the roster
+   may change at 3:00 AM. A dropped player you passed on but who would
+   interest a trade partner is worth a note too.
 
 Brief: at most six lines plus the steps-skipped line. Each dropped player
 with "claim" or "pass" and the reason in a few words, and any claim with its

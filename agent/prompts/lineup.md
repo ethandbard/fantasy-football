@@ -1,4 +1,6 @@
-Job: lineup check for week {week}, requested on demand.
+Job: lineup check for week {week}.
+
+Why this run: {reason} {findings}
 
 Do:
 
@@ -15,6 +17,9 @@ Do:
    report, when there is nothing new to find.
 3. If the current lineup differs from the best one, make the change with
    preview_lineup and execute_lineup and explain each swap in one line.
+4. If a slot cannot be filled from the bench, or a starter's news changes
+   what the roster needs (a long injury, a lost role), leave a line for the
+   general manager with note_for_gm.
 
 Brief: the lineup as it stands after this run, each change with a reason,
 and the disagreements section. Under 400 words.

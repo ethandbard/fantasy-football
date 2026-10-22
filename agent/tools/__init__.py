@@ -6,14 +6,15 @@ prompts under agent/prompts refer to them.
 """
 from claude_agent_sdk import create_sdk_mcp_server
 
-from agent.tools import analytics, history, read, site, state, write
+from agent.tools import analytics, evaluate, history, negotiate, read, site, state, write
 
 SERVER_NAME = "espn"
 
 
 def build_server(ctx, run):
     tools = (read.build(ctx, run) + history.build(ctx, run) + write.build(ctx, run)
-             + state.build(ctx, run) + site.build(ctx, run) + analytics.build(ctx, run))
+             + state.build(ctx, run) + site.build(ctx, run) + analytics.build(ctx, run)
+             + evaluate.build(ctx, run) + negotiate.build(ctx, run))
     return create_sdk_mcp_server(name=SERVER_NAME, version="1.0.0", tools=tools)
 
 
@@ -21,8 +22,10 @@ def tool_names(group):
     """
     Tool names for a group: 'read' (with league history), 'write', 'state',
     'site' (dashboard prose), 'analytics' (the data analyst's model and
-    report), 'analyst' (read minus private state), or 'owner' (just the
-    private state, for the analyst when the owner asks).
+    report), 'evaluate' (playoff odds, trade evaluation, the market map),
+    'negotiate' (the per-manager threads), 'analyst' (read minus private
+    state), or 'owner' (just the private state, for the analyst when the
+    owner asks).
     """
     groups = {
         "read": read.NAMES + history.NAMES,
@@ -30,6 +33,11 @@ def tool_names(group):
         "state": state.NAMES,
         "site": site.NAMES,
         "analytics": analytics.NAMES,
+        "evaluate": evaluate.NAMES,
+        "negotiate": negotiate.NAMES,
+        # The model's numbers and a player's week-by-week usage, without the
+        # analyst's publish step: for the general manager and its scouts.
+        "usage": [n for n in analytics.NAMES if n != "publish_analytics"],
         "analyst": [n for n in read.NAMES if n not in read.PRIVATE] + history.NAMES,
         "owner": list(read.PRIVATE),
     }

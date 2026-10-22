@@ -1,6 +1,7 @@
 Job: post-waiver adjustment for week {week}.
 
-Waivers processed this morning. Reconcile the result against Tuesday's plan.
+Waivers processed this morning. Reconcile the result against the plan the
+general manager's weekly session wrote yesterday (read_state, read_research).
 
 Do:
 
@@ -19,7 +20,9 @@ Do:
    injury that moves targets or carries, a depth chart change. Note what
    Friday must recheck with write_state (read_state first and keep the
    other keys), and say which teams you checked.
-5. append_season_log with the waiver outcome and the moves made.
+5. append_season_log with the waiver outcome and the moves made. If a
+   claim that mattered was lost and no fallback filled the need, say so
+   with note_for_gm, so the trade desk can answer it on Thursday.
 
 Brief: claims won and lost, adds made, lineup as it stands, what to watch
 Friday, and the disagreements section.

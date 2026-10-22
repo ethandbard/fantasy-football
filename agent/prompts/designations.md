@@ -61,7 +61,10 @@ Do:
    more, add him and drop mine with preview_add_drop and execute_add_drop,
    then start him.
 9. append_season_log with the designations, the team-check findings that
-   changed a role, and any moves.
+   changed a role, and any moves. A starter ruled out for weeks, a role
+   that changed for good, or a slot no bench player can fill gets a line
+   with note_for_gm, so the general manager can answer it with a trade or
+   an add.
 
 Brief: designations for my players, the teams checked and any QB or role
 changes found, lineup changes, contingencies for Sunday, and the

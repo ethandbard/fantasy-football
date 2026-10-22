@@ -232,8 +232,9 @@ season may not have started yet.
 ## Team agents
 
 A second container, `fantasy-agent`, runs Claude agents that manage one team
-(`TEAM_ID`) and report to a `#team-agent` channel. The design, including why
-it runs here and not in the cloud, is in
+(`TEAM_ID`) and report to a `#team-agent` channel. The design is in
+[fantasy-football-agents/REBUILD-PLAN.md](fantasy-football-agents/REBUILD-PLAN.md);
+the first version and its history are in
 [fantasy-football-agents/AGENT-PLAN.md](fantasy-football-agents/AGENT-PLAN.md).
 The rules the agents work under are
 [fantasy-football-agents/RULES.md](fantasy-football-agents/RULES.md); a copy
@@ -247,22 +248,54 @@ Roster actions go through ESPN's own transaction endpoint with the same
 `ESPN_S2` and `SWID` cookies the bot uses. No browser is involved. Every write
 is a preview followed by an execute.
 
+Three kinds of thing run:
+
+- **The general manager** (`gm`) is the one agent that trades. It has one
+  system prompt ([agent/prompts/gm.md](agent/prompts/gm.md)), one memory
+  (`data/agent/strategy.md`, the `agent_negotiations` table, and
+  `data/agent/gm/scorecard.md`), and every tool. Each run gets a short
+  situation brief from [agent/prompts/situations](agent/prompts/situations):
+  `weekly`, `trade_desk`, `after_games`, `offer`, `integrity`, or `manual`.
+  It judges every roster change with two deterministic tools: `playoff_odds`
+  simulates the rest of the regular season on the in-house model's forecasts
+  for every roster, and `evaluate_trade` reports both sides' per-week lineup
+  deltas in the model's view and in ESPN's view, chart totals from the cached
+  weekly trade value chart, roster fit, forced drops, byes, and the
+  negotiation thread with that manager. It can delegate scouting to a `scout`
+  subagent (the light model, read tools and the web). It runs on
+  `AGENT_MODEL_GM` (default: the heavy model) with `AGENT_GM_SEARCH_CAP`
+  searches (default 60).
+- **Workers** are cheap runs that never trade: the pre-game check, the
+  Friday designations, the post-waiver reconcile, the wire claim, the data
+  analyst, the league analyst, and the dashboard prose. They leave notes for
+  the general manager with `note_for_gm`; it reads them at its next run.
+- **Sentinels** are plain Python with no model. The roster integrity
+  sentinel runs hourly: it moves a healthy player out of the IR slot when the
+  roster has room (a healthy player there blocks every add and trade), and
+  wakes the lineup worker for a starter on bye or ruled out, an empty slot,
+  or a lineup the model rates three or more points below the best one, and
+  the general manager for anything that needs a drop or an add. Each finding
+  wakes a run at most once per twelve hours. The deadline clock adds a daily
+  trade desk in the last two weeks before the trade deadline. The offer poll,
+  the wire watch, the auth canary, and the kickoff wakeups are sentinels too.
+
 The agents run with full autonomy by default (`"autonomy": "full"` in
 `rules.json`): every lineup change, add, drop, waiver claim, trade proposal,
-and trade acceptance posts to ESPN at once, with no approval step and no core
-list, roster ceilings, deadline buffer, or per-run caps. Three things stay
-refused: dropping a player ESPN calls undroppable, retrying a write ESPN
-rejected earlier that day, and withdrawing a trade proposal the owner sent.
-Set `"autonomy": "tiered"` in `data/agent/rules.json` to bring back the tiers
-without a redeploy: auto moves post at once, "ask" moves wait for the owner in
-Discord, and "never" moves are refused.
+and trade acceptance posts to ESPN at once, with no approval step. Three
+things stay refused: dropping a player ESPN calls undroppable, retrying a
+write ESPN rejected earlier that day, and withdrawing a trade proposal the
+owner sent. The owner's standing instructions are data in `rules.json`:
+`do_not_trade` (players never to move), `core_players` (players the owner
+values; trade one only with a clear gain and the case written), and
+`discord_outreach` (whether the general manager may message other managers,
+off by default). Set `"autonomy": "tiered"` to bring back the approval
+tiers without a redeploy.
 
 Every owner job's brief ends with a "Steps skipped" section naming each
 prompt step the agent did not do, and why. After each run,
 [agent/audit.py](agent/audit.py) checks the run's tool calls against the
-calls that job must always make (for example, the pre-game check must call
-`read_state` and search the inactives) and posts a warning line to
-`#team-agent` when one is missing or the section is absent.
+calls that job (or that general manager situation) must always make and
+posts a warning line to `#team-agent` when one is missing.
 
 ### Schedule
 
@@ -270,22 +303,25 @@ Times are in `TIMEZONE`.
 
 | When | Job | Model | Does |
 | --- | --- | --- | --- |
-| Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only — this season from ESPN, past seasons and each pairing's all-time history from the dashboard database — no web, no Discord post. |
-| Tuesday 6:40 AM | Power rankings | light | Ranks the league 1–8 after last week, for the dashboard's League page. Same rules as the recap. |
-| Wednesday 10:30 AM | Matchup preview | light | Previews this week's four matchups after waivers clear, for the dashboard's Next up page. Same rules as the recap. |
-| Tuesday 6:50 AM | Data analyst | heavy | Builds the in-house model from nflverse usage data and Vegas lines, writes the narrative, and posts a PDF report with the brief. Adds its section to `data/agent/research/week-NN.md`. No web. See [Data analyst](#data-analyst). |
-| Tuesday 7:00 AM | Research | heavy | Reads the analyst's section, then reviews last week, all rosters, free agents, trade market. Writes `data/agent/research/week-NN.md` (keeping the analyst's section) and `state/week-NN.json`. |
-| Tuesday 8:00 AM | Roster plan | heavy | Claims waivers with fallbacks, sets the lineup, sends the trades it judges worth sending, schedules the pre-game checks. |
-| Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the plan job did not. |
-| Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup. |
-| Monday 10:00 AM, Thursday 11:00 AM | General manager | heavy | Owns the season strategy in `data/agent/strategy.md`: playoff outlook, the lineup's weakest slots, buy targets and sell candidates from the in-house model, every offer sent with its thesis and how it ended, and each manager's tendencies. Sends one to three trade offers at a time, each a swap at about an even trade-chart price where our model sees an edge, never for a team's best players or as a three-for-one; claims and adds upside players, re-sets the lineup when the roster changed. The other owner jobs read the strategy and add to its attempts log. |
-| Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies. |
-| Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out, and adds a free agent when no bench player can fill the slot. |
-| Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks, in Eastern time. The scheduler calls this job `preview`; the dashboard's matchup preview is `preview_site`. |
-| Daily 8:30 PM | Waiver wire watch | light, only when needed | Reads league activity for players other teams dropped since the last look. With none, it stops there and costs nothing. Otherwise it starts the `wire` job, which claims any drop worth more than the worst bench player before the 3:00 AM waiver run. |
+| Tuesday 6:20 AM | Scorecard | none | Writes `data/agent/gm/scorecard.md`: bench points left per week, claims won and lost, what the players in every proposed or declined trade scored afterward, and the model's forecast error against ESPN's. |
+| Tuesday 6:30 AM | League recap | light | Writes last week's recap for the dashboard's This week page into the `site_content` table. Public league data only, no web, no Discord post. |
+| Tuesday 6:40 AM | Power rankings | light | Ranks the league 1-8 after last week, for the dashboard's League page. |
+| Tuesday 6:50 AM | Data analyst | heavy | Builds the in-house model from nflverse usage data and Vegas lines, writes the narrative, and posts a PDF report. Its per-week forecasts feed the general manager's simulation. See [Data analyst](#data-analyst). |
+| Tuesday 7:00 AM | General manager, weekly session | gm | Reads the scorecard and the analyst, reviews the week, scouts with subagents, queues claims with fallbacks, sets the lineup, builds and sends the offers the numbers support, follows up every thread, schedules the pre-game checks, and writes the research, state, strategy, and ledger. |
+| Tuesday 9:15 AM | Wakeup safety net | none | Plans the pre-game checks if the weekly session did not. |
+| Wednesday 9:30 AM | Post-waiver adjust | light | Reconciles claims, runs free-agent fallbacks, re-sets the lineup, notes a lost claim for the general manager. |
+| Wednesday 10:30 AM | Matchup preview | light | Previews this week's four matchups for the dashboard's Next up page. |
+| Thursday 11:00 AM | General manager, trade desk | gm | Follows up every open thread (withdraw and revise, answer a decline with a changed piece, close what is dead), opens what the market calls for, adds free agents whose role grew. |
+| Friday 5:30 PM | Designations | light | Benches anyone ruled out, writes Sunday contingencies, notes long injuries for the general manager. |
+| Kickoff minus 60 min | Pre-game check | light | One per distinct kickoff with a rostered player. Swaps inactives out, adds a free agent when no bench player can fill the slot. |
+| Sunday 11:30 PM | General manager, after the games | gm | The trade window: reads every box score, sells what the market just repriced, buys what it marked down, approaches the managers with a visible hole, queues claims for Sunday-night drops. |
+| Daily 11:05 AM | Deadline clock | none | In the last 14 days before the trade deadline, starts a trade desk on each day without a session of its own. |
+| Monday 9:00 PM | Week ahead | none | Posts the pending pre-game checks. |
+| Hourly at :20 | Roster integrity sentinel | none | See above. |
+| Daily 8:30 PM | Waiver wire watch | light, only when needed | Starts the `wire` job when another team dropped someone worth more than the worst bench player. |
 | Daily 6:45 AM | Auth canary | none | Reads the league with the cookies; posts only on failure. |
-| Every 30 min | Ask reminder | none | Pings once when a pending ask is within three hours of its deadline: the next 3:00 AM Eastern ESPN waiver run for a claim, its expiry for anything else. The ask message shows the same deadline. |
-| Every 15 min | Offer poll | none | A new incoming trade offer starts a trade review. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome (accepted, declined, expired, or reversed in review) is written to the season log and posted as one line. |
+| Every 30 min | Ask reminder | none | Pings once when a pending ask (tiered mode) is within three hours of its deadline. |
+| Every 15 min | Offer poll | none | A new incoming trade offer starts an offer review by the general manager and lands on that manager's negotiation thread. Proposals the agent sent are checked too: when one leaves ESPN's pending list, its outcome is written to the season log, the thread, and Discord. |
 
 Pre-game wakeups live in the `agent_wakeups` table, so a restart loses none.
 
@@ -351,13 +387,15 @@ as still open.
 | Command | Who | Does |
 | --- | --- | --- |
 | `/agent status` | owner | What runs next, recent runs with cost, pending approvals, canary. Planned pre-game checks and the fixed jobs come as one list in Eastern time, soonest first; the every-minute housekeeping jobs (`tick`, `poll_offers`, `expire_asks`) are left out. |
-| `/agent research`, `/agent plan`, `/agent gm`, `/agent lineup` | owner | Runs that job now. The brief posts to the agent channel. |
+| `/agent gm` | owner | Starts the general manager by hand: the weekly session if none has run this week, otherwise the trade desk. The brief posts to the agent channel. |
+| `/agent research`, `/agent plan` | owner | Both start the general manager's weekly session now. |
+| `/agent lineup` | owner | Runs the lineup worker now. |
 | `/agent analytics` | owner | Runs the data analyst now. The brief and the PDF report post to the agent channel. |
 | `/agent recap [week]` | owner | Writes the league recap for the dashboard now, for the week just played unless a week is given. |
 | `/agent preview` | owner | Writes this week's matchup preview for the dashboard now. |
 | `/agent power [week]` | owner | Writes the power rankings for the dashboard now. |
 | `/agent wakeups` | owner | Re-plans this week's pre-game checks from the current kickoff schedule. No model run; safe to repeat. Use it when the checks were never planned, for example after a mid-week deploy. |
-| `/agent trade <text>` | owner | Asks the trade reviewer about an offer in your own words. |
+| `/agent trade <text>` | owner | Asks the general manager about an offer in your own words; it evaluates and answers, and sends nothing unless the words say to. |
 | `/agent approve <id>`, `/agent reject <id>` | owner | Resolves a pending ask. Reacting ✅ or ❌ on the ask message does the same. |
 | `/claim-team` | anyone | Maps your Discord account to your ESPN team. |
 | `/ask <question>` | anyone | The league analyst answers for your team in a thread. Reply in that thread to follow up; the bot sends the thread so far along with your message, each line tagged with the speaker's team. The analyst knows the current week and says when something is not visible to it, such as a declined trade offer. Read-only tools. By default the analyst can also read the managing agent's briefs, research, state, season log, and a live record of what became of its asks and proposals, for any asker; `AGENT_ASK_SHARE_RECORD=false` keeps that to the owner. Other members' questions stay private either way. Limits are configurable. |
@@ -384,7 +422,7 @@ one-time write probe is
 Agent state lives under `data/agent/`: the research and state files, the
 season log the agents append to, per-run tool logs in `runs/`, and the
 tables `agent_runs`, `agent_wakeups`, `agent_asks`, `agent_transactions`,
-`agent_users` in `fantasy.db`.
+`agent_users`, `agent_negotiations`, and `agent_inbox` in `fantasy.db`.
 
 ## Dashboard
 

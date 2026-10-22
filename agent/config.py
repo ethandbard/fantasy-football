@@ -41,6 +41,11 @@ class AgentConfig:
     port: int
     heavy_model: str
     light_model: str
+    # The general manager's model and web-search budget. It is the one run
+    # whose judgment moves the roster, so it gets the strongest model the
+    # account can run (AGENT_MODEL_GM) and a budget that covers subagent scouting.
+    gm_model: str
+    gm_search_cap: int
     dry_run: bool
     ask_daily_limit: int
     ask_league_daily_limit: int
@@ -129,6 +134,8 @@ def from_env():
         port=_int(os.environ.get("AGENT_PORT"), 8010),
         heavy_model=os.environ.get("AGENT_MODEL_HEAVY", "claude-opus-5-5"),
         light_model=os.environ.get("AGENT_MODEL_LIGHT", "claude-sonnet-5-5"),
+        gm_model=os.environ.get("AGENT_MODEL_GM") or os.environ.get("AGENT_MODEL_HEAVY", "claude-opus-5-5"),
+        gm_search_cap=_int(os.environ.get("AGENT_GM_SEARCH_CAP"), 60),
         dry_run=_bool(os.environ.get("AGENT_DRY_RUN"), False),
         ask_daily_limit=_int(os.environ.get("AGENT_ASK_DAILY_LIMIT"), 3),
         ask_league_daily_limit=_int(os.environ.get("AGENT_ASK_LEAGUE_DAILY_LIMIT"), 20),

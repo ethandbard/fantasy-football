@@ -155,4 +155,4 @@ def test_analytics_job_has_its_tools_and_no_writes_or_web():
     # Every owner job can read the result; the public analyst cannot.
     assert "mcp__espn__read_analytics" in tool_names("read")
     assert "mcp__espn__read_analytics" not in tool_names("analyst")
-    assert "read_analytics" in jobs.read_prompt("research.md")
+    assert "read_analytics" in jobs.read_prompt("situations/weekly.md")

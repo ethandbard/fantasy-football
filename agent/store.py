@@ -104,6 +104,27 @@ CREATE TABLE IF NOT EXISTS agent_notes (
     value TEXT,
     updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS agent_negotiations (
+    team_id INTEGER PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'open',
+    opened_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    target TEXT,
+    offered TEXT,
+    their_asks TEXT,
+    next_action TEXT,
+    next_at TEXT,
+    history TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS agent_inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    source TEXT,
+    text TEXT NOT NULL,
+    read_at TEXT
+);
 """
 
 
@@ -445,6 +466,81 @@ def set_note(key, value):
     with db.get_connection() as conn:
         conn.execute("INSERT OR REPLACE INTO agent_notes (key, value, updated_at) VALUES (?, ?, ?)",
                      (key, json.dumps(value), now_iso()))
+
+
+# ----------------------------------------------------------- negotiations
+# One row per other manager: the thread of offers between the two teams.
+# The general manager writes the plan fields; the service appends events
+# (an offer sent, declined, accepted, received) with no model in the loop.
+
+NEGOTIATION_FIELDS = ("status", "target", "offered", "their_asks", "next_action", "next_at")
+
+
+def _negotiation_row(row):
+    d = dict(row)
+    try:
+        d["history"] = json.loads(d.get("history") or "[]")
+    except json.JSONDecodeError:
+        d["history"] = []
+    return d
+
+
+def get_negotiation(team_id):
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT * FROM agent_negotiations WHERE team_id=?", (int(team_id),)).fetchone()
+        return _negotiation_row(row) if row else None
+
+
+def list_negotiations(status=None):
+    with db.get_connection() as conn:
+        if status:
+            cur = conn.execute("SELECT * FROM agent_negotiations WHERE status=? ORDER BY updated_at DESC", (status,))
+        else:
+            cur = conn.execute("SELECT * FROM agent_negotiations ORDER BY updated_at DESC")
+        return [_negotiation_row(r) for r in cur.fetchall()]
+
+
+def upsert_negotiation(team_id, **fields):
+    """Create or update the thread with another team. Unknown fields are ignored; None leaves a field alone."""
+    team_id = int(team_id)
+    now = now_iso()
+    with db.get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO agent_negotiations (team_id, status, opened_at, updated_at) VALUES (?, 'open', ?, ?)",
+                     (team_id, now, now))
+        sets, args = ["updated_at=?"], [now]
+        for key in NEGOTIATION_FIELDS:
+            if fields.get(key) is not None:
+                sets.append(f"{key}=?")
+                args.append(str(fields[key]))
+        args.append(team_id)
+        conn.execute(f"UPDATE agent_negotiations SET {', '.join(sets)} WHERE team_id=?", args)
+    return get_negotiation(team_id)
+
+
+def add_negotiation_event(team_id, event, keep=40):
+    """Append one dated line to the thread's history, creating the thread if needed."""
+    row = upsert_negotiation(team_id)
+    history = (row["history"] + [{"at": now_iso(), "event": str(event)}])[-keep:]
+    with db.get_connection() as conn:
+        conn.execute("UPDATE agent_negotiations SET history=?, updated_at=? WHERE team_id=?",
+                     (json.dumps(history), now_iso(), int(team_id)))
+    return history
+
+
+# ------------------------------------------------------------------ inbox
+# Notes the workers leave for the general manager, read at its next run.
+
+def add_inbox(source, text):
+    with db.get_connection() as conn:
+        conn.execute("INSERT INTO agent_inbox (at, source, text) VALUES (?, ?, ?)", (now_iso(), source, str(text)))
+
+
+def unread_inbox(mark=True):
+    with db.get_connection() as conn:
+        rows = _rows(conn.execute("SELECT * FROM agent_inbox WHERE read_at IS NULL ORDER BY at"))
+        if mark and rows:
+            conn.execute("UPDATE agent_inbox SET read_at=? WHERE read_at IS NULL", (now_iso(),))
+    return rows
 
 
 def get_note(key, default=None):

@@ -100,8 +100,31 @@ def check_proposals(cfg, ctx):
         line = f"Trade proposal {tid[:8]} {what}: {row.get('description') or 'no description'}."
         _log(cfg, "trades", line)
         discord_out.line(cfg, line, kind="info")
+        other = _other_team(payload, cfg.team_id)
+        if other is not None:
+            store.add_negotiation_event(other, f"our offer {what}: {row.get('description') or tid[:8]}")
         outcomes.append((tid, outcome))
     return outcomes
+
+
+def _other_team(payload, me):
+    """The other team in a trade payload, from the first item that is not ours."""
+    for i in payload.get("items", []):
+        for key in ("toTeamId", "fromTeamId"):
+            tid = i.get(key)
+            if tid is not None and int(tid) != int(me):
+                return int(tid)
+    return None
+
+
+def record_incoming(cfg, offer):
+    """An offer another manager sent us, on the thread with that manager."""
+    gives = ", ".join(i["player"] or "?" for i in offer["items"] if i["to_team_id"] == cfg.team_id)
+    asks = ", ".join(i["player"] or "?" for i in offer["items"] if i["from_team_id"] == cfg.team_id)
+    try:
+        store.add_negotiation_event(offer["team_id"], f"he offered {gives} for our {asks} (offer {str(offer['id'])[:8]})")
+    except Exception:
+        logger.exception("could not record the incoming offer on the thread")
 
 
 def remind_asks(cfg, rules, now=None):

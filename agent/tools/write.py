@@ -265,7 +265,15 @@ def build(ctx, run):
                               reason=reason, run_id=run.run_id)
         run.transactions.append({"kind": preview.kind, "description": preview.description, "result": result.summary()})
         ctx.rosters(refresh=True)
+        refresh = getattr(run, "refresh_evaluator", None)
+        if refresh:
+            refresh()
         if result.ok:
+            other = preview.extra.get("other_team_id")
+            if other is not None and preview.kind.startswith("trade_"):
+                verb = {"trade_propose": "we offered", "trade_accept": "we accepted", "trade_decline": "we declined",
+                        "trade_withdraw": "we withdrew"}.get(preview.kind, preview.kind)
+                store.add_negotiation_event(other, f"{verb}: {preview.description}" + (f" ({reason})" if reason else ""))
             return text(f"EXECUTED {preview.description}. {result.summary()}")
         if result.code == UNDROPPABLE_CODE:
             # ESPN's player data said droppable; its transaction endpoint disagreed. Trust the endpoint from now on.
@@ -583,7 +591,7 @@ def build(ctx, run):
         desc = f"offer {', '.join(e.name for e in gives)} to {ctx.team_name(other)} for {', '.join(e.name for e in gets)}"
         decision = policy.classify_trade_propose([e.to_dict() for e in gives], [e.to_dict() for e in gets],
                                                  [e.to_dict() for e in ctx.my_roster()], ctx.rules)
-        preview = Preview("trade_propose", payload, desc, decision)
+        preview = Preview("trade_propose", payload, desc, decision, {"other_team_id": other})
         previews[preview.token] = preview
         return text(preview.to_text())
 
@@ -616,7 +624,8 @@ def build(ctx, run):
                 f"get {', '.join(i['player'] or '?' for i in gets)}")
         decision = policy.classify_trade_respond(accept, [e.to_dict() for e in give_entries], gets,
                                                  [e.to_dict() for e in ctx.my_roster()], ctx.rules)
-        preview = Preview("trade_accept" if accept else "trade_decline", payload, desc, decision)
+        preview = Preview("trade_accept" if accept else "trade_decline", payload, desc, decision,
+                          {"other_team_id": offer.get("team_id")})
         previews[preview.token] = preview
         return text(preview.to_text())
 
@@ -633,7 +642,12 @@ def build(ctx, run):
     async def withdraw_trade(args):
         decision = policy.classify_withdraw(args["offer_id"], store.agent_proposed_trade_ids(), ctx.rules)
         payload = writes.trade_withdraw_payload(cfg.team_id, cfg.swid, ctx.scoring_period, args["offer_id"])
-        preview = Preview("trade_withdraw", payload, f"withdraw proposal {args['offer_id']}", decision)
+        other = None
+        for t in ctx.pending_transactions():
+            if str(t["id"]) == str(args["offer_id"]):
+                other = next((i["to_team_id"] for i in t["items"] if i["to_team_id"] != cfg.team_id), None)
+        preview = Preview("trade_withdraw", payload, f"withdraw proposal {args['offer_id']}", decision,
+                          {"other_team_id": other})
         return finish(preview, args.get("reason"))
 
     return [preview_lineup, execute_lineup, preview_add_drop, execute_add_drop, cancel_waiver,

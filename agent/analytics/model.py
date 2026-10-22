@@ -288,15 +288,18 @@ def forecast(summary, weekly, games, target_week, end_week, cvs=None):
     dvp = defense_factors(weekly)
     avg = {w: _avg_implied(sched, w) for w in range(target_week, end_week + 1)}
     out = summary.copy()
-    cols = {k: [] for k in ("mean", "p10", "p90", "opponent", "implied", "ros", "ros_pg", "ros_games")}
+    cols = {k: [] for k in ("mean", "p10", "p90", "opponent", "implied", "ros", "ros_pg", "ros_games", "by_week")}
     for r in out.itertuples():
         unit = max(r.base + r.efficiency, 0.0)
         mult, opp, implied = environment(r.team, r.position, target_week, sched, dvp, avg[target_week])
         mean = unit * mult
         p10, p90 = lognormal_range(mean, cvs.get(r.position, 0.6))
         ros, games_left = 0.0, 0
+        # The per-week means feed the trade evaluator's season simulation; a bye is 0.
+        by_week = {}
         for w in range(target_week, end_week + 1):
             m, _, _ = environment(r.team, r.position, w, sched, dvp, avg[w])
+            by_week[str(w)] = round(unit * m, 2)
             if m > 0:
                 games_left += 1
                 ros += unit * m
@@ -308,6 +311,7 @@ def forecast(summary, weekly, games, target_week, end_week, cvs=None):
         cols["ros"].append(round(ros, 1))
         cols["ros_pg"].append(round(ros / games_left, 2) if games_left else 0.0)
         cols["ros_games"].append(games_left)
+        cols["by_week"].append(by_week)
     for k, v in cols.items():
         out[k] = v
     return out

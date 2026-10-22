@@ -35,6 +35,8 @@ Do:
    zero; any healthy starter beats it.
 5. If a later-kickoff starter has a fresh downgrade, handle him now too;
    there may not be another check before his lock.
+6. If a starter is out for more than this week, or a dead slot had to be
+   filled from the free-agent pool, leave a line with note_for_gm.
 
 Brief: at most five lines plus the steps-skipped line. Say "no change" if
 nothing changed. Name the teams whose inactives you checked. Include sources

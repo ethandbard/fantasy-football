@@ -18,9 +18,16 @@ DEFAULTS = {
     # owner's own trade proposal stay blocked. "tiered": the ask and never
     # tiers, the core list, the roster ceilings, and the caps all apply.
     "autonomy": "full",
-    # Players the agent may never drop or trade away on its own (tiered mode). Names are
-    # matched case-insensitively on the full ESPN name.
+    # The owner's standing instructions, read by the general manager as data.
+    # core_players: players the owner values; under full autonomy a reason to
+    # write the case, not a gate. do_not_trade: players the owner has said
+    # not to move at all (empty until he names one). Names are matched
+    # case-insensitively on the full ESPN name.
     "core_players": ["Jahmyr Gibbs", "Bucky Irving", "Emeka Egbuka", "Rashee Rice", "Zay Flowers"],
+    "do_not_trade": [],
+    # Whether the general manager may message other managers in Discord. Off
+    # until the owner says yes; the outreach tools do not exist until then.
+    "discord_outreach": False,
     # ISO date of the league's trade deadline; no trade action within 24 hours of it.
     "trade_deadline": "2026-12-02T23:59:00-05:00",
     # Roster composition ceilings. More than this at a position is never allowed.

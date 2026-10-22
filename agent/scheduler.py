@@ -1,11 +1,13 @@
 """
-The clock: fixed weekly jobs, the minute tick that fires kickoff-relative
-wakeups, the trade-offer poll, the auth canary, and the Monday preview.
+The clock: the general manager's sessions, the workers' fixed jobs, the
+sentinels, the minute tick that fires kickoff-relative wakeups, and the
+housekeeping jobs.
 
 Fixed jobs are cron entries in the league's timezone. Wakeups are rows in
-agent_wakeups, planned by the Tuesday roster plan (or by the safety net
-here if that run failed) and fired by the tick, so a container restart
-loses nothing.
+agent_wakeups, planned by the weekly session (or by the safety net here if
+that run failed) and fired by the tick, so a container restart loses
+nothing. The sentinels are plain Python: they read the league and wake a
+model run only when something needs judgment.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -16,11 +18,16 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 import gamedaybot.espn.roster as roster
 from gamedaybot.discord_bot.formatting import schedule_lines
-from agent import discord_out, ledger, rules as rules_mod, store, wire
+from agent import discord_out, ledger, rules as rules_mod, scorecard, sentinels, store, wire
 from agent.espn_ctx import EspnContext
 from agent.tools.state import schedule_week
 
 logger = logging.getLogger(__name__)
+
+# Days before the trade deadline during which the trade desk runs daily.
+DEADLINE_DAILY_DAYS = 14
+# Weekdays (Monday=0) that already carry a general manager session.
+GM_DAYS = {1, 3, 6}
 
 
 class Clock:
@@ -34,30 +41,38 @@ class Clock:
         add = self.sched.add_job
         tz = cfg.timezone
         if cfg.enabled_schedule:
-            # After ESPN rolls the week (before 6:00) and before the research
-            # run, so the dashboard's recap is up first thing Tuesday.
+            # Tuesday, after ESPN rolls the week (before 6:00): the scorecard
+            # and the dashboard prose first, then the data analyst, then the
+            # general manager's weekly session, which reads all three. The
+            # queue is first in, first out, so the session waits for them.
+            add(self.scorecard, CronTrigger(day_of_week="tue", hour=6, minute=20, timezone=tz), id="scorecard")
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=30, timezone=tz), args=["recap"], id="recap")
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=40, timezone=tz), args=["power"], id="power")
-            # The data analyst goes just before research, which reads its section.
-            # The queue is first in, first out, so research waits for it.
             add(self._submit, CronTrigger(day_of_week="tue", hour=6, minute=50, timezone=tz), args=["analytics"], id="analytics")
-            add(self._submit, CronTrigger(day_of_week="tue", hour=7, minute=0, timezone=tz), args=["research"], id="research")
-            # After the post-waiver adjust, so the preview sees settled rosters.
-            add(self._submit, CronTrigger(day_of_week="wed", hour=10, minute=30, timezone=tz), args=["preview"], id="preview_site")
-            add(self._submit, CronTrigger(day_of_week="tue", hour=8, minute=0, timezone=tz), args=["plan"], id="plan")
+            add(self._submit, CronTrigger(day_of_week="tue", hour=7, minute=0, timezone=tz),
+                args=["gm", {"situation": "weekly"}], id="gm_weekly")
             add(self.ensure_wakeups, CronTrigger(day_of_week="tue", hour=9, minute=15, timezone=tz), id="ensure_wakeups")
             add(self._submit, CronTrigger(day_of_week="wed", hour=9, minute=30, timezone=tz), args=["postwaiver"], id="postwaiver")
+            # After the post-waiver adjust, so the preview sees settled rosters.
+            add(self._submit, CronTrigger(day_of_week="wed", hour=10, minute=30, timezone=tz), args=["preview"], id="preview_site")
+            # The trade desk: Thursday once Tuesday's offers have had an answer,
+            # and Sunday night while the week's results are fresh in every
+            # manager's mind. The deadline clock adds daily sessions late.
+            add(self._submit, CronTrigger(day_of_week="thu", hour=11, minute=0, timezone=tz),
+                args=["gm", {"situation": "trade_desk"}], id="gm_thursday")
+            add(self._submit, CronTrigger(day_of_week="sun", hour=23, minute=30, timezone=tz),
+                args=["gm", {"situation": "after_games"}], id="gm_sunday")
+            add(self.deadline_clock, CronTrigger(hour=11, minute=5, timezone=tz), id="deadline_clock")
             add(self._submit, CronTrigger(day_of_week="fri", hour=17, minute=30, timezone=tz), args=["designations"], id="designations")
-            # The general manager: Monday once Sunday's games have moved values,
-            # Thursday once Tuesday's offers have had time for an answer.
-            add(self._submit, CronTrigger(day_of_week="mon", hour=10, minute=0, timezone=tz), args=["gm"], id="gm_monday")
-            add(self._submit, CronTrigger(day_of_week="thu", hour=11, minute=0, timezone=tz), args=["gm"], id="gm_thursday")
             add(self.preview, CronTrigger(day_of_week="mon", hour=21, minute=0, timezone=tz), id="preview")
             add(self.canary, CronTrigger(hour=6, minute=45, timezone=tz), id="canary")
             # Nightly, so a player another team drops is claimed before the
             # 3:00 AM waiver run that would give him to someone else.
             add(self.wire_watch, CronTrigger(hour=20, minute=30, timezone=tz), id="wire_watch")
             add(self.poll_offers, IntervalTrigger(minutes=15), id="poll_offers")
+            # The roster integrity sentinel: hourly, plain Python, fixes what
+            # has one fix and wakes a run for the rest.
+            add(self.integrity, CronTrigger(minute=20, timezone=tz), id="integrity")
         add(self.tick, IntervalTrigger(seconds=60), id="tick")
         add(store.expire_asks, IntervalTrigger(minutes=30), id="expire_asks")
         add(self.remind_asks, IntervalTrigger(minutes=30), id="remind_asks")
@@ -76,8 +91,8 @@ class Clock:
     def _submit(self, job, params=None):
         return self.queue.submit(job, params=params or {}, trigger="schedule")
 
-    def _ctx(self):
-        return EspnContext(self.cfg, rules_mod.load(self.cfg.data_dir), write_enabled=False)
+    def _ctx(self, write_enabled=False):
+        return EspnContext(self.cfg, rules_mod.load(self.cfg.data_dir), write_enabled=write_enabled)
 
     # ------------------------------------------------------------- tick
 
@@ -98,10 +113,10 @@ class Clock:
 
     async def ensure_wakeups(self, force=False):
         """
-        Safety net: if the plan job did not schedule this week's checks, do
-        it here. `force` re-plans even when the week is marked as done, for
-        the /agent wakeups command; re-planning is safe because it replaces
-        the pending pre-game checks and only future kickoffs count.
+        Safety net: if the weekly session did not schedule this week's
+        checks, do it here. `force` re-plans even when the week is marked as
+        done, for the /agent wakeups command; re-planning is safe because it
+        replaces the pending pre-game checks and only future kickoffs count.
 
         Returns the planned (run_at, label, params) list, or None when the
         week was already planned and nothing was touched.
@@ -120,15 +135,59 @@ class Clock:
             raise
 
     async def preview(self):
-        """Monday night: what is still pending this week and a reminder the plan comes Tuesday."""
+        """Monday night: what is still pending this week and when the general manager sits next."""
         try:
             rows = store.pending_wakeups()
             body = "\n".join(schedule_lines(rows)) or "No pending wakeups."
-            body += ("\n\nTuesday: data analyst at 6:50 AM, research at 7:00 AM, roster plan at 8:00 AM, "
-                     "pre-game checks re-planned after. General manager Thursday 11:00 AM and next Monday 10:00 AM.")
+            body += ("\n\nTuesday: scorecard 6:20 AM, data analyst 6:50 AM, the general manager's weekly session "
+                     "7:00 AM, pre-game checks re-planned after. Trade desk Thursday 11:00 AM and Sunday 11:30 PM.")
             discord_out.post(self.cfg, "Week ahead", body, kind="info")
         except Exception:
             logger.exception("preview failed")
+
+    # -------------------------------------------------------- sentinels
+
+    async def integrity(self):
+        """Hourly roster check: fix what has one fix, wake a run for the rest."""
+        try:
+            ctx = self._ctx(write_enabled=True)
+            return sentinels.check(ctx, self.cfg, self.queue)
+        except Exception:
+            logger.exception("integrity sentinel failed")
+
+    async def deadline_clock(self):
+        """
+        In the last DEADLINE_DAILY_DAYS before the trade deadline, run the
+        trade desk every day that has no session of its own. Returns the run
+        id when one was started.
+        """
+        try:
+            rules = rules_mod.load(self.cfg.data_dir)
+            raw = rules.get("trade_deadline")
+            if not raw:
+                return None
+            deadline = datetime.fromisoformat(raw)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if not (timedelta(0) <= deadline - now <= timedelta(days=DEADLINE_DAILY_DAYS)):
+                return None
+            if now.astimezone(roster._eastern()).weekday() in GM_DAYS:
+                return None
+            days_left = (deadline - now).days
+            return self._submit("gm", {"situation": "trade_desk", "reason": f"trade deadline in {days_left} days"})
+        except Exception:
+            logger.exception("deadline clock failed")
+
+    async def scorecard(self):
+        """Tuesday morning: the week's scorecard, no model in the loop."""
+        try:
+            ctx = self._ctx()
+            path = scorecard.write(ctx, self.cfg)
+            logger.info("scorecard written to %s", path)
+            return path
+        except Exception:
+            logger.exception("scorecard failed")
 
     # -------------------------------------------------------- wire watch
 
@@ -200,12 +259,14 @@ class Clock:
                 if store.offer_seen(offer["id"]):
                     continue
                 store.mark_offer_seen(offer["id"])
-                desc = (f"Incoming offer {offer['id']} from {offer['team']}: I give "
+                ledger.record_incoming(self.cfg, offer)
+                desc = (f"Incoming offer {offer['id']} from {offer['team']} (team {offer['team_id']}): I give "
                         f"{', '.join(i['player'] or '?' for i in offer['items'] if i['from_team_id'] == self.cfg.team_id)}; "
                         f"I get {', '.join(i['player'] or '?' for i in offer['items'] if i['to_team_id'] == self.cfg.team_id)}. "
                         f"Expires {offer['expires']}.")
-                self.queue.submit("trade_review", params={"trade": desc, "offer_id": offer["id"]}, trigger="offer")
-                logger.info("queued trade review for offer %s", offer["id"])
+                self.queue.submit("gm", params={"situation": "offer", "trade": desc, "offer_id": offer["id"],
+                                                "other_team_id": offer["team_id"]}, trigger="offer")
+                logger.info("queued offer review for offer %s", offer["id"])
             # Outgoing side: proposals the agent sent vanish from ESPN's pending
             # list when answered, with no record of how. Write one down.
             for tid, outcome in ledger.check_proposals(self.cfg, ctx):

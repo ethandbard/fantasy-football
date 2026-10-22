@@ -57,15 +57,16 @@ def build_app(cfg, queue, clock):
     @routes.post("/run/{job}")
     async def run(request):
         job = request.match_info["job"]
+        body = await _json(request)
         try:
             jobs.get(job)
+            job, params = jobs.resolve(job, body.get("params") or {})
         except KeyError as e:
             return web.json_response({"error": str(e)}, status=404)
-        body = await _json(request)
         if job == "ask":
             return web.json_response({"error": "use POST /ask"}, status=400)
-        run_id = queue.submit(job, params=body.get("params") or {}, trigger=body.get("trigger") or "api")
-        return web.json_response({"run_id": run_id, "queued": queue.size})
+        run_id = queue.submit(job, params=params, trigger=body.get("trigger") or "api")
+        return web.json_response({"run_id": run_id, "queued": queue.size, "job": job, "params": params})
 
     @routes.get("/runs/{run_id}")
     async def get_run(request):

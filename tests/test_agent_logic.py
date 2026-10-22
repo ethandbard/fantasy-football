@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 import gamedaybot.espn.roster as roster
 from agent import discord_out, jobs
 from agent.tools import state, tool_names
@@ -299,42 +301,72 @@ def test_strategy_file_round_trips_and_refuses_empty(tmp_path):
     assert (tmp_path / "strategy.md").exists()
 
 
-def test_gm_job_is_an_owner_writer_that_hunts_trades():
+def test_gm_is_the_one_job_that_trades_and_gets_every_tool():
     from types import SimpleNamespace
     spec = jobs.get("gm")
-    assert spec.owner_job and spec.writes and spec.web and spec.model == "heavy"
-    assert "mcp__espn__write_strategy" in tool_names("state")
+    assert spec.owner_job and spec.writes and spec.web and spec.model == "gm" and spec.subagents
+    names = [n for g in spec.tool_groups for n in tool_names(g)]
+    for needed in ("evaluate_trade", "playoff_odds", "market_map", "read_negotiations", "update_negotiation",
+                   "preview_trade", "read_scorecard", "write_strategy", "get_player_trend", "build_analytics"):
+        assert f"mcp__espn__{needed}" in names
+    assert "mcp__espn__publish_analytics" not in names
+    # Workers can read the strategy and leave notes, but none of them trades.
+    for worker in ("postwaiver", "designations", "pregame", "lineup", "wire"):
+        w = [n for g in jobs.get(worker).tool_groups for n in tool_names(g)]
+        assert "mcp__espn__note_for_gm" in w
+        assert "mcp__espn__evaluate_trade" not in w
     assert "mcp__espn__read_strategy" not in tool_names("analyst")
-    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=16)
-    ctx = SimpleNamespace(cfg=cfg, week=7, scoring_period=7, team_name=lambda _id: "John Foot Ball")
-    out = " ".join(jobs.user_prompt(spec, ctx, {}).split())
-    assert "general manager of John Foot Ball" in out and "You have 40 web searches" in out
-    assert "Trade on an edge" in out and "withdraw_trade" in out
-    assert "Leave other managers' cornerstones alone" in out
-    assert "Never offer three players for one" in out
-    assert "from the other manager's point of view" in out
-    assert "{" not in out.replace("{week}", "")
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=16, gm_search_cap=60, dry_run=False)
+    system = " ".join(jobs.system_prompt(spec, cfg, "rules").split())
+    assert "the only agent that trades" in system and "playoff_odds" in system and "evaluate_trade" in system
+    assert "# Steps skipped" in system and "# Rules" in system
 
 
-def test_audit_requires_the_gm_to_scout_and_keep_the_strategy():
+def test_gm_situations_render_with_the_inbox_and_aliases_resolve(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(jobs, "inbox_text", lambda mark=True: "- [pregame] Rice is out for weeks")
+    cfg = SimpleNamespace(team_id=11, heavy_search_cap=40, light_search_cap=16, gm_search_cap=60)
+    ctx = SimpleNamespace(cfg=cfg, week=8, scoring_period=8, team_name=lambda _id: "John Foot Ball")
+    spec = jobs.get("gm")
+    weekly = " ".join(jobs.user_prompt(spec, ctx, {"situation": "weekly"}).split())
+    assert "the weekly session, Tuesday of week 8" in weekly and "Rice is out for weeks" in weekly
+    assert "evaluate_trade every candidate" in weekly and "schedule_pregame_checks" in weekly
+    assert "{week}" not in weekly and "{inbox}" not in weekly and "{played_week}" not in weekly
+    offer = " ".join(jobs.user_prompt(spec, ctx, {"situation": "offer", "trade": "Gibbs for Brown"}).split())
+    assert "The offer: Gibbs for Brown" in offer and "preview_trade_response" in offer
+    assert jobs.resolve("research", {}) == ("gm", {"situation": "weekly"})
+    assert jobs.resolve("trade_review", {"trade": "x"}) == ("gm", {"situation": "offer", "trade": "x"})
+    assert jobs.resolve("gm", {}) == ("gm", {"situation": "manual"})
+    assert jobs.get("plan") is spec
+    with pytest.raises(KeyError):
+        jobs.resolve("gm", {"situation": "nope"})
+    assert jobs.title(spec, {"situation": "after_games"}) == "After the games"
+
+
+def test_audit_checks_the_gm_by_situation():
     from agent import audit
-    calls = {"read_strategy": 1, "get_standings": 1, "get_agent_activity": 1, "get_team_roster": 7,
-             "get_free_agents": 4, "write_strategy": 1, "append_season_log": 1, "WebSearch": 3}
-    assert audit.check("gm", calls, "Offers sent.\nSteps skipped: none") == []
-    calls.pop("write_strategy")
-    assert audit.check("gm", calls, "Steps skipped: none") == ["never called write_strategy"]
+    common = {"read_strategy": 1, "read_negotiations": 1, "get_my_roster": 1, "append_season_log": 1}
+    offer = dict(common, get_team_roster=1, evaluate_trade=2, WebSearch=2)
+    assert audit.check("gm", offer, "Decline.\nSteps skipped: none", situation="offer") == []
+    offer.pop("evaluate_trade")
+    assert audit.check("gm", offer, "Steps skipped: none", situation="offer") == ["never called evaluate_trade"]
+    weekly = dict(common, read_analytics=1, read_scorecard=1, get_week_results=1, get_team_roster=7, get_free_agents=3,
+                  market_map=1, playoff_odds=2, write_research=1, write_state=1, schedule_pregame_checks=1,
+                  write_strategy=1, WebSearch=6)
+    assert audit.check("gm", weekly, "Moves.\nSteps skipped: none", situation="weekly") == []
+    assert "never called market_map" in audit.check("gm", common, "Steps skipped: none", situation="trade_desk")
 
 
-def test_prompts_no_longer_tell_the_agents_to_sit_still():
-    persona = jobs.read_prompt("persona.md")
-    assert "A roster is not improved by churn" not in persona
-    assert "Doing nothing is a decision" in " ".join(persona.split())
-    plan = " ".join(jobs.read_prompt("plan.md").split())
-    assert "read_strategy" in plan and "Sending none is right when no offer passes" in plan
-    assert "Give his side a visible chart edge" not in Path("fantasy-football-agents/RULES.md").read_text(encoding="utf-8")
-    review = " ".join(jobs.read_prompt("trade_review.md").split())
-    assert "Never counter by asking for his best players" in review
-    assert "Our in-house model comes first" in review
+def test_rules_and_prompts_carry_one_trade_rule_not_shapes():
+    rules = Path("fantasy-football-agents/RULES.md").read_text(encoding="utf-8")
+    for gone in ("No three-for-ones", "within about ten percent", "same player again within two weeks",
+                 "two or three best players alone"):
+        assert gone not in rules
+    assert "evaluate_trade" in rules and "do_not_trade" in rules and "note_for_gm" in rules
+    gm = " ".join(jobs.read_prompt("gm.md").split())
+    assert "That is the whole rule" in gm and "Negotiation is a process" in gm
+    persona = " ".join(jobs.read_prompt("persona.md").split())
+    assert "You do not trade" in persona and "note_for_gm" in persona
 
 
 def test_new_drops_keeps_other_teams_drops_after_the_last_look():
@@ -375,8 +407,8 @@ def test_wire_watch_starts_a_run_only_for_new_drops(monkeypatch):
 def test_pregame_can_add_a_free_agent_and_plan_streams_dst_and_k():
     pregame = " ".join(jobs.read_prompt("pregame.md").split())
     assert "only status FREEAGENT can be added before the lock" in pregame
-    plan = " ".join(jobs.read_prompt("plan.md").split())
-    assert "Stream D/ST and K every week" in plan
+    weekly = " ".join(jobs.read_prompt("situations/weekly.md").split())
+    assert "Stream D/ST and K" in weekly
     from agent import audit
     assert audit.check("wire", {"get_my_roster": 1, "read_strategy": 1, "get_player": 2},
                        "Pollard: pass.\nSteps skipped: none") == []

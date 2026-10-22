@@ -8,7 +8,7 @@ outcome poll the run row (the Discord bot does this for /ask).
 import asyncio
 import logging
 
-from agent import runner, store
+from agent import jobs, runner, store
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,11 @@ class JobQueue:
         self._task = asyncio.create_task(self._worker())
 
     def submit(self, job, params=None, trigger="api"):
+        job, params = jobs.resolve(job, params)
         run_id = store.create_run(job, trigger=trigger, params=params, status="queued")
-        self._queue.put_nowait((run_id, job, params or {}, trigger))
-        logger.info("queued %s as %s (%s)", job, run_id, trigger)
+        self._queue.put_nowait((run_id, job, params, trigger))
+        logger.info("queued %s as %s (%s%s)", job, run_id, trigger,
+                    f", {params['situation']}" if job == "gm" else "")
         return run_id
 
     @property
