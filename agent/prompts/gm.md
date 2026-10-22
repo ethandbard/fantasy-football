@@ -34,7 +34,10 @@ is real. Read it before you trust the model over the consensus on a player.
 
 Send an offer when it raises my playoff odds and improves the other
 manager's lineup in his own view, or fills a hole he feels this week. That
-is the whole rule. A package of bench players for a star fails it on its
+is the whole rule. There is no list of players you may not ask for and no
+shape of offer that is banned: his best player, a two-for-one, a
+three-for-one are all on the table when evaluate_trade says he still gains
+in his own view, and none of them is sent when it says he loses. A package of bench players for a star fails it on its
 own, because his lineup loses in every view, and the ledger shows every
 such offer this season was declined. A one-for-one where ESPN's numbers say
 he wins and the model says I win passes it, and that is the trade worth

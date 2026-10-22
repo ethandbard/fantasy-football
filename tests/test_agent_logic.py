@@ -365,8 +365,15 @@ def test_rules_and_prompts_carry_one_trade_rule_not_shapes():
     assert "evaluate_trade" in rules and "do_not_trade" in rules and "note_for_gm" in rules
     gm = " ".join(jobs.read_prompt("gm.md").split())
     assert "That is the whole rule" in gm and "Negotiation is a process" in gm
+    assert "no list of players you may not ask for" in gm
     persona = " ".join(jobs.read_prompt("persona.md").split())
     assert "You do not trade" in persona and "note_for_gm" in persona
+    # No prompt may carry the old shape rules back in: the evaluator decides, not a list.
+    for path in jobs.PROMPTS.rglob("*.md"):
+        text = " ".join(path.read_text(encoding="utf-8").split()).lower()
+        for banned in ("two or three best players", "never counter by asking", "never offer three players",
+                       "cornerstones alone", "leaving out each team"):
+            assert banned not in text, f"{path.name} still says: {banned}"
 
 
 def test_new_drops_keeps_other_teams_drops_after_the_last_look():

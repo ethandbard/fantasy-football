@@ -26,12 +26,12 @@ Do, in order:
    ACTIVE. A counter is not sent for a player you have not researched.
 4. Decide. Accept when my odds rise and the fit holds. Decline when they
    fall. When they are close, build the counter: swap one piece for one
-   from his surplus at a similar price, or drop a piece, and
-   evaluate_trade the counter. Send it only when it raises my odds and his
-   lineup still gains in his own view, with one sentence in the brief on
-   why he would take it. Never counter by asking for his best players or
-   by turning a one-for-one into a three-for-one; the ledger says how that
-   ends.
+   from his roster at a similar price, or drop a piece, and evaluate_trade
+   the counter. Send it only when it raises my odds and his lineup still
+   gains in his own view, with one sentence in the brief on why he would
+   take it. There is no list of players you may not ask for: his best
+   player is on the table when the numbers work for him, and a counter
+   that loses for him in his own view is not sent whoever is in it.
 5. Act. preview_trade_response with accept true or false and execute it;
    then preview_trade and execute_trade for a counter. Read each preview's
    permission line. If accepting overflows the roster, pass the drops.
